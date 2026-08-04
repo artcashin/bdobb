@@ -18,6 +18,7 @@ export const BUILTIN_BACKEND_ID = "builtin";
 export const BUILTIN_NOTE_ID = "builtin:note";
 export const BUILTIN_CLOCK_ID = "builtin:clock";
 export const BUILTIN_WEBSITE_ID = "builtin:website";
+export const BUILTIN_NEWS_ID = "builtin:news";
 
 /** Where a note's text lives — a card param, so it persists with the card. */
 export const NOTE_TEXT_PARAM = "text";
@@ -41,6 +42,18 @@ export const CLOCK_DEFAULT_ZONES =
   "Asia/Shanghai,Asia/Tokyo,Australia/Sydney";
 /** Address the Website widget frames. */
 export const WEBSITE_URL_PARAM = "url";
+
+/** rss-ticker base URL for the News rail (Ep. 9). */
+export const NEWS_URL_PARAM = "url";
+/** rss-ticker user id. */
+export const NEWS_USER_PARAM = "user";
+/**
+ * Per-user token — leave blank under tailscale_auth, where the Serve-injected
+ * identity authenticates both the REST seed and the websocket upgrade. In
+ * token mode the REST call carries it as an Authorization header; the
+ * websocket has no header option, so there (and only there) it rides the URL.
+ */
+export const NEWS_TOKEN_PARAM = "token";
 
 function param(over: Partial<ParamDef> & { paramName: string; label: string }): ParamDef {
   return {
@@ -106,6 +119,38 @@ export const BUILTIN_WIDGETS: WidgetDef[] = [
           "https:// or http:// address. Many sites refuse to be embedded — " +
           "Google, most banks and most webmail send X-Frame-Options and will " +
           "show blank. Use Open externally for those.",
+      }),
+    ],
+  }),
+  def({
+    id: BUILTIN_NEWS_ID,
+    name: "News rail",
+    type: "news",
+    description:
+      "Live headlines from an rss-ticker backend (Adventures in OpenBB, Ep. 9), " +
+      "drawn natively — no iframe. Double-click a headline to open it.",
+    gridData: { w: 40, h: 8, minW: 12, minH: 3 },
+    params: [
+      param({
+        paramName: NEWS_URL_PARAM,
+        label: "Ticker URL",
+        description:
+          "Base URL of the rss-ticker server, e.g. " +
+          "https://openbb.<your-tailnet>.ts.net:8088. Non-tailnet hosts must " +
+          "also be in the build's HTTP allowlist (.env.local).",
+      }),
+      param({
+        paramName: NEWS_USER_PARAM,
+        label: "User",
+        description: "The user id from the ticker's config.yaml.",
+        value: "art",
+      }),
+      param({
+        paramName: NEWS_TOKEN_PARAM,
+        label: "Token",
+        description:
+          "Per-user token. Leave blank under tailscale_auth — your Tailscale " +
+          "identity is the credential.",
       }),
     ],
   }),
