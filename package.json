@@ -1,7 +1,7 @@
 {
   "name": "bdobb",
   "private": true,
-  "version": "4.0.0",
+  "version": "5.0.0",
   "type": "module",
   "packageManager": "pnpm@10.34.4",
   "engines": {
@@ -18,7 +18,9 @@
     "linux:deps": "bash scripts/linux-build.sh deps",
     "linux:build": "bash scripts/linux-build.sh build",
     "typecheck": "tsc --noEmit",
-    "capabilities": "node scripts/generate-capabilities.mjs"
+    "capabilities": "node scripts/generate-capabilities.mjs",
+    "reference-backend": "bash scripts/reference-backend.sh",
+    "test:reference": "OPENBB_REFERENCE=1 vitest run src/test/integration/reference-backend.test.ts"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
