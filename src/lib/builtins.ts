@@ -70,6 +70,8 @@ function def(over: Partial<WidgetDef> & { id: string; name: string; type: string
     refetchInterval: null,
     params: [],
     dataKey: null,
+    wsEndpoint: null,
+    wsRowIdColumn: null,
     columnsDefs: null,
     mcpUrl: null,
     backendId: BUILTIN_BACKEND_ID,

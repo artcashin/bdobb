@@ -1355,3 +1355,42 @@ input, select, textarea {
   font-size: 11px; line-height: 1.5; color: #d9a75f;
 }
 
+
+/* ---- live_grid (v8, Ep. 8) ---- */
+/* Candlestick green/red for signed values; the flash is a brief background
+   pulse retriggered by the cell span remounting (its key carries an update
+   counter), so no timers are involved. */
+.live-grid .cell-pos { color: #4caf7d; }
+.live-grid .cell-neg { color: #d9695f; }
+.live-grid .cell-flash { animation: live-grid-flash 0.9s ease-out; }
+.live-grid .cell-flash.flash-up {
+  animation-name: live-grid-flash-up;
+}
+.live-grid .cell-flash.flash-down {
+  animation-name: live-grid-flash-down;
+}
+@keyframes live-grid-flash {
+  0% { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  100% { background: transparent; }
+}
+@keyframes live-grid-flash-up {
+  0% { background: color-mix(in srgb, #4caf7d 35%, transparent); }
+  100% { background: transparent; }
+}
+@keyframes live-grid-flash-down {
+  0% { background: color-mix(in srgb, #d9695f 35%, transparent); }
+  100% { background: transparent; }
+}
+.live-grid-status {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 4px 6px;
+  font-size: 11px; color: var(--text-dim);
+}
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-dim);
+}
+.live-dot.on {
+  background: var(--clock-green);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--clock-green) 60%, transparent);
+}

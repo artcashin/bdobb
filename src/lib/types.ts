@@ -46,6 +46,13 @@ export interface ColumnDef {
   width?: number;
   minWidth?: number;
   maxWidth?: number;
+  /** live_grid: "greenRed" colors by the cell's own sign; "showCellChange"
+   * colors by the sign of renderFnParams.colorValueKey's value in the row */
+  renderFn?: string;
+  renderFnParams?: { colorValueKey?: string };
+  /** live_grid: false suppresses the cell-change flash for this column
+   * (e.g. volume, which changes on every tick) */
+  enableCellChangeWs?: boolean;
 }
 
 export interface GridData {
@@ -76,6 +83,14 @@ export interface WidgetDef {
   refetchInterval: number | string | false | null;
   params: ParamDef[];
   dataKey: string | null;
+  /** live_grid: websocket endpoint streaming row updates; normalized to a
+   * leading "/" like `endpoint`. Optional (not `| null` required) so the many
+   * pre-live_grid WidgetDef literals in tests stay valid; the parser always
+   * sets it. */
+  wsEndpoint?: string | null;
+  /** live_grid (data.wsRowIdColumn): the column whose value identifies which
+   * row a streamed update belongs to */
+  wsRowIdColumn?: string | null;
   columnsDefs: ColumnDef[] | null;
   /** storage.mcpUrl — MCP server to auto-connect while widget is on the active dashboard */
   mcpUrl: string | null;

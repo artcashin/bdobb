@@ -59,6 +59,13 @@ export function parseWidgetEntry(
   if (type !== "iframe" && endpoint !== "" && !endpoint.startsWith("/")) {
     endpoint = `/${endpoint}`;
   }
+  // live_grid: the websocket endpoint streaming row updates. Same
+  // normalization as `endpoint` — resolveWsUrl strips the leading slash and
+  // pins it under the backend's base path, so it cannot retarget the origin.
+  let wsEndpoint = typeof raw.wsEndpoint === "string" ? raw.wsEndpoint : "";
+  if (wsEndpoint !== "" && !wsEndpoint.startsWith("/")) {
+    wsEndpoint = `/${wsEndpoint}`;
+  }
   const source =
     typeof raw.source === "string"
       ? [raw.source]
@@ -115,6 +122,11 @@ export function parseWidgetEntry(
         : null,
     params,
     dataKey: dataKeyRaw === "" ? null : dataKeyRaw,
+    wsEndpoint: wsEndpoint === "" ? null : wsEndpoint,
+    wsRowIdColumn:
+      typeof data?.wsRowIdColumn === "string" && data.wsRowIdColumn !== ""
+        ? data.wsRowIdColumn
+        : null,
     columnsDefs,
     mcpUrl: typeof storage?.mcpUrl === "string" ? storage.mcpUrl : null,
     backendId,
