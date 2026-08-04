@@ -77,6 +77,8 @@ export interface WidgetDef {
   params: ParamDef[];
   dataKey: string | null;
   columnsDefs: ColumnDef[] | null;
+  /** storage.mcpUrl — MCP server to auto-connect while widget is on the active dashboard */
+  mcpUrl: string | null;
   backendId: string;
 }
 
@@ -90,6 +92,8 @@ export interface BackendConfig {
   headerName?: string;
   headerValue?: string;
 }
+
+import type { ShareTarget } from "./chatShare";
 
 export type ParamValues = Record<string, string | number | boolean | string[] | null>;
 
@@ -144,6 +148,17 @@ export interface Dashboard {
   appName?: string;
 }
 
+export interface McpServerConfig {
+  id: string;
+  url: string;
+  enabled: boolean;
+}
+
 export interface Settings {
+  ritaUrl: string;
   theme: "dark";
+  contextSharing: boolean;
+  mcpServers: McpServerConfig[];
+  /** Places a conversation can be sent (Tolaria, Notion, a webhook…). */
+  shareTargets?: ShareTarget[];
 }

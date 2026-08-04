@@ -18,6 +18,7 @@ export function makeWidgetDef(over: Partial<WidgetDef> = {}): WidgetDef {
     params: [],
     dataKey: null,
     columnsDefs: null,
+    mcpUrl: null,
     backendId: "test",
     ...over,
   } as WidgetDef;

@@ -22,6 +22,7 @@ describe("RawJsonView", () => {
       params: [],
       dataKey: null,
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "test",
     };
 
@@ -47,6 +48,7 @@ describe("RawJsonView", () => {
       params: [],
       dataKey: null,
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "test",
     };
 
@@ -74,6 +76,7 @@ describe("RawJsonView", () => {
       params: [],
       dataKey: null,
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "test",
     };
 

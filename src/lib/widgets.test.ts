@@ -63,10 +63,11 @@ describe("parseWidgetsJson", () => {
     expect(chartParam.value).toBe(true);
   });
 
-  it("keeps iframe endpoint verbatim", () => {
+  it("keeps iframe endpoint verbatim and extracts mcpUrl", () => {
     const w = byId["portfolio_iframe"];
     expect(w.type).toBe("iframe");
     expect(w.endpoint).toBe("http://localhost:8501"); // NOT slash-normalized
+    expect(w.mcpUrl).toBe("http://localhost:7769/mcp");
     expect(w.source).toEqual(["Streamlit Demo"]); // string -> array
     expect(w.raw).toBe(false);
     expect(w.columnsDefs).toBeNull();
@@ -96,5 +97,6 @@ describe("parseWidgetEntry defaults", () => {
     expect(w.params).toEqual([]);
     expect(w.gridData).toEqual({ w: 20, h: 12 }); // fallback size
     expect(w.dataKey).toBeNull();
+    expect(w.mcpUrl).toBeNull();
   });
 });

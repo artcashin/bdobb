@@ -18,7 +18,7 @@ import type { BackendConfig, WidgetDef } from "../../lib/types";
 /**
  * Conformance suite against OpenBB's own reference backend.
  *
- * Distinct from the live-endpoint suite (arrives in v6.0.0), which needs a private deployment and is
+ * Distinct from real-endpoints.test.ts, which needs a private deployment and is
  * therefore unrunnable by anyone but its owner. This one needs only a local
  * process anybody can start:
  *

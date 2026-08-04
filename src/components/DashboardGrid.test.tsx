@@ -40,6 +40,7 @@ vi.mock("../stores/registryStore", () => ({
       params: [],
       dataKey: null,
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "b1",
     }),
   }),

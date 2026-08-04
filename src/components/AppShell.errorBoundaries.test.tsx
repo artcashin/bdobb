@@ -2,10 +2,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Finding 4 (desk dc4664b): AppShell used to render WidgetLibrary,
-// BackendsDialog, SettingsDialog and and SettingsDialog completely unwrapped -- WidgetCard
+// BackendsDialog, SettingsDialog and ChatPane completely unwrapped -- WidgetCard
 // was the ONLY place ErrorBoundary was used anywhere in the app. A throw in
-// any of these (e.g. a corrupt settings.json surviving
-// validation into SettingsDialog's render) took the whole React tree down, not just that
+// any of these four (e.g. sse.ts's malformed status update reaching
+// ChatMessages, or a corrupt settings.json surviving validation into
+// SettingsDialog's render) took the whole React tree down, not just that
 // panel. Each mock below throws only when its flag is set, so each test
 // exercises exactly one panel's boundary while leaving the others real.
 //
@@ -21,6 +22,7 @@ const throwFlags = vi.hoisted(() => ({
   widgetLibrary: false,
   backendsDialog: false,
   settingsDialog: false,
+  chatPane: false,
 }));
 
 vi.mock("./WidgetLibrary", () => ({
@@ -41,6 +43,13 @@ vi.mock("./dialogs/SettingsDialog", () => ({
     return <div data-testid="settings-dialog-ok">settings ok</div>;
   },
 }));
+vi.mock("./chat/ChatPane", () => ({
+  default: () => {
+    if (throwFlags.chatPane) throw new Error("chat pane boom");
+    return <div data-testid="chat-pane-ok">chat ok</div>;
+  },
+}));
+
 import AppShell from "./AppShell";
 import { useDashboardStore } from "../stores/dashboardStore";
 
@@ -49,6 +58,7 @@ beforeEach(() => {
   throwFlags.widgetLibrary = false;
   throwFlags.backendsDialog = false;
   throwFlags.settingsDialog = false;
+  throwFlags.chatPane = false;
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -85,6 +95,16 @@ describe("AppShell top-level panes/dialogs are each wrapped in an ErrorBoundary 
     expect(screen.getByRole("navigation", { name: "Navigation rail" })).toBeInTheDocument();
   });
 
+  it("ChatPane: a render throw degrades to an error card, not a dead app", () => {
+    throwFlags.chatPane = true;
+    render(<AppShell />);
+    // ChatPane only mounts once the Rita pane is expanded (hover or pinned).
+    fireEvent.mouseEnter(screen.getByLabelText("Rita AI pane"));
+
+    expect(document.querySelector(".error-box")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Navigation rail" })).toBeInTheDocument();
+  });
+
   it("a throw in one dialog does not unmount a sibling dialog opened at the same time", () => {
     throwFlags.settingsDialog = true;
     render(<AppShell />);
@@ -96,15 +116,17 @@ describe("AppShell top-level panes/dialogs are each wrapped in an ErrorBoundary 
     expect(screen.getByTestId("backends-dialog-ok")).toBeInTheDocument();
   });
 
-  it("nothing throws: all three render normally side by side with the dashboard grid", () => {
+  it("nothing throws: all four render normally side by side with the dashboard grid", () => {
     render(<AppShell />);
     fireEvent.click(screen.getByRole("button", { name: "Widget Library" }));
     fireEvent.click(screen.getByRole("button", { name: "Backends" }));
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.mouseEnter(screen.getByLabelText("Rita AI pane"));
 
     expect(document.querySelector(".error-box")).not.toBeInTheDocument();
     expect(screen.getByTestId("widget-library-ok")).toBeInTheDocument();
     expect(screen.getByTestId("backends-dialog-ok")).toBeInTheDocument();
     expect(screen.getByTestId("settings-dialog-ok")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-pane-ok")).toBeInTheDocument();
   });
 });

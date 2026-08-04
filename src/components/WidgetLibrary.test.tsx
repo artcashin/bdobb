@@ -21,6 +21,7 @@ describe("WidgetLibrary", () => {
       params: [],
       dataKey: "results",
       columnsDefs: [],
+      mcpUrl: null,
       backendId: "test",
     },
     {
@@ -39,6 +40,7 @@ describe("WidgetLibrary", () => {
       params: [],
       dataKey: null,
       columnsDefs: [],
+      mcpUrl: null,
       backendId: "test",
     },
     {
@@ -57,6 +59,7 @@ describe("WidgetLibrary", () => {
       params: [],
       dataKey: "chart",
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "test",
     },
   ];

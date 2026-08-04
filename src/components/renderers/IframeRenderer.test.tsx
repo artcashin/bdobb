@@ -34,6 +34,7 @@ describe("IframeRenderer", () => {
       params: [],
       dataKey: null,
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "test",
     };
 
@@ -63,6 +64,7 @@ describe("IframeRenderer", () => {
       params: [],
       dataKey: null,
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "test",
     };
 
@@ -92,6 +94,7 @@ describe("IframeRenderer", () => {
       params: [],
       dataKey: null,
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "test",
     };
 

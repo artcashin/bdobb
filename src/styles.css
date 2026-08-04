@@ -64,10 +64,12 @@ html, body, #root {
   flex: 1;
   min-width: 0;
   margin-left: 48px;   /* room for the collapsed rail */
+  margin-right: 24px;  /* room for the collapsed Rita strip */
   display: flex;
   flex-direction: column;
   overflow: auto;
 }
+.app-shell.rita-pinned .main-area { margin-right: 0; }
 
 /* ---- left rail ---- */
 .left-rail {
@@ -111,6 +113,47 @@ html, body, #root {
   padding: 4px 0;
 }
 .rail-dash-list button.active { color: var(--accent); }
+
+/* ---- Rita pane ---- */
+.rita-pane {
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 24px;
+  transition: width 0.3s ease-in-out;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+}
+.rita-pane.expanded { width: 380px; box-shadow: -4px 0 16px rgba(0,0,0,0.5); }
+.rita-pane.pinned {
+  position: relative;
+  flex: none;
+  width: 380px;
+  box-shadow: none;
+}
+.rita-tab {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  margin: auto;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  user-select: none;
+}
+.rita-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.rita-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
 
 /* ---- placeholder overlays (replaced by Tasks 8 and 17) ---- */
 /* These must overlay, not push, the flex-laid-out .app-shell — that reflow
@@ -323,6 +366,122 @@ html, body, #root {
 }
 .param-controls-row:last-child {
   margin-bottom: 0;
+}
+
+/* ---- artifact view ---- */
+.artifact-view {
+  display: flex; flex-direction: column; gap: 16px;
+}
+.artifact-text {
+  background: rgba(14, 17, 22, 0.5);
+  padding: 12px;
+  border-radius: 4px;
+}
+.artifact-text pre {
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--text);
+}
+.artifact-table {
+  width: 100%; overflow-x: auto;
+}
+.artifact-table table {
+  width: 100%; border-collapse: collapse;
+}
+.artifact-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.artifact-table td {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+}
+.artifact-table tbody tr {
+  border-bottom: 1px solid var(--border);
+}
+.artifact-table-info {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+.artifact-iframe {
+  width: 100%; height: 384px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* ---- chat pane ---- */
+.chat-pane {
+  display: flex; flex-direction: column; height: 100%;
+}
+.chat-messages-container {
+  flex: 1; overflow-y: auto; padding: 16px;
+}
+.chat-messages-container-content {
+  display: flex; flex-direction: column; gap: 16px;
+}
+
+.chat-error {
+  padding: 8px 16px;
+  background: rgba(217, 105, 95, 0.1);
+  border-bottom: 1px solid rgba(217, 105, 95, 0.2);
+  color: var(--error);
+  font-size: 13px;
+}
+.chat-input-area {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.chat-input-row {
+  display: flex; gap: 8px;
+}
+.chat-input {
+  flex: 1;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+}
+.chat-input:focus {
+  outline: none; border-color: var(--accent);
+}
+.chat-input:disabled {
+  opacity: 0.5;
+}
+.chat-input::placeholder {
+  color: var(--text-dim);
+}
+.chat-send-btn {
+  padding: 8px 16px;
+  background: var(--accent);
+  color: white;
+  border-radius: 4px;
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.chat-send-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.chat-send-btn:disabled {
+  opacity: 0.5;
+}
+.chat-send-icon {
+  width: 20px; height: 20px;
+}
+.chat-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 8px;
+  text-align: center;
 }
 
 /* ---- backends dialog ---- */
@@ -575,14 +734,42 @@ html, body, #root {
 .mcp-add-input:focus {
   outline: none; border-color: var(--accent);
 }
-.settings-reload-btn {
+.mcp-add-btn {
   padding: 8px 16px;
   background: var(--accent);
   color: white;
   border-radius: 4px;
   border: none; cursor: pointer;
 }
-.settings-reload-btn:hover { opacity: 0.9; }
+.mcp-add-btn:hover { opacity: 0.9; }
+
+/* ---- chat messages ---- */
+.chat-messages {
+  display: flex; flex-direction: column; gap: 24px;
+}
+.chat-message {
+  display: flex;
+}
+.chat-message.human { justify-content: flex-end; }
+.chat-message.ai { justify-content: flex-start; }
+.chat-message-content {
+  max-width: 85%;
+  padding: 12px 16px;
+  border-radius: 12px;
+}
+.chat-message-content.human {
+  background: var(--accent);
+  color: white;
+  border-top-right-radius: 0;
+}
+.chat-message-content.ai {
+  background: var(--bg-panel);
+  color: var(--text);
+  border-top-left-radius: 0;
+}
+.chat-message-text {
+  white-space: pre-wrap;
+}
 
 /* ---- widget library ---- */
 .widget-library {
@@ -753,6 +940,202 @@ html, body, #root {
   color: var(--text-dim);
 }
 
+/* ---- chat: reasoning trail, artifacts, citations, suggestions ---- */
+.status-trail {
+  margin: 4px 0 8px;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+.status-trail.live { border-left-color: var(--accent); }
+.status-trail-toggle {
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: none; padding: 2px 0;
+  color: var(--text-dim); font-size: 12px; cursor: pointer;
+  text-align: left; width: 100%;
+}
+.status-trail-toggle:hover { color: var(--text); }
+.status-trail-caret { flex: none; width: 10px; }
+.status-trail-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-trail-list {
+  margin: 4px 0 0; padding-left: 18px;
+  font-size: 12px; color: var(--text-dim);
+}
+.status-step { margin: 2px 0; }
+.status-step.warning { color: #d9a05f; }
+.status-step.error { color: var(--error); }
+.status-step-tool {
+  margin-left: 6px; padding: 0 4px;
+  border-radius: 3px; background: var(--bg-card);
+  font-size: 11px;
+}
+
+.artifact-view { display: flex; flex-direction: column; gap: 12px; }
+.artifact {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px; background: var(--bg-card);
+}
+.artifact-title { font-weight: 600; font-size: 13px; }
+.artifact-desc { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+.artifact-chart { width: 100%; height: 260px; }
+.artifact-table-wrap { max-height: 320px; overflow: auto; }
+.artifact-iframe { width: 100%; height: 260px; border: none; display: block; }
+.artifact-text { font-size: 13px; }
+.artifact-raw {
+  margin: 0; font-size: 11px; white-space: pre-wrap; word-break: break-word;
+}
+
+.chat-citations { margin-top: 8px; font-size: 12px; color: var(--text-dim); }
+.chat-citations-label { font-weight: 600; }
+.chat-citations ol { margin: 4px 0 0; padding-left: 18px; }
+.chat-citations a { color: var(--accent); }
+
+.chat-suggestions {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 0 0 8px;
+}
+.chat-suggestion {
+  padding: 4px 10px; border-radius: 12px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: 12px; cursor: pointer;
+}
+.chat-suggestion:hover { color: var(--text); border-color: var(--accent); }
+.artifact-row-note { font-size: 11px; color: var(--text-dim); padding: 4px 0 0; }
+
+/* Unread marker on the collapsed Rita strip: an answer landed while the pane
+   was folded away. Cleared when the pane opens. */
+.rita-unread-dot {
+  display: block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin: 0 auto 6px;
+  flex: none;
+}
+
+/* Per-card parameter editor, between the header and the body. */
+.card-params {
+  flex: none;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  max-height: 45%;
+  overflow: auto;
+}
+.card-params-actions {
+  display: flex; justify-content: flex-end; gap: 6px;
+  padding-top: 6px;
+}
+.param-controls-row {
+  display: flex; flex-direction: column; gap: 2px;
+  margin-bottom: 6px;
+}
+.param-controls-help {
+  font-size: 11px; color: var(--text-dim);
+}
+
+.chat-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.chat-export-note {
+  font-size: 11px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-share-select { font-size: 12px; }
+
+/* ---- share targets ---- */
+.settings-help { font-size: 12px; color: var(--text-dim); margin: 0 0 8px; }
+.share-target {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; margin-bottom: 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg);
+}
+.share-target-row { display: flex; align-items: center; gap: 6px; }
+.share-target-row input { flex: 1; }
+.share-target-kind {
+  font-size: 11px; color: var(--text-dim);
+  padding: 2px 6px; border: 1px solid var(--border); border-radius: 3px;
+}
+.share-target-template {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px; resize: vertical;
+}
+
+/* Resizable table headers: the label sorts, the handle resizes. */
+.table th.sortable { position: relative; }
+.table th .th-label { cursor: pointer; user-select: none; display: inline-block; }
+.col-resizer {
+  position: absolute; top: 0; right: 0;
+  width: 5px; height: 100%;
+  cursor: col-resize; user-select: none; touch-action: none;
+}
+.col-resizer:hover, .col-resizer.resizing { background: var(--accent); }
+.chat-error.offline { border-left: 3px solid var(--error); }
+
+.backend-status {
+  margin-left: 6px; padding: 1px 6px;
+  border-radius: 3px; font-size: 10px; text-transform: uppercase;
+  border: 1px solid var(--border); color: var(--text-dim);
+}
+.backend-status.online { color: #5fb37c; border-color: #5fb37c; }
+.backend-status.offline { color: var(--error); border-color: var(--error); }
+
+/* Must overlay like .library-panel: as an in-flow flex child of .app-shell it
+   competed with .main-area for width, so picking a widget reflowed the grid. */
+.param-controls-panel {
+  position: absolute;
+  left: 48px; right: 24px; top: 0; bottom: 0;
+  z-index: 35;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  padding: 16px;
+  overflow: auto;
+  display: flex; flex-direction: column;
+}
+.param-controls-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding-top: 12px;
+}
+
+/* An imported app's tabs, bracketed so they read as one unit rather than as
+   unrelated siblings. This strip is BDOBB's navigation bar. */
+.dash-app { display: flex; align-items: center; gap: 4px; }
+.dash-app:not(.ungrouped) {
+  padding: 2px 6px 2px 8px;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
+}
+.dash-app-name {
+  max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-dim); padding-right: 4px;
+  border-right: 1px solid var(--border);
+}
+
+/* apps.json import/export, pushed to the right of the tab strip. */
+.dash-tabs-spacer { flex: 1; }
+.dash-tab-io {
+  font: inherit; font-size: 12px;
+  padding: 2px 10px; border-radius: 5px;
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--border); cursor: pointer;
+}
+.dash-tab-io:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.dash-tab-io:disabled { opacity: 0.45; cursor: default; }
+.dash-tabs-notice {
+  display: inline-flex; align-items: center; gap: 8px;
+  max-width: 46ch; padding: 2px 8px; border-radius: 5px;
+  font-size: 12px; color: var(--text-dim);
+  background: var(--bg-card); border: 1px solid var(--border);
+}
+.dash-tabs-notice-close {
+  font: inherit; line-height: 1; padding: 0;
+  background: none; border: none; color: inherit; cursor: pointer;
+}
+
 /* ---- built-in widgets ---- */
 /* Multi-zone clock. Each row is three columns: city, a stacked offset/zone
    meta block, and the time. City and time are double height; the meta lines are
@@ -896,6 +1279,29 @@ html, body, #root {
   color: var(--text); background: var(--bg-card);
   border: 1px solid var(--accent); border-radius: 4px;
   outline: none;
+}
+
+/* Undo for agent-made dashboard changes. Lives with the dashboard, not the
+   chat pane, which collapses on pointer-out. */
+.agent-edit-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 10px 6px; padding: 5px 10px;
+  font-size: 12px; color: var(--text-dim);
+  background: var(--bg-card);
+  border: 1px solid var(--accent); border-radius: 6px;
+}
+.agent-edit-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-edit-count { opacity: 0.7; }
+.agent-edit-undo {
+  font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 5px;
+  color: var(--text); background: transparent;
+  border: 1px solid var(--border); cursor: pointer;
+}
+.agent-edit-undo:hover:not(:disabled) { border-color: var(--accent); }
+.agent-edit-undo:disabled { opacity: 0.5; cursor: default; }
+.agent-edit-dismiss {
+  font: inherit; line-height: 1; padding: 0;
+  background: none; border: none; color: inherit; cursor: pointer;
 }
 
 /* A backend URL the compiled HTTP allowlist cannot reach. Warning rather than

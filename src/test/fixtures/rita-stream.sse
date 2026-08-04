@@ -1,0 +1,135 @@
+event: copilotMessageChunk
+data: {"delta":"A"}
+
+event: copilotMessageChunk
+data: {"delta":" stock"}
+
+event: copilotMessageChunk
+data: {"delta":" ticker"}
+
+event: copilotMessageChunk
+data: {"delta":" i"}
+
+event: copilotMessageChunk
+data: {"delta":"s a"}
+
+event: copilotMessageChunk
+data: {"delta":" unique"}
+
+event: copilotMessageChunk
+data: {"delta":" symbol"}
+
+event: copilotMessageChunk
+data: {"delta":" ("}
+
+event: copilotMessageChunk
+data: {"delta":"usually"}
+
+event: copilotMessageChunk
+data: {"delta":" "}
+
+event: copilotMessageChunk
+data: {"delta":"1"}
+
+event: copilotMessageChunk
+data: {"delta":"–"}
+
+event: copilotMessageChunk
+data: {"delta":"6"}
+
+event: copilotMessageChunk
+data: {"delta":" letter"}
+
+event: copilotMessageChunk
+data: {"delta":"s)"}
+
+event: copilotMessageChunk
+data: {"delta":" assigned"}
+
+event: copilotMessageChunk
+data: {"delta":" to"}
+
+event: copilotMessageChunk
+data: {"delta":" a"}
+
+event: copilotMessageChunk
+data: {"delta":" company"}
+
+event: copilotMessageChunk
+data: {"delta":"'"}
+
+event: copilotMessageChunk
+data: {"delta":"s stock"}
+
+event: copilotMessageChunk
+data: {"delta":" for"}
+
+event: copilotMessageChunk
+data: {"delta":" identification"}
+
+event: copilotMessageChunk
+data: {"delta":" on"}
+
+event: copilotMessageChunk
+data: {"delta":" financial"}
+
+event: copilotMessageChunk
+data: {"delta":" exchange"}
+
+event: copilotMessageChunk
+data: {"delta":"s and"}
+
+event: copilotMessageChunk
+data: {"delta":" trading"}
+
+event: copilotMessageChunk
+data: {"delta":" platform"}
+
+event: copilotMessageChunk
+data: {"delta":"s."}
+
+event: copilotMessageChunk
+data: {"delta":" It"}
+
+event: copilotMessageChunk
+data: {"delta":" enable"}
+
+event: copilotMessageChunk
+data: {"delta":"s trader"}
+
+event: copilotMessageChunk
+data: {"delta":"s and"}
+
+event: copilotMessageChunk
+data: {"delta":" investor"}
+
+event: copilotMessageChunk
+data: {"delta":"s to"}
+
+event: copilotMessageChunk
+data: {"delta":" quickly"}
+
+event: copilotMessageChunk
+data: {"delta":" reference"}
+
+event: copilotMessageChunk
+data: {"delta":" and"}
+
+event: copilotMessageChunk
+data: {"delta":" execute"}
+
+event: copilotMessageChunk
+data: {"delta":" trade"}
+
+event: copilotMessageChunk
+data: {"delta":"s for"}
+
+event: copilotMessageChunk
+data: {"delta":" specific"}
+
+event: copilotMessageChunk
+data: {"delta":" securitie"}
+
+event: copilotMessageChunk
+data: {"delta":"s."}
+

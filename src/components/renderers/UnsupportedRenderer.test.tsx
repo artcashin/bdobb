@@ -20,6 +20,7 @@ describe("UnsupportedRenderer", () => {
       params: [],
       dataKey: null,
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "test",
     };
 
@@ -45,6 +46,7 @@ describe("UnsupportedRenderer", () => {
       params: [],
       dataKey: null,
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "test",
     };
 
@@ -70,6 +72,7 @@ describe("UnsupportedRenderer", () => {
       params: [],
       dataKey: null,
       columnsDefs: null,
+      mcpUrl: null,
       backendId: "test",
     };
 

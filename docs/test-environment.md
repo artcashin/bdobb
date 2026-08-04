@@ -125,8 +125,8 @@ That gap is structural rather than an oversight. The custom-agent protocol runs
 in one direction — OpenBB Workspace calls *your* agent — so OpenBB Copilot has
 no endpoint a third-party client can call, and there is no public agent to test
 against the way there is a public backend. Testing the chat half needs an agent
-implementing [agents.json][agents], self-hosted — that suite arrives with the
-chat pane itself in v6.0.0.
+implementing [agents.json][agents], self-hosted, which is what
+`src/test/integration/real-endpoints.test.ts` covers for whoever has one.
 
 [repo]: https://github.com/OpenBB-finance/backends-for-openbb
 [agents]: https://docs.openbb.co/workspace/developers/json-specs/agents-json-reference

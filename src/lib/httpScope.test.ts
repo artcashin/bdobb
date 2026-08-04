@@ -6,6 +6,11 @@ async function withEnv(env: Record<string, string>) {
   vi.resetModules();
   vi.doMock("./config", () => ({
     DEFAULT_API_URL: env.api ?? "",
+    DEFAULT_RITA_URL: env.rita ?? "",
+    DEFAULT_MCP_SERVERS: (env.mcp ?? "")
+      .split(",")
+      .filter(Boolean)
+      .map((url, i) => ({ id: `m${i}`, url, enabled: true })),
   }));
   return import("./httpScope");
 }
@@ -14,14 +19,32 @@ beforeEach(() => vi.resetModules());
 afterEach(() => vi.doUnmock("./config"));
 
 describe("configuredHosts", () => {
-  it("collects the configured host", async () => {
-    const m = await withEnv({ api: "https://api.example.ts.net" });
-    expect(m.configuredHosts()).toEqual(["api.example.ts.net"]);
+  it("collects hosts from every source the generator reads", async () => {
+    const m = await withEnv({
+      api: "https://api.example.ts.net",
+      rita: "https://rita.example.ts.net",
+      mcp: "https://mcp.example.ts.net:8443/mcp",
+    });
+    expect(m.configuredHosts()).toEqual([
+      "api.example.ts.net",
+      "mcp.example.ts.net",
+      "rita.example.ts.net",
+    ]);
+  });
+
+  it("deduplicates a host used by several endpoints", async () => {
+    // One machine serving the API and MCP on different ports is one host in
+    // the allowlist, because the generator emits a port wildcard.
+    const m = await withEnv({
+      api: "https://one.example.ts.net",
+      mcp: "https://one.example.ts.net:8443/mcp",
+    });
+    expect(m.configuredHosts()).toEqual(["one.example.ts.net"]);
   });
 
   it("skips a malformed value, as the generator does", async () => {
-    const m = await withEnv({ api: "not a url" });
-    expect(m.configuredHosts()).toEqual([]);
+    const m = await withEnv({ api: "not a url", rita: "https://ok.example.ts.net" });
+    expect(m.configuredHosts()).toEqual(["ok.example.ts.net"]);
   });
 });
 

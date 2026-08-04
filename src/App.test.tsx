@@ -90,7 +90,7 @@ describe("App startup bootstrap", () => {
 
   it("still loads the other stores when one loader throws", async () => {
     // The loaders were awaited in a single chain inside one try, so a corrupt
-    // settings.json aborted backends and dashboards as well — several
+    // settings.json aborted backends, dashboards and chat as well — three
     // subsystems lost to one unrelated failure.
     const settingsLoad = vi
       .spyOn(useSettingsStore.getState(), "load")
