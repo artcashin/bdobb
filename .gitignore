@@ -1,0 +1,11 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/apple/
+src-tauri/capabilities/default.json
+.reference-backend/
+.env.local
+.env
+scripts/scrub-private-patterns.txt
+*.log
+.DS_Store
