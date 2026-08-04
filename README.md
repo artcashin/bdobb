@@ -9,8 +9,9 @@ section, and the app has exactly that chapter's functionality.
 |---|---|---|
 | v3.0.0 | Ep. 3 — I Asked for Electron and Got Talked Out of It | The app: hover rail, dashboard grid, widget renderers, built-ins (Note, Clock, Website), key status widget, backends & settings |
 | v4.0.0 | Ep. 4 — Same Blueprint, Two Builders | The review & reconciliation layer: hardened tests, a11y, CSP, region error boundaries |
+| v5.0.0 | Ep. 5 — Kick the Tires in Ten Minutes | One-command reference backend, conformance suite, Workspace apps.json import/export + parameter groups |
 
-## What you get (this release: v4.0.0)
+## What you get (this release: v5.0.0)
 
 - **Dashboard grid** — drag, resize, remove widget cards; multiple dashboards
   in a tab strip; everything persists as plain JSON files you can back up.
@@ -26,6 +27,15 @@ section, and the app has exactly that chapter's functionality.
   of the way; the dashboard never reflows.
 - **Backends & settings** — add/edit backends with connection status; a
   rotating app log viewable in Settings.
+
+**New in v5.0.0 (Ep. 5):** try BDOBB with **no backend of your own** —
+`pnpm reference-backend` starts OpenBB's own reference implementation
+(~70 widgets) on `http://127.0.0.1:7779`; import its `apps.json` from the
+dashboard strip and 14 populated dashboards appear, linked parameter groups
+included. The opt-in conformance suite (`pnpm test:reference`) tests the
+client against the spec-owner's corpus — a disagreement there is our bug by
+definition. Workspace **Import/Export** (apps.json interchange) ships here
+too. See [docs/test-environment.md](docs/test-environment.md).
 
 **New in v4.0.0 (Ep. 4):** the adversarial-review layer, shipped as its own
 diffable release — a strict Content-Security-Policy, error boundaries around

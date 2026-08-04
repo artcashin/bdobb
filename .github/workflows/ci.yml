@@ -47,3 +47,92 @@ jobs:
         # Catches a generated file that was committed by mistake, or a build
         # that writes into a tracked path.
         run: git diff --exit-code
+
+
+  # Real protocol coverage without a private deployment. Every other suite here
+  # runs against fixtures we wrote, which can only prove the client agrees with
+  # our own idea of the spec. OpenBB's reference backend is the spec's own
+  # implementation, so a disagreement is ours.
+  reference:
+    name: Conformance vs the OpenBB reference backend
+    runs-on: ubuntu-latest
+    env:
+      # Pinned so an upstream change shows up as a deliberate bump in a diff
+      # rather than as a CI failure on an unrelated PR. Raise it on purpose.
+      REF_BACKEND_REF: a6293707576e16edda8305adda95b07b6a4b968b
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Start the reference backend
+        run: |
+          nohup bash scripts/reference-backend.sh > reference-backend.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://127.0.0.1:7779/widgets.json; then
+              echo "reference backend up after ~$((i*2))s"; exit 0
+            fi
+            sleep 2
+          done
+          echo "reference backend did not come up:"; cat reference-backend.log; exit 1
+
+      # Opt-in, not skip-if-unreachable: if the backend dies the suite must fail
+      # the job, not quietly report green having asserted nothing.
+      - name: Conformance suite
+        run: pnpm test:reference
+
+      - name: Backend log
+        if: failure()
+        run: cat reference-backend.log
+
+  # `pnpm build` only builds the web assets, so nothing here used to compile the
+  # Rust side. That let a malformed capability file and an invalid CSP sit in
+  # main undetected — both are parsed by tauri-build, not by tsc or vite. cargo
+  # check is a few minutes against a warm cache and catches the whole class.
+  tauri:
+    name: Validate the Tauri shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # tauri.conf.json points beforeBuildCommand at this; cargo check does not
+      # run it, and capabilities must exist on disk before the crate compiles.
+      - name: Generate the capability file
+        run: node scripts/generate-capabilities.mjs
+
+      - name: Check the Rust crate compiles
+        run: cargo check --manifest-path src-tauri/Cargo.toml
