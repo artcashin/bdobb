@@ -173,6 +173,34 @@ html, body, #root {
 .dash-tab-add { margin-left: 4px; }
 
 /* ---- save-error banner (Finding 2) ---- */
+/* ---- startup-error banner (Finding 3, desk dc4664b) ---- */
+.startup-error-banner {
+  padding: 6px 10px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--error);
+  color: var(--error);
+  font-size: 12px;
+  flex: none;
+}
+
+.save-error-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--error);
+  color: var(--error);
+  font-size: 12px;
+  flex: none;
+}
+.save-error-banner button { border: none; background: none; color: inherit; padding: 2px 4px; }
+
+.dashboard-grid { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.empty-dash {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); pointer-events: none;
+}
+
 /* ---- widget card ---- */
 .widget-card {
   height: 100%;

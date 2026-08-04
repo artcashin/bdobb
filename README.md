@@ -8,8 +8,9 @@ section, and the app has exactly that chapter's functionality.
 | Release | Episode | What it adds |
 |---|---|---|
 | v3.0.0 | Ep. 3 — I Asked for Electron and Got Talked Out of It | The app: hover rail, dashboard grid, widget renderers, built-ins (Note, Clock, Website), key status widget, backends & settings |
+| v4.0.0 | Ep. 4 — Same Blueprint, Two Builders | The review & reconciliation layer: hardened tests, a11y, CSP, region error boundaries |
 
-## What you get (this release: v3.0.0)
+## What you get (this release: v4.0.0)
 
 - **Dashboard grid** — drag, resize, remove widget cards; multiple dashboards
   in a tab strip; everything persists as plain JSON files you can back up.
@@ -25,6 +26,14 @@ section, and the app has exactly that chapter's functionality.
   of the way; the dashboard never reflows.
 - **Backends & settings** — add/edit backends with connection status; a
   rotating app log viewable in Settings.
+
+**New in v4.0.0 (Ep. 4):** the adversarial-review layer, shipped as its own
+diffable release — a strict Content-Security-Policy, error boundaries around
+every top-level pane and dialog (a render throw degrades to one error card,
+never a dead app), a startup banner naming exactly which loaders failed, and
+the review-era regression suites (layout-write suppression, real-mount
+persistence, per-boundary containment). Diff v3.0.0..v4.0.0 to see precisely
+what adversarial review caught.
 
 ## Quick start
 

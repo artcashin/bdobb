@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import AppShell from "./components/AppShell";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useBackendsStore } from "./stores/backendsStore";
@@ -9,13 +9,21 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { logError } from "./lib/logger";
 
 export default function App() {
+  // A startup failure used to be logged only — the user saw nothing but a
+  // quietly empty dashboard/backend list. The failing loaders are now also
+  // named in a banner AppShell renders, not just the log.
+  const [startupErrors, setStartupErrors] = useState<string[]>([]);
+
   useEffect(() => {
     // Each store loads on its own: one unreadable file — a corrupt
     // settings.json, say — must not abort the loaders after it and bring the
     // app up with no backends and no dashboards, none of which had anything
     // wrong.
     const load = (label: string, run: () => Promise<unknown>) =>
-      run().catch((e) => logError(`startup: ${label} failed: ${String(e)}`));
+      run().catch((e) => {
+        logError(`startup: ${label} failed: ${String(e)}`);
+        setStartupErrors((prev) => [...prev, label]);
+      });
 
     void load("settings", () => useSettingsStore.getState().load());
     void load("dashboards", () => useDashboardStore.getState().load());
@@ -42,7 +50,7 @@ export default function App() {
   // with no indication of what happened.
   return (
     <ErrorBoundary label="Application">
-      <AppShell />
+      <AppShell startupErrors={startupErrors} />
     </ErrorBoundary>
   );
 }

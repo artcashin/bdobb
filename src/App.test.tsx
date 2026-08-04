@@ -1,7 +1,7 @@
 import React from "react";
 import { act } from "@testing-library/react";
 import { createRoot, type Root } from "react-dom/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { files, resetFs, BaseDirectory, exists, mkdir, readDir, readTextFile, remove, rename, stat, writeTextFile } from "./test/memfs";
 
 vi.mock("@tauri-apps/plugin-fs", () => ({
@@ -118,7 +118,55 @@ describe("App startup bootstrap", () => {
   });
 });
 
+// Finding 3 (desk dc4664b): a startup failure used to be logged only -- the
+// user saw nothing but a quietly empty dashboard/backend list. AppShell now
+// renders a banner naming whichever startup steps actually failed.
+describe("startup error banner (Finding 3)", () => {
+  afterEach(() => vi.restoreAllMocks());
 
+  it("names a failed startup step in a visible banner", async () => {
+    const settingsLoad = vi
+      .spyOn(useSettingsStore.getState(), "load")
+      .mockRejectedValue(new Error("settings.json is corrupt"));
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let root: Root;
+    await act(async () => {
+      root = createRoot(container);
+      root.render(React.createElement(App));
+    });
+    await settle();
+
+    const banner = container.querySelector(".startup-error-banner");
+    expect(banner).not.toBeNull();
+    expect(banner!.textContent).toContain("settings");
+
+    act(() => root.unmount());
+    container.remove();
+    settingsLoad.mockRestore();
+  });
+
+  it("renders no banner when every startup load succeeds", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let root: Root;
+    await act(async () => {
+      root = createRoot(container);
+      root.render(React.createElement(App));
+    });
+    await settle();
+
+    expect(container.querySelector(".startup-error-banner")).toBeNull();
+
+    act(() => root.unmount());
+    container.remove();
+  });
+});
+
+// Finding 6: the startup chain's single .catch labeled every failure in it
+// "registry refresh failed", even a providerKeys.refresh() failure that came
+// after the registry refresh had already succeeded.
 describe("startup refresh failure labeling (Finding 6)", () => {
   afterEach(() => vi.restoreAllMocks());
 
