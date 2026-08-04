@@ -17,9 +17,11 @@ export default function LeftRail({
 
   return (
     <nav
+      ref={panel.ref}
       className={`left-rail ${panel.expanded ? "expanded" : ""}`}
       onMouseEnter={panel.onMouseEnter}
       onMouseLeave={panel.onMouseLeave}
+      onPointerDown={panel.onPointerDown}
       aria-label="Navigation rail"
     >
       <div className="rail-top">

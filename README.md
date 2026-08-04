@@ -11,8 +11,9 @@ section, and the app has exactly that chapter's functionality.
 | v4.0.0 | Ep. 4 — Same Blueprint, Two Builders | The review & reconciliation layer: hardened tests, a11y, CSP, region error boundaries |
 | v5.0.0 | Ep. 5 — Kick the Tires in Ten Minutes | One-command reference backend, conformance suite, Workspace apps.json import/export + parameter groups |
 | v6.0.0 | Ep. 6 — The Analyst Who Never Leaves the Building | The chat pane: agent protocol client, SSE streaming, MCP tools, dashboard context |
+| v7.0.0 | Ep. 7 — The iPadOS Adventure | iPadOS builds, touch input, free-tier signing flow |
 
-## What you get (this release: v6.0.0)
+## What you get (this release: v7.0.0)
 
 - **Dashboard grid** — drag, resize, remove widget cards; multiple dashboards
   in a tab strip; everything persists as plain JSON files you can back up.
@@ -28,6 +29,17 @@ section, and the app has exactly that chapter's functionality.
   of the way; the dashboard never reflows.
 - **Backends & settings** — add/edit backends with connection status; a
   rotating app log viewable in Settings.
+
+**New in v7.0.0 (Ep. 7):** BDOBB on an **iPad**. `pnpm ios:check/init/dev/build`
+with a preflight that names each missing toolchain piece; free-Apple-ID
+signing flow (`pnpm ios:team` + `APPLE_DEVELOPMENT_TEAM` in `.env.local` —
+never committed); and a second input paradigm chosen at runtime: with a
+trackpad/Magic Keyboard the hover panels behave exactly as on desktop, by
+touch the panels open on tap and dismiss on an outside tap — and the same
+iPad switches paradigms live when a keyboard docks or undocks. The dashboard
+grid is not yet touch-rearrangeable (known, documented). Read
+[docs/building.md](docs/building.md)'s iPadOS section before trying it —
+`ios:dev` and `ios:build` are not two ways of doing the same thing.
 
 **New in v6.0.0 (Ep. 6):** the analyst moves in. The right-edge **Rita
 pane**: an OpenBB custom-agent-protocol client (agents.json + SSE streaming,

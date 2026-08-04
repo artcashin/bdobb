@@ -53,6 +53,50 @@ html, body, #root {
   font-size: 13px;
 }
 
+/* ---- iPadOS ----
+   None of this changes the desktop build: env(safe-area-inset-*) is 0 on a
+   desktop, and the rest are no-ops outside WebKit on a device. */
+body {
+  /* Rubber-band scrolling exposes the page background beyond the app and reads
+     as the window coming unstuck. */
+  overscroll-behavior: none;
+  /* Rotating to landscape otherwise inflates text in the app's fixed layout. */
+  -webkit-text-size-adjust: 100%;
+}
+.app-shell {
+  /* viewport-fit=cover paints under the home indicator and the camera housing;
+     these put the chrome back inside the usable area. */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+/* Long-press on app chrome should not raise the text-selection callout. Cards
+   and chat text are deliberately excluded — selecting a figure to copy it is
+   the whole point of a research tool. */
+.left-rail, .dash-tabs, .card-header, .card-actions, .card-hover-panel {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button {
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+
+input, select, textarea {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+
 /* ---- app shell ---- */
 .app-shell {
   display: flex;

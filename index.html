@@ -3,7 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover lets the shell paint under the home indicator and
+         then pad itself back with env(safe-area-inset-*). Without it iPadOS
+         letterboxes the app instead. Zoom is deliberately left enabled: this
+         is a data-dense UI and pinching to read a table is legitimate. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>BDOBB</title>
   </head>
 

@@ -15,6 +15,7 @@ import { useDashboardStore } from "../stores/dashboardStore";
 import { useRegistryStore } from "../stores/registryStore";
 import type { WidgetDef } from "../lib/types";
 import { BUILTIN_WIDGETS } from "../lib/builtins";
+import { usePointerKind } from "../hooks/usePointerKind";
 
 export interface AppShellProps {
   /** Names of startup steps (settings/backends/dashboards/chat) that failed
@@ -25,6 +26,7 @@ export interface AppShellProps {
 }
 
 export default function AppShell({ startupErrors = [] }: AppShellProps) {
+  const pointerKind = usePointerKind();
     const [pinned, setPinned] = useState(false);
   const [chatSticky, setChatSticky] = useState(false);
   const hasUnread = useChatStore((s) => s.hasUnread);
@@ -61,7 +63,10 @@ export default function AppShell({ startupErrors = [] }: AppShellProps) {
   const widgetList = useMemo(() => [...BUILTIN_WIDGETS, ...widgets], [widgets]);
 
   return (
-    <div className={`app-shell ${pinned ? "rita-pinned" : ""}`}>
+    // pointer-fine / pointer-coarse is the seam between the two interaction
+    // paradigms. Today only styling reads it — hit targets and the hover
+    // affordance — but it is also what a touch mode will branch on.
+    <div className={`app-shell pointer-${pointerKind} ${pinned ? "rita-pinned" : ""}`}>
       <LeftRail
         onOpenLibrary={() => setLibraryOpen((v) => !v)}
         onOpenBackends={() => setBackendsOpen(true)}
