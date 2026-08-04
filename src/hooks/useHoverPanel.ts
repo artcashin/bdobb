@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePointerKind } from "./usePointerKind";
 
 export interface HoverPanelOptions {
   collapseDelayMs: number;
@@ -12,6 +13,13 @@ export interface HoverPanel {
   onMouseLeave: () => void;
   open: () => void;
   close: () => void;
+  /**
+   * Attach to the panel's root element. Under touch it makes a tap open the
+   * panel; with a pointer it does nothing, because hover already has.
+   */
+  onPointerDown: (e: { pointerType?: string }) => void;
+  /** Element ref the outside-tap detector uses to know what "outside" means. */
+  ref: (el: HTMLElement | null) => void;
 }
 
 export function useHoverPanel({
@@ -21,6 +29,8 @@ export function useHoverPanel({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inside = useRef(false);
   const stickyRef = useRef(sticky);
+  const rootRef = useRef<HTMLElement | null>(null);
+  const pointerKind = usePointerKind();
 
   const cancel = useCallback(() => {
     if (timer.current !== null) {
@@ -73,5 +83,54 @@ export function useHoverPanel({
     setExpanded(false);
   }, [cancel]);
 
-  return { expanded, onMouseEnter, onMouseLeave, open, close };
+  /**
+   * Touch: a tap on the panel opens it.
+   *
+   * Guarded on pointerType because iPadOS sends a synthetic mouse-enter for the
+   * same tap. Without the guard the panel would open from the enter and then be
+   * toggled again here, so a single tap would net to nothing.
+   */
+  const onPointerDown = useCallback(
+    (e: { pointerType?: string }) => {
+      if (e.pointerType === "mouse") return;
+      inside.current = true;
+      cancel();
+      setExpanded(true);
+    },
+    [cancel]
+  );
+
+  /**
+   * Touch: a tap anywhere outside the panel dismisses it.
+   *
+   * There is no mouse-leave under touch, so without this a panel opens and
+   * stays open forever. "Outside" is anything not inside the panel's own
+   * element — including a widget card, which is deliberate: on a full
+   * dashboard there may be no bare background left to tap, and a dismiss that
+   * only fired on true empty space could strand the panel open.
+   *
+   * pointerdown in the capture phase, so the dismissal is decided before the
+   * tap reaches whatever is underneath.
+   */
+  useEffect(() => {
+    if (pointerKind !== "coarse" || !expanded) return;
+
+    const onDocPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") return;
+      const root = rootRef.current;
+      if (root && e.target instanceof Node && root.contains(e.target)) return;
+      if (stickyRef.current) return;
+      inside.current = false;
+      setExpanded(false);
+    };
+
+    document.addEventListener("pointerdown", onDocPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown, true);
+  }, [pointerKind, expanded]);
+
+  const ref = useCallback((el: HTMLElement | null) => {
+    rootRef.current = el;
+  }, []);
+
+  return { expanded, onMouseEnter, onMouseLeave, open, close, onPointerDown, ref };
 }

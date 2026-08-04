@@ -19,9 +19,11 @@ export default function RitaPane({
 
   return (
     <aside
+      ref={panel.ref}
       className={`rita-pane ${expanded ? "expanded" : ""} ${pinned ? "pinned" : ""}`}
       onMouseEnter={panel.onMouseEnter}
       onMouseLeave={panel.onMouseLeave}
+      onPointerDown={panel.onPointerDown}
       aria-label="Rita AI pane"
     >
       {expanded ? (
