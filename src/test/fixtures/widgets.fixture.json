@@ -1,0 +1,272 @@
+{
+  "equity_price_historical_eodhd_obb": {
+    "name": "Historical",
+    "description": "Get historical price data for a given stock. This includes open, high, low, close, and volume.",
+    "category": "Equity",
+    "type": "table",
+    "widgetId": "equity_price_historical_eodhd_obb",
+    "mcp_tool": {
+      "mcp_server": "Open Data Platform",
+      "tool_id": "equity_price_historical"
+    },
+    "params": [
+      {
+        "label": "Symbol",
+        "description": "Symbol to get data for. Multiple comma separated items allowed.",
+        "optional": false,
+        "type": "text",
+        "value": null,
+        "show": true,
+        "multiSelect": true,
+        "paramName": "symbol",
+        "multiple": true,
+        "style": { "popupWidth": 400 }
+      },
+      {
+        "label": "Interval",
+        "description": "Time interval of the data to return.",
+        "optional": true,
+        "type": "text",
+        "value": "1d",
+        "show": true,
+        "options": [
+          { "label": "1m", "value": "1m" },
+          { "label": "5m", "value": "5m" },
+          { "label": "1h", "value": "1h" },
+          { "label": "1d", "value": "1d" },
+          { "label": "1W", "value": "1W" },
+          { "label": "1M", "value": "1M" }
+        ],
+        "paramName": "interval"
+      },
+      {
+        "label": "Exchange",
+        "description": "EODHD exchange code appended to bare symbols (e.g. 'US', 'LSE', 'TO'). Ignored when the symbol is already qualified, like 'AAPL.US'.",
+        "optional": true,
+        "type": "text",
+        "value": "US",
+        "show": true,
+        "paramName": "exchange"
+      },
+      { "paramName": "provider", "value": "eodhd", "show": false }
+    ],
+    "endpoint": "/api/v1/equity/price/historical",
+    "runButton": false,
+    "gridData": { "w": 40, "h": 15 },
+    "data": {
+      "dataKey": "results",
+      "table": {
+        "showAll": true,
+        "columnsDefs": [
+          { "field": "date", "pinned": "left", "formatterFn": null, "headerName": "Date", "headerTooltip": "The date of the data.", "cellDataType": "date" },
+          { "field": "open", "formatterFn": null, "headerName": "Open", "headerTooltip": "The open price.", "cellDataType": "number" },
+          { "field": "high", "formatterFn": null, "headerName": "High", "headerTooltip": "The high price.", "cellDataType": "number" },
+          { "field": "low", "formatterFn": null, "headerName": "Low", "headerTooltip": "The low price.", "cellDataType": "number" },
+          { "field": "close", "formatterFn": null, "headerName": "Close", "headerTooltip": "The close price.", "cellDataType": "number" },
+          { "field": "volume", "formatterFn": null, "headerName": "Volume", "headerTooltip": "The trading volume.", "cellDataType": "number" },
+          { "field": "vwap", "formatterFn": null, "headerName": "Vwap", "headerTooltip": "Volume Weighted Average Price over the period.", "cellDataType": "number" },
+          { "field": "adjusted_close", "formatterFn": null, "headerName": "Adjusted Close", "headerTooltip": "Split/dividend-adjusted closing price (EOD endpoint only).", "cellDataType": "number" }
+        ],
+        "enableAdvanced": true
+      }
+    },
+    "source": ["Eodhd"],
+    "subCategory": "Price"
+  },
+  "imf_utils_presentation_table_custom_obb": {
+    "name": "IMF Presentation Table",
+    "description": "Presentation tables from the IMF database.",
+    "category": "IMF Utilities",
+    "type": "html",
+    "widgetId": "imf_utils_presentation_table_custom_obb",
+    "mcp_tool": {
+      "mcp_server": "Open Data Platform",
+      "tool_id": "imf_utils_presentation_table"
+    },
+    "params": [
+      {
+        "label": "Dataflow",
+        "description": "The IMF dataflow group.",
+        "optional": true,
+        "type": "endpoint",
+        "value": null,
+        "show": true,
+        "paramName": "dataflow_group",
+        "optionsEndpoint": "/api/v1/imf_utils/presentation_table_choices"
+      },
+      {
+        "label": "Table",
+        "description": "The IMF presentation table.",
+        "optional": true,
+        "type": "endpoint",
+        "value": null,
+        "show": true,
+        "paramName": "table",
+        "optionsEndpoint": "/api/v1/imf_utils/presentation_table_choices",
+        "optionsParams": { "dataflow_group": "$dataflow_group" }
+      },
+      {
+        "label": "Country",
+        "description": "Country or region for the table.",
+        "optional": true,
+        "type": "endpoint",
+        "value": null,
+        "show": true,
+        "paramName": "country",
+        "multiSelect": true,
+        "optionsEndpoint": "/api/v1/imf_utils/presentation_table_choices",
+        "optionsParams": {
+          "dataflow_group": "$dataflow_group",
+          "table": "$table",
+          "dimension_values": "$dimension_values"
+        }
+      },
+      {
+        "label": "Frequency",
+        "description": "The data frequency.",
+        "optional": true,
+        "type": "endpoint",
+        "value": null,
+        "show": true,
+        "paramName": "frequency",
+        "optionsEndpoint": "/api/v1/imf_utils/presentation_table_choices",
+        "optionsParams": {
+          "dataflow_group": "$dataflow_group",
+          "table": "$table",
+          "country": "$country",
+          "dimension_values": "$dimension_values"
+        }
+      },
+      {
+        "label": "Dimension Values",
+        "description": "Dimension selection for filtering. Format: 'DIM_ID1:VAL1+VAL2.'",
+        "optional": true,
+        "type": "text",
+        "value": null,
+        "show": true,
+        "paramName": "dimension_values",
+        "multiple": true,
+        "multiSelect": false
+      },
+      {
+        "label": "Limit",
+        "description": "Most recent N records to retrieve per series.",
+        "optional": true,
+        "type": "number",
+        "value": 3,
+        "show": true,
+        "paramName": "limit"
+      },
+      {
+        "label": "Raw",
+        "description": "Return presentation table as raw JSON data if True.",
+        "optional": true,
+        "type": "boolean",
+        "value": false,
+        "show": false,
+        "paramName": "raw"
+      }
+    ],
+    "endpoint": "/api/v1/imf_utils/presentation_table",
+    "runButton": false,
+    "gridData": { "w": 40, "h": 15 },
+    "data": { "dataKey": "", "table": { "showAll": true } },
+    "source": ["IMF"],
+    "subCategory": "Presentation Tables",
+    "raw": true,
+    "refetchInterval": false
+  },
+  "equity_price_historical_eodhd_obb_chart": {
+    "name": "Historical (Chart)",
+    "description": "Get historical price data for a given stock. This includes open, high, low, close, and volume.",
+    "category": "Equity",
+    "type": "chart",
+    "widgetId": "equity_price_historical_eodhd_obb_chart",
+    "mcp_tool": {
+      "mcp_server": "Open Data Platform",
+      "tool_id": "equity_price_historical"
+    },
+    "params": [
+      {
+        "label": "Symbol",
+        "description": "Symbol to get data for. Multiple comma separated items allowed.",
+        "optional": false,
+        "type": "text",
+        "value": null,
+        "show": true,
+        "multiSelect": true,
+        "paramName": "symbol",
+        "multiple": true,
+        "style": { "popupWidth": 400 }
+      },
+      {
+        "label": "Interval",
+        "description": "Time interval of the data to return.",
+        "optional": true,
+        "type": "text",
+        "value": "1d",
+        "show": true,
+        "options": [
+          { "label": "1m", "value": "1m" },
+          { "label": "5m", "value": "5m" },
+          { "label": "1h", "value": "1h" },
+          { "label": "1d", "value": "1d" },
+          { "label": "1W", "value": "1W" },
+          { "label": "1M", "value": "1M" }
+        ],
+        "paramName": "interval"
+      },
+      {
+        "label": "Exchange",
+        "description": "EODHD exchange code appended to bare symbols (e.g. 'US', 'LSE', 'TO'). Ignored when the symbol is already qualified, like 'AAPL.US'.",
+        "optional": true,
+        "type": "text",
+        "value": "US",
+        "show": true,
+        "paramName": "exchange"
+      },
+      { "paramName": "provider", "value": "eodhd", "show": false },
+      {
+        "paramName": "chart",
+        "label": "Chart",
+        "description": "Returns chart",
+        "optional": true,
+        "value": true,
+        "type": "boolean",
+        "show": false
+      }
+    ],
+    "endpoint": "/api/v1/equity/price/historical",
+    "runButton": false,
+    "gridData": { "w": 40, "h": 20 },
+    "data": {
+      "dataKey": "chart.content",
+      "table": {
+        "showAll": true,
+        "columnsDefs": [
+          { "field": "date", "pinned": "left", "formatterFn": null, "headerName": "Date", "headerTooltip": "The date of the data.", "cellDataType": "date" },
+          { "field": "open", "formatterFn": null, "headerName": "Open", "headerTooltip": "The open price.", "cellDataType": "number" },
+          { "field": "high", "formatterFn": null, "headerName": "High", "headerTooltip": "The high price.", "cellDataType": "number" },
+          { "field": "low", "formatterFn": null, "headerName": "Low", "headerTooltip": "The low price.", "cellDataType": "number" },
+          { "field": "close", "formatterFn": null, "headerName": "Close", "headerTooltip": "The close price.", "cellDataType": "number" },
+          { "field": "volume", "formatterFn": null, "headerName": "Volume", "headerTooltip": "The trading volume.", "cellDataType": "number" },
+          { "field": "vwap", "formatterFn": null, "headerName": "Vwap", "headerTooltip": "Volume Weighted Average Price over the period.", "cellDataType": "number" },
+          { "field": "adjusted_close", "formatterFn": null, "headerName": "Adjusted Close", "headerTooltip": "Split/dividend-adjusted closing price (EOD endpoint only).", "cellDataType": "number" }
+        ],
+        "enableAdvanced": true
+      }
+    },
+    "source": ["Eodhd"],
+    "subCategory": "Price",
+    "defaultViz": "chart"
+  },
+  "portfolio_iframe": {
+    "name": "Portfolio Dashboard (Streamlit)",
+    "description": "Embedded Streamlit portfolio app with MCP tools",
+    "category": "Portfolio",
+    "type": "iframe",
+    "endpoint": "http://localhost:8501",
+    "gridData": { "w": 40, "h": 16 },
+    "source": "Streamlit Demo"
+  }
+}

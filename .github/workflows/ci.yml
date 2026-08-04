@@ -1,22 +1,49 @@
-name: ci
+name: CI
+
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A newer push supersedes an in-flight run on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  scrub:
+  check:
+    name: Typecheck, test, build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Scrub gate — no private infrastructure details
-        run: bash scripts/scrub-check.sh
-  # Enabled when v3.0.0 code lands:
-  # check:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: pnpm/action-setup@v4
-  #     - uses: actions/setup-node@v4
-  #       with: { node-version: 20, cache: pnpm }
-  #     - run: pnpm install --frozen-lockfile
-  #     - run: pnpm typecheck
-  #     - run: pnpm test:run
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # `pnpm test` is watch mode and would hang a runner forever.
+      # The live-endpoint suite is skipped unless OPENBB_LIVE=1, which is
+      # never set here: CI must not need the private tailnet.
+      - name: Test
+        run: pnpm test:run
+
+      # Also exercises scripts/generate-capabilities.mjs, which runs first.
+      # With no .env.local it warns and falls back to a wildcard HTTP scope —
+      # expected on a runner, and the warning is visible in the log.
+      - name: Build web assets
+        run: pnpm build
+
+      - name: Check the working tree is clean
+        # Catches a generated file that was committed by mistake, or a build
+        # that writes into a tracked path.
+        run: git diff --exit-code

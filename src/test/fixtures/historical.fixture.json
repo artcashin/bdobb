@@ -1,0 +1,11 @@
+{
+  "results": [
+    { "date": "2026-07-01", "open": 293.44, "high": 296.59, "low": 289.2, "close": 294.38, "volume": 50164200, "adjusted_close": 294.38 },
+    { "date": "2026-07-02", "open": 294.12, "high": 309.42, "low": 293.68, "close": 308.63, "volume": 75352800, "adjusted_close": 308.63 },
+    { "date": "2026-07-06", "open": 307.36, "high": 314.2, "low": 307.0, "close": 312.66, "volume": 53590000, "adjusted_close": 312.66 }
+  ],
+  "provider": "eodhd",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

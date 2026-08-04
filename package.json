@@ -1,0 +1,56 @@
+{
+  "name": "bdobb",
+  "private": true,
+  "version": "3.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.34.4",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "node scripts/generate-capabilities.mjs && vite",
+    "build": "node scripts/generate-capabilities.mjs && tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:ui": "vitest --ui",
+    "linux:deps": "bash scripts/linux-build.sh deps",
+    "linux:build": "bash scripts/linux-build.sh build",
+    "typecheck": "tsc --noEmit",
+    "capabilities": "node scripts/generate-capabilities.mjs"
+  },
+  "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-http": "^2.5.9",
+    "@tauri-apps/plugin-opener": "^2",
+    "plotly.js-dist-min": "^3.7.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-grid-layout": "^2.2.4",
+    "react-markdown": "^10.1.0",
+    "react-resizable": "^4.0.2",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/react-hooks": "^8.0.1",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@types/react-grid-layout": "^2.1.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react-swc": "^4.3.3",
+    "@vitest/coverage-v8": "3.2.7",
+    "@vitest/ui": "^3.2.7",
+    "jsdom": "^30.0.1",
+    "typescript": "~5.8.3",
+    "vite": "8.2.0",
+    "vitest": "3.2.7"
+  }
+}

@@ -1,11 +1,33 @@
 node_modules/
+target/
 dist/
-src-tauri/target/
-src-tauri/gen/apple/
-src-tauri/capabilities/default.json
-.reference-backend/
-.env.local
+coverage/
+
+# Local machine / deployment configuration — never commit real endpoints,
+# hostnames, tailnet names or credentials. Copy .env.example to .env.local.
 .env
-scripts/scrub-private-patterns.txt
-*.log
+.env.local
+.env.*.local
+*.local.json
+
+.claude/settings.local.json
+.worktrees/
+.superpowers/
+
 .DS_Store
+
+# Generated from src-tauri/capability.template.json by scripts/generate-capabilities.mjs.
+# Names real hosts, so it is not committed.
+src-tauri/capabilities/default.json
+
+# Pre-scrub history bundles. These contain the UNREDACTED history —
+# real hostnames, tailnet name and IPs — so they must never be committed.
+.backups/
+*.bundle
+
+# OpenBB's reference backend, cloned on demand by scripts/reference-backend.sh
+# as a local test environment. Upstream's checkout and its virtualenv.
+.reference-backend/
+scripts/scrub-private-patterns.txt
+src-tauri/gen/apple/
+.claude/

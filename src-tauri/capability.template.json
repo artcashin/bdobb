@@ -1,0 +1,42 @@
+{
+  "$schema": "./gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "BDOBB main window: HTTP to any host + $APPDATA fs. GENERATED from this template by scripts/generate-capabilities.mjs \u2014 edit the template, not default.json.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "http://*/*" },
+        { "url": "http://*:*/*" },
+        { "url": "https://*/*" },
+        { "url": "https://*:*/*" }
+      ]
+    },
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "dialog:allow-save",
+    "dialog:allow-open",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-read-dir",
+    "fs:allow-rename",
+    "fs:allow-remove",
+    "fs:allow-stat",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        {
+          "path": "$APPDATA"
+        },
+        {
+          "path": "$APPDATA/**"
+        }
+      ]
+    }
+  ]
+}

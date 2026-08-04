@@ -1,0 +1,1039 @@
+/* Erbos Draco Open NBP — the dot-matrix face, used for the Clock widget's time.
+   The zip ships two: the plain face is the photographic negative of this one,
+   a solid block with the dots knocked out, which reads as a solid blob at
+   display sizes. This is the one with discrete dots.
+   CC BY-SA 3.0 by Nate Halley; see src/assets/fonts/LICENSE.md, which has to
+   ship with the binary. Bundled rather than fetched: the app runs on a private
+   tailnet and must not depend on a font CDN it is not allowed to reach. */
+@font-face {
+  font-family: "Erbos Draco NBP";
+  src: url("./assets/fonts/ErbosDracoOpenNBP-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  /* The clock renders immediately in the fallback and swaps when the face is
+     ready, rather than showing nothing for up to three seconds. */
+  font-display: swap;
+}
+
+/* The other face from the same download: the dots filled in, which reads as an
+   ordinary LED typeface at sizes where the matrix mushes together. Offered as
+   a card option because the matrix needs roughly 32px to resolve on a
+   non-HiDPI display, and 26px is the layout's natural size. */
+@font-face {
+  font-family: "Erbos Draco Solid";
+  src: url("./assets/fonts/ErbosDracoNBP-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --bg: #0e1116;
+  --bg-panel: #151a21;
+  --bg-card: #1a212b;
+  --border: #2a3441;
+  --text: #d8dee9;
+  --text-dim: #8792a2;
+  --accent: #4f8cc9;
+  --error: #d9695f;
+  /* Phosphor green for the clock. Brighter than the candlestick green so it
+     reads as an LED display rather than as a gain. */
+  --clock-green: #3dff8a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+/* ---- app shell ---- */
+.app-shell {
+  display: flex;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+.main-area {
+  flex: 1;
+  min-width: 0;
+  margin-left: 48px;   /* room for the collapsed rail */
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+/* ---- left rail ---- */
+.left-rail {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 48px;
+  transition: width 0.3s ease-in-out;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+  overflow: hidden;
+}
+.left-rail.expanded { width: 240px; box-shadow: 4px 0 16px rgba(0,0,0,0.5); }
+.rail-top { flex: 1; }
+.rail-bottom { border-top: 1px solid var(--border); }
+.rail-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--text);
+  white-space: nowrap;
+  text-align: left;
+}
+.rail-item:hover { background: var(--bg-card); }
+.rail-icon { width: 20px; text-align: center; flex: none; }
+.rail-dash-list { padding-left: 44px; }
+.rail-dash-list button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--text-dim);
+  padding: 4px 0;
+}
+.rail-dash-list button.active { color: var(--accent); }
+
+/* ---- placeholder overlays (replaced by Tasks 8 and 17) ---- */
+/* These must overlay, not push, the flex-laid-out .app-shell — that reflow
+   is exactly what the rail/pane overlay pattern above exists to avoid. */
+.library-panel {
+  position: absolute;
+  left: 48px; right: 24px; top: 0; bottom: 0;
+  z-index: 30;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  padding: 16px;
+  overflow: auto;
+}
+.modal-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* ---- shared bits used by later tasks ---- */
+.error-box { color: var(--error); padding: 8px; }
+.placeholder-box { color: var(--text-dim); padding: 8px; }
+/* Visually hidden but still in the accessibility tree (unlike display:none
+   or visibility:hidden, which remove a node from it). Standard clip-rect/1px
+   technique. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.raw-json {
+  overflow: auto;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  white-space: pre;
+  margin: 0;
+  padding: 8px;
+}
+
+/* ---- dashboard tabs + grid ---- */
+.dash-tabs {
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex: none;
+}
+.dash-tab { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 4px; }
+.dash-tab.active { border-color: var(--accent); }
+.dash-tab-name { border: none; background: none; }
+.dash-tab-close { border: none; background: none; color: var(--text-dim); padding: 2px 6px; }
+.dash-tab-add { margin-left: 4px; }
+
+/* ---- save-error banner (Finding 2) ---- */
+/* ---- widget card ---- */
+.widget-card {
+  height: 100%;
+  /* Containing block for .card-hover-panel, which is absolutely positioned. */
+  position: relative;
+  display: flex; flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.card-header {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex: none;
+}
+.card-title {
+  cursor: grab; font-weight: 600; flex: 1; min-width: 60px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card-actions { display: flex; gap: 4px; }
+/* The hover controls had no rule at all, so they laid out in normal flow and
+   pushed the card's header and body down every time the pointer entered it. */
+.card-hover-panel {
+  position: absolute; top: 4px; right: 4px; z-index: 2;
+  display: flex; gap: 4px;
+  padding: 2px; border-radius: 6px;
+  background: var(--bg-card); border: 1px solid var(--border);
+}
+.card-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
+
+/* ---- renderer containers ---- */
+.renderer-error {
+  padding: 16px;
+  color: var(--error);
+  text-align: center;
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  background: rgba(217, 105, 95, 0.1);
+}
+
+/* ---- modal ---- */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+}
+.modal-content {
+  position: relative; width: 100%; max-width: 672px; max-height: 90vh;
+  overflow: hidden; border-radius: 8px;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title {
+  font-size: 18px; font-weight: 600; color: var(--text);
+}
+.modal-close-btn {
+  border: none; background: none; cursor: pointer;
+  color: var(--text-dim); width: 20px; height: 20px; padding: 0;
+}
+.modal-close-btn:hover { color: var(--text); }
+.modal-close-icon {
+  width: 20px; height: 20px;
+}
+.modal-body {
+  flex: 1; overflow-y: auto; padding: 16px 24px;
+}
+.modal-footer {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 12px; padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  background: rgba(21, 26, 33, 0.5);
+}
+
+/* ---- param controls ---- */
+.param-controls {
+  padding: 16px;
+  background: var(--bg);
+  border-radius: 8px;
+}
+.param-controls-title {
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.param-controls-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+.param-controls-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+}
+.param-controls-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.param-controls-checkbox {
+  margin-right: 8px;
+}
+.param-controls-help {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.param-controls-load-btn {
+  font-size: 12px;
+  color: var(--accent);
+}
+.param-controls-load-btn:hover {
+  color: var(--text);
+}
+.param-controls-row {
+  margin-bottom: 12px;
+}
+.param-controls-row:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- backends dialog ---- */
+.backends-header {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.backends-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.backends-add-btn {
+  padding: 6px 12px;
+  background: var(--accent);
+  color: white;
+  border-radius: 4px;
+  border: none; cursor: pointer;
+  font-size: 13px;
+}
+.backends-add-btn:hover { opacity: 0.9; }
+.backends-list {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 60vh; overflow-y: auto;
+}
+.backend-item {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 12px;
+  background: rgba(21, 26, 33, 0.5);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+.backend-item-info {
+  flex: 1; min-width: 0;
+}
+.backend-item-name {
+  font-weight: 500;
+  color: var(--text);
+}
+.backend-item-auth-badge {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+.backend-item-url {
+  font-size: 13px;
+  font-family: monospace;
+  color: var(--text);
+  word-break: break-all;
+  margin-top: 4px;
+}
+.backend-item-actions {
+  display: flex; gap: 8px;
+  margin-left: 16px;
+  flex-shrink: 0;
+}
+.backend-btn {
+  padding: 6px;
+  border-radius: 4px;
+  border: none; cursor: pointer;
+  background: none;
+}
+.backend-btn svg {
+  width: 16px; height: 16px;
+  display: block;
+}
+.backend-btn.edit {
+  color: var(--text-dim);
+}
+.backend-btn.edit:hover {
+  color: var(--accent);
+  background: var(--border);
+}
+.backend-btn.delete {
+  color: var(--text-dim);
+}
+.backend-btn.delete:hover {
+  color: var(--error);
+  background: var(--border);
+}
+.backend-form-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.backend-form-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+.backend-form-field {
+  margin-bottom: 12px;
+}
+.backend-form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.backend-form-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+}
+.backend-form-input:focus {
+  outline: none; border-color: var(--accent);
+}
+.backend-empty {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-dim);
+}
+.backend-empty p { margin: 0; }
+.backend-empty .hint { font-size: 13px; margin-top: 8px; }
+
+/* ---- settings dialog ---- */
+/* Settings tab strip: a real tablist, styled like the dashboard tabs so the
+   two read as the same control. */
+.settings-tabs {
+  display: flex; gap: 4px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-tab {
+  padding: 6px 12px;
+  background: none; border: none; border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--text-dim); font-size: 12px;
+}
+.settings-tab:hover { color: var(--text); border-color: var(--border); }
+.settings-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.settings-section {
+  margin-bottom: 24px;
+}
+.settings-section-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.settings-field {
+  margin-bottom: 12px;
+}
+.settings-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.settings-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+}
+.settings-input:focus {
+  outline: none; border-color: var(--accent);
+}
+.settings-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.settings-toggle {
+  display: flex; align-items: center; gap: 12px;
+}
+.settings-toggle-label {
+  font-size: 14px;
+  color: var(--text);
+}
+.settings-toggle-switch {
+  position: relative;
+  width: 44px; height: 24px;
+  background: var(--border);
+  border-radius: 24px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.settings-toggle-switch.active {
+  background: var(--accent);
+}
+.settings-toggle-thumb {
+  position: absolute; top: 2px; left: 2px;
+  width: 20px; height: 20px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.settings-toggle.active .settings-toggle-thumb {
+  transform: translateX(20px);
+}
+.settings-toggle-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.mcp-server-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px;
+  background: rgba(21, 26, 33, 0.5);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+.mcp-server-info {
+  display: flex; align-items: center; gap: 8px;
+}
+.mcp-server-url {
+  font-family: monospace;
+  color: var(--text);
+}
+.mcp-status-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.mcp-status-badge.enabled {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--success);
+}
+.mcp-status-badge.disabled {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--error);
+}
+.mcp-server-actions {
+  display: flex; gap: 8px;
+}
+.mcp-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: none; cursor: pointer;
+}
+.mcp-btn.enable {
+  background: var(--border);
+  color: var(--text);
+}
+.mcp-btn.enable:hover { background: var(--border); }
+.mcp-btn.remove {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+}
+.mcp-btn.remove:hover { background: rgba(239, 68, 68, 0.2); }
+.mcp-add-row {
+  display: flex; gap: 8px;
+}
+.mcp-add-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+}
+.mcp-add-input:focus {
+  outline: none; border-color: var(--accent);
+}
+.settings-reload-btn {
+  padding: 8px 16px;
+  background: var(--accent);
+  color: white;
+  border-radius: 4px;
+  border: none; cursor: pointer;
+}
+.settings-reload-btn:hover { opacity: 0.9; }
+
+/* ---- widget library ---- */
+.widget-library {
+  display: flex; flex-direction: column; height: 100%;
+}
+.widget-library-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.widget-library-header-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.widget-library-title {
+  font-size: 18px; font-weight: 600; color: var(--text);
+}
+.widget-library-close {
+  border: none; background: none; cursor: pointer;
+  color: var(--text-dim); width: 20px; height: 20px; padding: 0;
+}
+.widget-library-close:hover { color: var(--text); }
+.widget-library-close-icon {
+  width: 20px; height: 20px;
+}
+.widget-library-search-container {
+  margin-bottom: 12px;
+}
+.widget-library-search {
+  width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--bg); color: var(--text);
+  font-size: 13px;
+}
+.widget-library-search:focus { outline: none; border-color: var(--accent); }
+.widget-library-categories {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.widget-library-category-btn {
+  padding: 4px 12px; border-radius: 12px; font-size: 11px; border: none;
+  background: var(--bg-card); color: var(--text-dim); cursor: pointer;
+}
+.widget-library-category-btn:hover { background: var(--bg); }
+.widget-library-category-btn.widget-library-category-btn-active {
+  background: var(--accent); color: white;
+}
+.widget-library-provider-filter {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+}
+.widget-library-provider-select {
+  font-size: 11px; padding: 3px 6px; max-width: 200px;
+}
+.widget-library-list {
+  flex: 1; overflow-y: auto; padding: 16px;
+}
+.widget-library-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; color: var(--text-dim);
+}
+.widget-library-empty-text {
+  font-size: 13px;
+}
+.widget-library-grid {
+  display: grid; grid-template-columns: 1fr; gap: 12px;
+}
+.widget-library-widget {
+  cursor: pointer; padding: 16px; border-radius: 8px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  /* The entry is a <button> so it is keyboard reachable; these undo the UA
+     button defaults (centred text, system font, shrink-to-fit) that would
+     otherwise change how the list looks. */
+  display: block; width: 100%; text-align: left;
+  font: inherit; color: inherit;
+}
+.widget-library-widget:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.widget-library-widget:hover {
+  border-color: var(--accent);
+}
+.widget-library-widget-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.widget-library-widget-title {
+  /* Was an <h3>; a heading is not valid inside a button, so it is a span that
+     has to be told to occupy its own line. */
+  display: block;
+  font-weight: 500; color: var(--text); margin-bottom: 4px;
+}
+.widget-library-widget-category-row {
+  display: flex; align-items: center; gap: 4px; font-size: 12px;
+}
+.widget-library-widget-category {
+  color: var(--text-dim);
+}
+.widget-library-widget-separator {
+  color: var(--text-dim);
+}
+.widget-library-widget-type {
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
+  background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
+}
+.widget-library-widget-badges {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  flex: none;
+}
+/* Provider pill: green when this deployment holds a working key (or none is
+   needed), red when the key is required and missing, neutral while unknown.
+   The green/red pair is defined here rather than reused from live-grid —
+   these classes roll up into snapshots that predate it. */
+.widget-library-widget-provider {
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
+  white-space: nowrap;
+}
+.widget-library-widget-provider.keyed { background: #4caf7d; color: #0e1116; }
+.widget-library-widget-provider.unkeyed { background: #d9695f; color: #0e1116; }
+.widget-library-widget-provider.unknown {
+  background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
+}
+.widget-library-widget-desc {
+  font-size: 13px; color: var(--text-dim);
+}
+
+
+
+/* ---- widget renderers ----
+   Every renderer root fills its card; without an explicit height an iframe
+   falls back to the UA default 300x150 and a Plotly div collapses. */
+.chart-container,
+.table-container,
+.html-container,
+.iframe-container,
+.markdown-container,
+.metric-container,
+.raw-json-view,
+.unsupported-container {
+  width: 100%; height: 100%;
+  overflow: auto;
+}
+.plotly-chart { width: 100%; height: 100%; min-height: 160px; }
+.html-iframe, .iframe-widget {
+  width: 100%; height: 100%;
+  border: none; display: block;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.table th, .table td {
+  padding: 4px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.table th {
+  position: sticky; top: 0;
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.table th.sortable { cursor: pointer; user-select: none; }
+.table th.sortable:hover { color: var(--text); }
+.table-pagination {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px;
+  font-size: 12px; color: var(--text-dim);
+}
+/* Keys widget: a key-state pill and a vendor-reachability dot per provider
+   row. Colour is never the only carrier — the pill's own text names the
+   state, and the dot carries an aria-label naming the server result — so
+   both classes below exist purely as a visual reinforcement of text that's
+   already there. Reuses the green/red pair from .widget-library-widget-provider
+   (#4caf7d / #d9695f) and the amber already used for warnings elsewhere in
+   this file (#d9a75f), with the same dark-on-light pill text (#0e1116). */
+.keys-provider { display: inline-block; }
+.keys-pill {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
+  white-space: nowrap;
+}
+.keys-pill.own { background: #4caf7d; color: #0e1116; }
+.keys-pill.demo { background: #d9a75f; color: #0e1116; }
+.keys-pill.unset { background: #d9695f; color: #0e1116; }
+.keys-pill.unknown {
+  background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
+}
+/* The dot has no text of its own — a plain circle would fail contrast and
+   colour-blind readers alike, so aria-label carries the same state the pill
+   states in words. */
+.keys-dot {
+  display: inline-block;
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.keys-dot.ok { background: #4caf7d; }
+.keys-dot.warn { background: #d9a75f; }
+.keys-dot.down { background: #d9695f; }
+.keys-dot.idle { background: var(--text-dim); }
+
+/* Keys widget: the Refresh control that re-runs the ~18-vendor probe sweep,
+   and the row context menu ("Test this service") that re-probes just one
+   provider. Both are the only way to (re-)probe — a re-render never does. */
+.keys-toolbar {
+  display: flex; justify-content: flex-end;
+  padding: 4px 8px;
+}
+.keys-refresh {
+  font-size: 11px; padding: 3px 10px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.keys-refresh:hover:not(:disabled) { border-color: var(--text-dim); }
+.keys-refresh:disabled { opacity: 0.6; cursor: default; }
+.keys-context-menu-anchor { z-index: 100; }
+.keys-context-menu {
+  list-style: none; margin: 0; padding: 4px;
+  min-width: 160px;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.keys-context-menu li[role="menuitem"] {
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+  color: var(--text);
+}
+.keys-context-menu li[role="menuitem"]:hover,
+.keys-context-menu li[role="menuitem"]:focus {
+  background: var(--bg); outline: none;
+}
+
+/* Keys widget: the tier-3 inline editor. The button collapses to the form
+   on click; the input is password-masked (type="password") so the value
+   never appears as plaintext on screen either, on top of never reaching a
+   URL, log, title, or React key -- see KeysRenderer's module-level secrecy
+   note. The restart notice reuses the amber warning colour: it is not an
+   error, but it is something the user must act on (the running API cannot
+   see the new key until openbb-api restarts). */
+.keys-edit-btn {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.keys-edit-btn:hover { border-color: var(--text-dim); }
+.keys-edit-form {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+.keys-edit-form input[type="password"] {
+  font-size: 11px; padding: 2px 6px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  width: 160px;
+}
+.keys-edit-form button {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.keys-edit-form button:disabled { opacity: 0.6; cursor: default; }
+.keys-edit-error {
+  font-size: 11px; color: #d9695f;
+  flex-basis: 100%;
+}
+.keys-restart-notice {
+  padding: 6px 8px; margin: 0 8px 8px;
+  font-size: 12px; color: #0e1116; background: #d9a75f;
+  border-radius: 4px;
+}
+
+.metric-value { font-size: 28px; font-weight: 600; color: var(--text); }
+.metric-container { display: flex; align-items: center; justify-content: center; }
+.raw-json-view pre {
+  margin: 0; padding: 8px;
+  font-size: 11px; line-height: 1.4;
+  white-space: pre-wrap; word-break: break-word;
+}
+.markdown-container { padding: 8px; font-size: 13px; }
+
+/* Distinguish "nothing to show yet" from "this broke". */
+.renderer-empty {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; padding: 12px;
+  color: var(--text-dim); font-size: 13px;
+}
+.renderer-error-detail {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  white-space: pre-wrap; word-break: break-word;
+  color: var(--text-dim);
+}
+
+/* ---- built-in widgets ---- */
+/* Multi-zone clock. Each row is three columns: city, a stacked offset/zone
+   meta block, and the time. City and time are double height; the meta lines are
+   single, so the two of them together occupy the same height. */
+.clock-list {
+  height: 100%; overflow-y: auto; padding: 2px 0;
+  /* Establishes the container the width query below measures. The card is
+     resizable, so this has to respond to the card rather than the window. */
+  container-type: inline-size;
+}
+.clock-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  grid-template-areas: "city meta time";
+  align-items: center;
+  column-gap: 16px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.clock-row:last-of-type { border-bottom: none; }
+
+.clock-city {
+  grid-area: city;
+  font-size: 26px; line-height: 1.15; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.clock-meta {
+  grid-area: meta;
+  display: flex; flex-direction: column; align-items: flex-end;
+  font-size: 11px; line-height: 1.35; color: var(--text-dim);
+  white-space: nowrap;
+}
+.clock-offset { font-variant-numeric: tabular-nums; }
+.clock-zone { opacity: 0.8; }
+
+.clock-time {
+  grid-area: time;
+  font-family: "Erbos Draco NBP", ui-monospace, SFMono-Regular, Menlo, monospace;
+  display: inline-flex; align-items: baseline;
+  font-size: 26px; line-height: 1.15; font-weight: 400;
+  /* The face is monospaced, but the fallback may not be — without this the
+     digits jitter every second until the font loads. */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  color: var(--clock-green);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--clock-green) 40%, transparent);
+  white-space: nowrap;
+}
+
+/* Not wide enough for three columns: the meta block drops beneath the city and
+   time rather than squeezing them or forcing the row to scroll sideways. */
+@container (max-width: 340px) {
+  .clock-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "city time"
+      "meta meta";
+    row-gap: 2px;
+  }
+  .clock-meta { flex-direction: row; gap: 8px; align-items: baseline; justify-content: flex-start; }
+}
+
+.clock-time.solid { font-family: "Erbos Draco Solid", ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* The solid face is an inverse font — each glyph is a full-width solid tile
+   with the dots punched out as holes — so the dots-face pull would slide the
+   colon's solid tile OVER the neighbouring digits' holes and visibly eat
+   their edge columns. Its colon holes also sit near-centre (134–249 of a
+   448-unit tile), so only a slight asymmetric nudge is needed, capped where
+   the tiles would start covering hole columns. */
+.clock-time.solid .clock-colon { margin: 0 -0.10em 0 -0.04em; }
+
+/* The face is monospaced, so ":" claims a full cell and leaves a gap either
+   side wide enough to read as a word break. Pulling it in makes it
+   proportional without touching the digits, which must stay monospaced or
+   they jitter every second. The pull is asymmetric because the colon's dots
+   sit hard-left in their cell (ink 12–243 of a 903-unit advance): matching
+   the digits' bearings needs 384/1024em more taken off the right than the
+   left for the visual gaps to come out equal — then one dot-grid pitch
+   (dot plus its gap, 128/1024em = 0.125em) is given back on each side so
+   the colon reads as its own glyph rather than abutting the digits. */
+.clock-colon { margin: 0 -0.47em 0 -0.095em; }
+
+/* A bare A or P rather than Intl's AM/PM: at this size the two extra glyphs
+   cost more width than the row can spare. */
+.clock-meridiem { font-size: 0.55em; margin-left: 0.28em; opacity: 0.85; }
+
+.clock-invalid { padding: 8px 12px; font-size: 11px; color: var(--error); }
+
+.note-view {
+  /* A flex column, not display:block: a <button> centres its content
+     vertically whatever its display is, which left a written note floating in
+     the middle of the card instead of starting at the top. */
+  display: flex; flex-direction: column; justify-content: flex-start;
+  align-items: stretch;
+  width: 100%; height: 100%;
+  padding: 10px 12px; text-align: left;
+  font: inherit; color: inherit;
+  background: none; border: none; cursor: text;
+  overflow: auto;
+}
+.note-view.empty { justify-content: center; align-items: center; cursor: pointer; }
+.note-placeholder { color: var(--text-dim); font-size: 13px; }
+.note-markdown { font-size: 13px; line-height: 1.5; }
+.note-markdown > :first-child { margin-top: 0; }
+.note-markdown > :last-child { margin-bottom: 0; }
+.iframe-container { position: relative; height: 100%; }
+.iframe-widget { width: 100%; height: 100%; border: none; }
+/* A strip along the bottom of the frame. Sites that refuse embedding render
+   blank with no cross-origin signal to detect it, so both the explanation and
+   the way out are always present rather than shown on a failure we cannot see. */
+.iframe-footer {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--bg-panel) 88%, transparent);
+  border-top: 1px solid var(--border);
+}
+.iframe-hint {
+  font-size: 11px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.iframe-external {
+  flex: none;
+  font: inherit; font-size: 11px; padding: 3px 8px; border-radius: 4px;
+  color: var(--text); background: var(--bg-card);
+  border: 1px solid var(--border); cursor: pointer;
+}
+.iframe-external:hover { border-color: var(--accent); }
+/* Room for the strip so it never covers the framed page's own content. */
+.iframe-widget { padding-bottom: 0; }
+
+/* Shown in place of the frame when the preflight found the site forbids it —
+   the case that otherwise renders as an unexplained blank rectangle. */
+.iframe-refused {
+  height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px;
+  padding: 16px; text-align: center;
+}
+.iframe-refused strong { font-size: 13px; color: var(--text); font-weight: 600; }
+.iframe-refused-host { font-size: 12px; color: var(--text); }
+.iframe-refused-reason {
+  font-size: 11px; color: var(--text-dim);
+  max-width: 90%; word-break: break-word;
+}
+.iframe-refused .iframe-external { margin-top: 8px; }
+
+.note-editor {
+  width: 100%; height: 100%; resize: none;
+  padding: 10px 12px;
+  font: inherit; font-size: 13px; line-height: 1.5;
+  color: var(--text); background: var(--bg-card);
+  border: 1px solid var(--accent); border-radius: 4px;
+  outline: none;
+}
+
+/* Amber advisory under a form field: the value needs attention but nothing
+   is blocked. */
+.backend-form-warn {
+  display: block; margin-top: 4px;
+  font-size: 11px; line-height: 1.5; color: #d9a75f;
+}
+
