@@ -1,16 +1,77 @@
 # BDOBB — Better Desktop for OpenBB
 
 A Tauri 2 desktop app for self-hosted OpenBB stacks — the frontend of the
-**Adventures in OpenBB** series. Each tagged release is the companion code
-for one episode: check out the tag, follow that episode's "For the
-tinkerers" section, and the app has exactly that chapter's functionality.
+**Adventures in OpenBB** series. Each tagged release is the companion code for
+one episode: check out the tag, follow that episode's "For the tinkerers"
+section, and the app has exactly that chapter's functionality.
 
-*The release map fills in here as episodes publish.*
+| Release | Episode | What it adds |
+|---|---|---|
+| v3.0.0 | Ep. 3 — I Asked for Electron and Got Talked Out of It | The app: hover rail, dashboard grid, widget renderers, built-ins (Note, Clock, Website), key status widget, backends & settings |
 
-**Status: scaffold — v3.0.0 in progress.**
+## What you get (this release: v3.0.0)
 
-Endpoints are supplied by your environment (`.env.local`, gitignored), never
-committed; the HTTP capability allowlist is generated from it at build time.
-CI runs `scripts/scrub-check.sh` to keep private infrastructure out.
+- **Dashboard grid** — drag, resize, remove widget cards; multiple dashboards
+  in a tab strip; everything persists as plain JSON files you can back up.
+- **Widget system** — discovery from any `widgets.json` backend (Episode 1's
+  stack, or any OpenBB-protocol backend); renderers for tables (sortable,
+  type-aware formatting), interactive Plotly charts, markdown, HTML, PDFs,
+  metrics, and a raw-JSON fallback that means malformed data never blanks a
+  card. Per-card parameters generated from the widget definition.
+- **Built-in widgets** that need no backend at all: **Note** (markdown),
+  **Clock** (market hours across venues, LED typeface), **Website** (frame a
+  page — with an honest in-card explanation when a site refuses framing).
+- **Hover panels** — an icon-width left rail and overlay panels that get out
+  of the way; the dashboard never reflows.
+- **Backends & settings** — add/edit backends with connection status; a
+  rotating app log viewable in Settings.
 
-MIT licensed.
+## Quick start
+
+```bash
+git clone https://github.com/artcashin/bdobb
+cd bdobb
+cp .env.example .env.local      # point VITE_OPENBB_API_URL at your backend
+pnpm install
+pnpm tauri dev                  # the desktop window (pnpm dev for frontend only)
+```
+
+Prereqs: Node 22+ with pnpm (`corepack enable pnpm`) and the Rust toolchain.
+
+The Tauri HTTP capability allowlist is **generated** from `.env.local` by
+`scripts/generate-capabilities.mjs` (run automatically by dev/build) — edit
+`src-tauri/capability.template.json`, never the generated `default.json`.
+With no `.env.local` the scope falls back to `https://*.ts.net/*` so a fresh
+clone still builds; pass `--strict` to make that a build failure (the release
+workflow does).
+
+## Build
+
+```bash
+pnpm tauri build                       # this machine (macOS/Windows)
+pnpm linux:deps && pnpm linux:build    # Linux x86_64 or arm64
+```
+
+Tagging `v*` builds macOS (Apple Silicon + Intel), Windows x64, and Linux
+(x86_64 + arm64) and opens a draft release. Everything is unsigned: first
+launch is right-click-Open on macOS, "More info → Run anyway" on Windows.
+See [docs/building.md](docs/building.md).
+
+## Testing
+
+```bash
+pnpm test:run      # unit + component suites (no live services needed)
+pnpm typecheck
+```
+
+## Configuration files
+
+Settings persist in `$APPDATA` (on macOS,
+`~/Library/Application Support/com.artcashin.bdobb/`): `settings.json`,
+`backends.json`, `dashboards/` (one JSON file per dashboard — back up freely),
+`logs/bdobb.log`.
+
+## License
+
+MIT. The Clock widget's typeface (Erbos Draco NBP, CC BY-SA 3.0) is bundled —
+attribution in `src/assets/fonts/`.
