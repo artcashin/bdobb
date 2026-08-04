@@ -1,0 +1,96 @@
+event: copilotMessageChunk
+data: {"delta":"A"}
+
+event: copilotMessageChunk
+data: {"delta":" stock"}
+
+event: copilotMessageChunk
+data: {"delta":" split"}
+
+event: copilotMessageChunk
+data: {"delta":" i"}
+
+event: copilotMessageChunk
+data: {"delta":"s a"}
+
+event: copilotMessageChunk
+data: {"delta":" corporate"}
+
+event: copilotMessageChunk
+data: {"delta":" action"}
+
+event: copilotMessageChunk
+data: {"delta":" that"}
+
+event: copilotMessageChunk
+data: {"delta":" increase"}
+
+event: copilotMessageChunk
+data: {"delta":"s the"}
+
+event: copilotMessageChunk
+data: {"delta":" number"}
+
+event: copilotMessageChunk
+data: {"delta":" of"}
+
+event: copilotMessageChunk
+data: {"delta":" share"}
+
+event: copilotMessageChunk
+data: {"delta":"s outstanding"}
+
+event: copilotMessageChunk
+data: {"delta":" by"}
+
+event: copilotMessageChunk
+data: {"delta":" dividing"}
+
+event: copilotMessageChunk
+data: {"delta":" existing"}
+
+event: copilotMessageChunk
+data: {"delta":" share"}
+
+event: copilotMessageChunk
+data: {"delta":"s into"}
+
+event: copilotMessageChunk
+data: {"delta":" multiple"}
+
+event: copilotMessageChunk
+data: {"delta":" share"}
+
+event: copilotMessageChunk
+data: {"delta":"s,"}
+
+event: copilotMessageChunk
+data: {"delta":" typically"}
+
+event: copilotMessageChunk
+data: {"delta":" to"}
+
+event: copilotMessageChunk
+data: {"delta":" make"}
+
+event: copilotMessageChunk
+data: {"delta":" the"}
+
+event: copilotMessageChunk
+data: {"delta":" stock"}
+
+event: copilotMessageChunk
+data: {"delta":" more"}
+
+event: copilotMessageChunk
+data: {"delta":" affordable"}
+
+event: copilotMessageChunk
+data: {"delta":" to"}
+
+event: copilotMessageChunk
+data: {"delta":" investor"}
+
+event: copilotMessageChunk
+data: {"delta":"s."}
+

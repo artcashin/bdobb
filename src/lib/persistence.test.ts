@@ -33,17 +33,37 @@ describe("settings", () => {
     expect(files.has(LOG_FILE)).toBe(false);
   });
 
-  it("setSettings writes file and getSettings reads it back", async () => {
-    const settings = { theme: "dark" as const };
+  it("setSettings writes file", async () => {
+    const settings = {
+      ritaUrl: "http://localhost:8000",
+      theme: "dark" as const,
+      contextSharing: true,
+      mcpServers: [] as any[],
+    };
     await persistence.setSettings(settings);
-    expect(JSON.parse(files.get("settings.json")!)).toEqual(settings);
-    expect(await persistence.getSettings()).toEqual(settings);
+    const content = files.get("settings.json");
+    expect(JSON.parse(content!)).toEqual(settings);
   });
 
-  it("fills missing keys from defaults (partial settings.json stays valid)", async () => {
-    files.set("settings.json", JSON.stringify({}));
+  it("getSettings reads file", async () => {
+    const settings = {
+      ritaUrl: "http://localhost:8000",
+      theme: "dark" as const,
+      contextSharing: true,
+      mcpServers: [{ id: "1", url: "http://localhost:3000", enabled: true } as any],
+    };
+    files.set("settings.json", JSON.stringify(settings, null, 2));
+    const result = await persistence.getSettings();
+    expect(result).toEqual(settings);
+  });
+
+  it("round-trips saved settings and fills missing keys from defaults", async () => {
+    await persistence.setSettings({ ...persistence.DEFAULT_SETTINGS, contextSharing: false });
+    expect((await persistence.getSettings()).contextSharing).toBe(false);
+    files.set("settings.json", JSON.stringify({ ritaUrl: "http://other:9" }));
     const merged = await persistence.getSettings();
-    expect(merged.theme).toBe(persistence.DEFAULT_SETTINGS.theme);
+    expect(merged.ritaUrl).toBe("http://other:9");
+    expect(merged.mcpServers).toEqual(persistence.DEFAULT_SETTINGS.mcpServers); // filled from defaults
   });
 
   it("invalid JSON returns default", async () => {
@@ -72,18 +92,36 @@ describe("settings", () => {
     expect(files.get(LOG_FILE)).toMatch(/settings\.json.*unexpected shape/);
   });
 
-  it("quarantines settings.json when a known field has the wrong type (field-level, not container-level)", async () => {
-    const bad = JSON.stringify({ theme: "light" });
+  it("quarantines settings.json when mcpServers is present but not an array " +
+    "(desk finding 4 path b: isSettingsShape used to be container-level only -- " +
+    '{"mcpServers":"hello"} survived the merge, and SettingsDialog\'s ' +
+    "settings.mcpServers.map(...) then threw)", async () => {
+    files.set("settings.json", JSON.stringify({ mcpServers: "hello" }));
+    const s = await persistence.getSettings();
+    expect(s).toEqual(persistence.DEFAULT_SETTINGS);
+    expect(files.get("settings.json.corrupt")).toBe(JSON.stringify({ mcpServers: "hello" }));
+  });
+
+  it("quarantines settings.json when an mcpServers entry is missing required fields", async () => {
+    const bad = JSON.stringify({ mcpServers: [{ id: "x" }] });
     files.set("settings.json", bad);
     const s = await persistence.getSettings();
     expect(s).toEqual(persistence.DEFAULT_SETTINGS);
     expect(files.get("settings.json.corrupt")).toBe(bad);
   });
 
-  it("still accepts a settings.json carrying unknown extra keys (a newer release's file loads)", async () => {
-    files.set("settings.json", JSON.stringify({ futureField: 123 }));
+  it("quarantines settings.json when contextSharing is present but not a boolean", async () => {
+    const bad = JSON.stringify({ contextSharing: "yes" });
+    files.set("settings.json", bad);
     const s = await persistence.getSettings();
-    expect(s.theme).toBe("dark");
+    expect(s).toEqual(persistence.DEFAULT_SETTINGS);
+    expect(files.get("settings.json.corrupt")).toBe(bad);
+  });
+
+  it("still accepts a settings.json that only sets some known fields (partial overrides stay valid)", async () => {
+    files.set("settings.json", JSON.stringify({ ritaUrl: "http://other:9" }));
+    const s = await persistence.getSettings();
+    expect(s.ritaUrl).toBe("http://other:9");
     expect(files.has("settings.json.corrupt")).toBe(false);
   });
 
@@ -185,21 +223,53 @@ describe("write-path failures are logged and rethrown", () => {
   });
 });
 
+describe("chat", () => {
+  it("returns an empty chat when no transcript has been written", async () => {
+    expect(await persistence.loadChat()).toEqual({ messages: [], calls: [] });
+  });
+
+  it("round-trips a chat transcript", async () => {
+    const chat = {
+      messages: [{ role: "human", content: "hi" }],
+      calls: [{ kind: "widget_data", at: "2026-08-01T00:00:00Z", label: "w" }],
+    };
+    await persistence.saveChat(chat);
+    expect(await persistence.loadChat()).toEqual(chat);
+  });
+
+  it("quarantines a corrupt transcript instead of losing settings with it", async () => {
+    // The transcript lives in its own file precisely so a bad one cannot take
+    // the app's configuration down with it.
+    files.set("settings.json", JSON.stringify({ ritaUrl: "https://keep.me" }));
+    files.set("chat.json", "not json");
+
+    expect(await persistence.loadChat()).toEqual({ messages: [], calls: [] });
+    expect(files.has("chat.json.corrupt")).toBe(true);
+    expect((await persistence.getSettings()).ritaUrl).toBe("https://keep.me");
+  });
+
+  it("clearChat removes the file", async () => {
+    await persistence.saveChat({ messages: [{ role: "human", content: "x" }], calls: [] });
+    expect(files.has("chat.json")).toBe(true);
+    await persistence.clearChat();
+    expect(files.has("chat.json")).toBe(false);
+  });
+});
+
 describe("concurrent and failed writes", () => {
   it("serializes concurrent writes to the same file instead of colliding", async () => {
     // Four writers in one tick previously shared a Date.now() temp name: the
     // first rename won and the rest rejected with ENOENT, dropping content.
-    const mk = (name: string) => [{ id: "b1", name, baseUrl: "https://x.example.ts.net" }];
     const results = await Promise.allSettled([
-      persistence.saveBackends(mk("a")),
-      persistence.saveBackends(mk("b")),
-      persistence.saveBackends(mk("c")),
-      persistence.saveBackends(mk("d")),
+      persistence.saveSettings({ ...persistence.DEFAULT_SETTINGS, ritaUrl: "https://a" }),
+      persistence.saveSettings({ ...persistence.DEFAULT_SETTINGS, ritaUrl: "https://b" }),
+      persistence.saveSettings({ ...persistence.DEFAULT_SETTINGS, ritaUrl: "https://c" }),
+      persistence.saveSettings({ ...persistence.DEFAULT_SETTINGS, ritaUrl: "https://d" }),
     ]);
 
     expect(results.every((r) => r.status === "fulfilled")).toBe(true);
     // Last writer wins, and the file is whole rather than a lost update.
-    expect((await persistence.loadBackends())[0].name).toBe("d");
+    expect((await persistence.getSettings()).ritaUrl).toBe("https://d");
     // No temp files left behind.
     expect([...files.keys()].filter((k) => k.includes(".tmp."))).toEqual([]);
   });

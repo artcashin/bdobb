@@ -71,6 +71,7 @@ function def(over: Partial<WidgetDef> & { id: string; name: string; type: string
     params: [],
     dataKey: null,
     columnsDefs: null,
+    mcpUrl: null,
     backendId: BUILTIN_BACKEND_ID,
     ...over,
   };

@@ -4,7 +4,7 @@ import {
 import { logError } from "./logger";
 import type { BackendConfig, Dashboard, Settings } from "./types";
 import { newId } from "./uuid";
-import { DEFAULT_API_URL } from "./config";
+import { DEFAULT_API_URL, DEFAULT_RITA_URL, DEFAULT_MCP_SERVERS } from "./config";
 
 export type { BackendConfig, Dashboard, Settings };
 
@@ -13,12 +13,17 @@ const BASE = { baseDir: BaseDirectory.AppData };
 let loadDashboardsPromise: Promise<Dashboard[]> | null = null;
 
 /**
- * The only settings defaults in the app — settingsStore and dialogs read
- * these rather than carrying their own copies, so a dialog opened before
- * load() finishes can never persist stale defaults over real configuration.
+ * The only settings defaults in the app. settingsStore and SettingsDialog each
+ * carried their own copy, and both were wrong in the same way: ritaUrl "" and
+ * mcpServers [] rather than the configured values. Saving from a dialog opened
+ * before load() finished therefore persisted the empty ones over the real
+ * configuration.
  */
 export const DEFAULT_SETTINGS: Settings = {
+  ritaUrl: DEFAULT_RITA_URL,
   theme: "dark",
+  contextSharing: false,
+  mcpServers: DEFAULT_MCP_SERVERS,
 };
 
 export const DEFAULT_BACKENDS: BackendConfig[] = [
@@ -63,15 +68,36 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+function isMcpServerConfig(v: unknown): v is Settings["mcpServers"][number] {
+  return (
+    isPlainObject(v) &&
+    typeof v.id === "string" &&
+    typeof v.url === "string" &&
+    typeof v.enabled === "boolean"
+  );
+}
+
 /**
- * Field-level, not just container-level: every KNOWN field is checked when
- * present (all optional — a partial override merged over DEFAULT_SETTINGS is
- * the normal, valid case); unrecognized extra keys are allowed through
- * unchanged, so a settings.json written by a newer release still loads.
+ * desk finding 4 (path b): this used to be `isPlainObject(v)` only —
+ * container-level, not field-level. `{"mcpServers":"hello"}` parses to a
+ * plain object and survived straight into the merge with DEFAULT_SETTINGS,
+ * so `settings.mcpServers` ended up a string and SettingsDialog's
+ * `settings.mcpServers.map(...)` threw. Every KNOWN field is now checked
+ * when present (all optional, since a partial override — e.g. just
+ * `{"ritaUrl": "..."}` — is the normal, valid case handled by the
+ * DEFAULT_SETTINGS merge in `loadSettings`); unrecognized extra keys
+ * (including qwen-only ones like `shareTargets`) are still allowed through
+ * unchanged, same tolerance as before.
  */
 function isSettingsShape(v: unknown): v is Partial<Settings> {
   if (!isPlainObject(v)) return false;
+  if ("ritaUrl" in v && typeof v.ritaUrl !== "string") return false;
   if ("theme" in v && v.theme !== "dark") return false;
+  if ("contextSharing" in v && typeof v.contextSharing !== "boolean") return false;
+  if ("mcpServers" in v) {
+    if (!Array.isArray(v.mcpServers)) return false;
+    if (!v.mcpServers.every(isMcpServerConfig)) return false;
+  }
   return true;
 }
 
@@ -208,6 +234,38 @@ export async function loadBackends(): Promise<BackendConfig[]> {
 export async function saveBackends(backends: BackendConfig[]): Promise<void> {
   await ensureDirs();
   await writeJsonFile("backends.json", backends);
+}
+
+/**
+ * The chat transcript, so a conversation outlives the process. Kept separate
+ * from settings: it is append-heavy, user content rather than configuration,
+ * and a corrupt transcript must not take the app's settings down with it.
+ */
+const CHAT_FILE = "chat.json";
+
+function isChatShape(v: unknown): v is { messages: unknown[]; calls: unknown[] } {
+  return isPlainObject(v) && Array.isArray(v.messages);
+}
+
+export async function loadChat(): Promise<{ messages: unknown[]; calls: unknown[] }> {
+  await ensureDirs();
+  const c = await readJsonFile(CHAT_FILE, isChatShape);
+  // Absent or quarantined: start empty rather than seeding a file, since an
+  // empty transcript is not worth writing.
+  return c ? { messages: c.messages, calls: Array.isArray(c.calls) ? c.calls : [] } : { messages: [], calls: [] };
+}
+
+export async function saveChat(chat: { messages: unknown[]; calls: unknown[] }): Promise<void> {
+  await ensureDirs();
+  await writeJsonFile(CHAT_FILE, chat);
+}
+
+export async function clearChat(): Promise<void> {
+  try {
+    if (await exists(CHAT_FILE, BASE)) await remove(CHAT_FILE, BASE);
+  } catch (e) {
+    logError(`persistence: failed to clear chat: ${String(e)}`);
+  }
 }
 
 const DASHBOARDS_PATH = "dashboards";

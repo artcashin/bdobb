@@ -5,7 +5,19 @@ Three desktop targets, all production paths.
 Every path runs `scripts/generate-capabilities.mjs` first, because Tauri
 capabilities are compiled into the binary and must exist on disk before cargo
 runs. The HTTP scope is open to any http(s) host — backends are a runtime
-choice — so the script simply materializes the committed template.
+choice — so the script's real work is the fs scope below.
+
+The same script turns `VITE_SHARE_FOLDERS` into the fs scope, which is what
+lets a "Send to…" **file** share target export a Rita conversation into a
+markdown vault (Tolaria, Obsidian) so it can be kept and referenced later —
+the service-backed kinds, `mcp` and `http`, go to Notion or a webhook and need
+no filesystem permission at all. Because dev is permissive and a packaged
+build is not, a file target that works under `pnpm dev` fails in a release
+whose scope omits its folder; that is the usual cause of a share that
+"silently does nothing" only once installed. The paths must be absolute, so
+they are per-machine and belong in `.env.local` rather than in a repository
+variable, which would compile one developer's home directory into every
+published binary.
 
 | Target | Command | Produces | Notes |
 |---|---|---|---|

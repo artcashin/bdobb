@@ -1,0 +1,6 @@
+event: copilotStatusUpdate
+data: {"eventType":"INFO","message":"Loading \"Historical\"","group":"reasoning","details":[{"backend":"OpenBB NAS","name":"Historical","params":{"symbol":"AAPL","provider":"eodhd"}}]}
+
+event: copilotFunctionCall
+data: {"function":"get_widget_data","input_arguments":{"data_sources":[{"widget_uuid":"11111111-2222-3333-4444-555555555555","origin":"OpenBB NAS","id":"equity_price_historical_eodhd_obb","input_args":{"symbol":"AAPL","provider":"eodhd"}}]},"extra_state":{"copilot_function_call_arguments":{"widget_queries":[{"widget_uuid":"11111111-2222-3333-4444-555555555555"}]}}}
+

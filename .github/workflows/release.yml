@@ -91,8 +91,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VITE_OPENBB_API_URL: ${{ vars.VITE_OPENBB_API_URL }}
+          VITE_RITA_URL: ${{ vars.VITE_RITA_URL }}
+          VITE_MCP_SERVERS: ${{ vars.VITE_MCP_SERVERS }}
           # Omitted before, so a released build had no fs:scope entry for the
           # share folders and every "Send to…" file target failed at write.
+          VITE_SHARE_FOLDERS: ${{ vars.VITE_SHARE_FOLDERS }}
         with:
           args: ${{ matrix.args }}
           tagName: ${{ github.ref_name }}

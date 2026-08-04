@@ -1,0 +1,321 @@
+event: copilotStatusUpdate
+data: {"eventType":"INFO","message":"Loaded \"Historical\" data.","group":"reasoning","artifacts":[{"type":"table","uuid":"605d6c36-7af3-42a4-8ae1-c07df872d15a","name":"Historical","description":"Rows loaded from Historical","content":[{"date":"2026-07-28","open":340.03,"high":342.89,"low":335.6,"close":340.08,"volume":51859000,"adjusted_close":340.08},{"date":"2026-07-29","open":339.73,"high":344.57,"low":337.35,"close":338.19,"volume":56090800,"adjusted_close":338.19},{"date":"2026-07-30","open":333.1,"high":334.75,"low":329.59,"close":333.43,"volume":74817800,"adjusted_close":333.43},{"date":"2026-07-31","open":304.81,"high":310.69,"low":300,"close":308.91,"volume":127398021,"adjusted_close":308.91}]}]}
+
+event: copilotMessageChunk
+data: {"delta":"The"}
+
+event: copilotMessageChunk
+data: {"delta":" latest"}
+
+event: copilotMessageChunk
+data: {"delta":" close"}
+
+event: copilotMessageChunk
+data: {"delta":" price"}
+
+event: copilotMessageChunk
+data: {"delta":" for"}
+
+event: copilotMessageChunk
+data: {"delta":" AAP"}
+
+event: copilotMessageChunk
+data: {"delta":"L"}
+
+event: copilotMessageChunk
+data: {"delta":" in"}
+
+event: copilotMessageChunk
+data: {"delta":" the"}
+
+event: copilotMessageChunk
+data: {"delta":" historical"}
+
+event: copilotMessageChunk
+data: {"delta":" data"}
+
+event: copilotMessageChunk
+data: {"delta":" i"}
+
+event: copilotMessageChunk
+data: {"delta":"s **"}
+
+event: copilotMessageChunk
+data: {"delta":"$"}
+
+event: copilotMessageChunk
+data: {"delta":"3"}
+
+event: copilotMessageChunk
+data: {"delta":"0"}
+
+event: copilotMessageChunk
+data: {"delta":"8"}
+
+event: copilotMessageChunk
+data: {"delta":"."}
+
+event: copilotMessageChunk
+data: {"delta":"9"}
+
+event: copilotMessageChunk
+data: {"delta":"1"}
+
+event: copilotMessageChunk
+data: {"delta":"**,"}
+
+event: copilotMessageChunk
+data: {"delta":" recorded"}
+
+event: copilotMessageChunk
+data: {"delta":" on"}
+
+event: copilotMessageChunk
+data: {"delta":" **"}
+
+event: copilotMessageChunk
+data: {"delta":"2"}
+
+event: copilotMessageChunk
+data: {"delta":"0"}
+
+event: copilotMessageChunk
+data: {"delta":"2"}
+
+event: copilotMessageChunk
+data: {"delta":"6"}
+
+event: copilotMessageChunk
+data: {"delta":"-"}
+
+event: copilotMessageChunk
+data: {"delta":"0"}
+
+event: copilotMessageChunk
+data: {"delta":"7"}
+
+event: copilotMessageChunk
+data: {"delta":"-"}
+
+event: copilotMessageChunk
+data: {"delta":"3"}
+
+event: copilotMessageChunk
+data: {"delta":"1"}
+
+event: copilotMessageChunk
+data: {"delta":"**"}
+
+event: copilotMessageChunk
+data: {"delta":".\n\n"}
+
+event: copilotMessageChunk
+data: {"delta":"Thi"}
+
+event: copilotMessageChunk
+data: {"delta":"s i"}
+
+event: copilotMessageChunk
+data: {"delta":"s the"}
+
+event: copilotMessageChunk
+data: {"delta":" most"}
+
+event: copilotMessageChunk
+data: {"delta":" recent"}
+
+event: copilotMessageChunk
+data: {"delta":" date"}
+
+event: copilotMessageChunk
+data: {"delta":" in"}
+
+event: copilotMessageChunk
+data: {"delta":" the"}
+
+event: copilotMessageChunk
+data: {"delta":" dataset"}
+
+event: copilotMessageChunk
+data: {"delta":" —"}
+
+event: copilotMessageChunk
+data: {"delta":" the"}
+
+event: copilotMessageChunk
+data: {"delta":" closing"}
+
+event: copilotMessageChunk
+data: {"delta":" price"}
+
+event: copilotMessageChunk
+data: {"delta":" dropped"}
+
+event: copilotMessageChunk
+data: {"delta":" significantly"}
+
+event: copilotMessageChunk
+data: {"delta":" from"}
+
+event: copilotMessageChunk
+data: {"delta":" $"}
+
+event: copilotMessageChunk
+data: {"delta":"3"}
+
+event: copilotMessageChunk
+data: {"delta":"3"}
+
+event: copilotMessageChunk
+data: {"delta":"3"}
+
+event: copilotMessageChunk
+data: {"delta":"."}
+
+event: copilotMessageChunk
+data: {"delta":"4"}
+
+event: copilotMessageChunk
+data: {"delta":"3"}
+
+event: copilotMessageChunk
+data: {"delta":" on"}
+
+event: copilotMessageChunk
+data: {"delta":" "}
+
+event: copilotMessageChunk
+data: {"delta":"2"}
+
+event: copilotMessageChunk
+data: {"delta":"0"}
+
+event: copilotMessageChunk
+data: {"delta":"2"}
+
+event: copilotMessageChunk
+data: {"delta":"6"}
+
+event: copilotMessageChunk
+data: {"delta":"-"}
+
+event: copilotMessageChunk
+data: {"delta":"0"}
+
+event: copilotMessageChunk
+data: {"delta":"7"}
+
+event: copilotMessageChunk
+data: {"delta":"-"}
+
+event: copilotMessageChunk
+data: {"delta":"3"}
+
+event: copilotMessageChunk
+data: {"delta":"0"}
+
+event: copilotMessageChunk
+data: {"delta":" to"}
+
+event: copilotMessageChunk
+data: {"delta":" $"}
+
+event: copilotMessageChunk
+data: {"delta":"3"}
+
+event: copilotMessageChunk
+data: {"delta":"0"}
+
+event: copilotMessageChunk
+data: {"delta":"8"}
+
+event: copilotMessageChunk
+data: {"delta":"."}
+
+event: copilotMessageChunk
+data: {"delta":"9"}
+
+event: copilotMessageChunk
+data: {"delta":"1"}
+
+event: copilotMessageChunk
+data: {"delta":" on"}
+
+event: copilotMessageChunk
+data: {"delta":" "}
+
+event: copilotMessageChunk
+data: {"delta":"2"}
+
+event: copilotMessageChunk
+data: {"delta":"0"}
+
+event: copilotMessageChunk
+data: {"delta":"2"}
+
+event: copilotMessageChunk
+data: {"delta":"6"}
+
+event: copilotMessageChunk
+data: {"delta":"-"}
+
+event: copilotMessageChunk
+data: {"delta":"0"}
+
+event: copilotMessageChunk
+data: {"delta":"7"}
+
+event: copilotMessageChunk
+data: {"delta":"-"}
+
+event: copilotMessageChunk
+data: {"delta":"3"}
+
+event: copilotMessageChunk
+data: {"delta":"1"}
+
+event: copilotMessageChunk
+data: {"delta":","}
+
+event: copilotMessageChunk
+data: {"delta":" with"}
+
+event: copilotMessageChunk
+data: {"delta":" unusually"}
+
+event: copilotMessageChunk
+data: {"delta":" high"}
+
+event: copilotMessageChunk
+data: {"delta":" volume"}
+
+event: copilotMessageChunk
+data: {"delta":" ("}
+
+event: copilotMessageChunk
+data: {"delta":"1"}
+
+event: copilotMessageChunk
+data: {"delta":"2"}
+
+event: copilotMessageChunk
+data: {"delta":"7"}
+
+event: copilotMessageChunk
+data: {"delta":"."}
+
+event: copilotMessageChunk
+data: {"delta":"4"}
+
+event: copilotMessageChunk
+data: {"delta":" million"}
+
+event: copilotMessageChunk
+data: {"delta":" share"}
+
+event: copilotMessageChunk
+data: {"delta":"s)."}
+
+event: copilotCitationCollection
+data: {"citations":[{"id":"476e27d8-770a-5e1b-b282-541a9dfabd0e","source_info":{"type":"widget","uuid":"476e27d8-770a-5e1b-b282-541a9dfabd0e","origin":"OpenBB NAS","widget_id":"equity_price_historical_eodhd_obb","name":"Historical","description":"Historical OHLCV price data for a stock.","metadata":{"input_args":{"symbol":"AAPL","provider":"eodhd"},"widget_uuid":"11111111-2222-3333-4444-555555555555"},"citable":true},"details":[{"Source type":"widget","Origin":"OpenBB NAS","Data source":"Historical","symbol":"AAPL","provider":"eodhd"}],"signature":""}]}
+

@@ -28,6 +28,7 @@ const widget: WidgetDef = {
   endpoint: "/api/v1/equity/price/historical",
   gridData: { w: 40, h: 15 }, source: ["Eodhd"], runButton: false, raw: false,
   refetchInterval: null, params: [], dataKey: "results", columnsDefs: null,
+  mcpUrl: null,
       backendId: "test",
 };
 

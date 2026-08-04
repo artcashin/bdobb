@@ -87,6 +87,7 @@ export function parseWidgetEntry(
         .filter((c): c is Record<string, unknown> => c !== null && typeof c.field === "string")
         .map((c) => c as unknown as ColumnDef)
     : null;
+  const storage = asRecord(raw.storage);
   const params = Array.isArray(raw.params)
     ? raw.params
         .map((p) => asRecord(p))
@@ -115,6 +116,7 @@ export function parseWidgetEntry(
     params,
     dataKey: dataKeyRaw === "" ? null : dataKeyRaw,
     columnsDefs,
+    mcpUrl: typeof storage?.mcpUrl === "string" ? storage.mcpUrl : null,
     backendId,
   };
 }

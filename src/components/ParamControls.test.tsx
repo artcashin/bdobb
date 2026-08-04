@@ -37,6 +37,7 @@ function mkWidget(params: ParamDef[], id = "w1"): WidgetDef {
     params,
     dataKey: null,
     columnsDefs: null,
+    mcpUrl: null,
     backendId: "nas",
   };
 }

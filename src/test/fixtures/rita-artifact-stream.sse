@@ -1,0 +1,168 @@
+event: copilotStatusUpdate
+data: {"eventType":"INFO","message":"Extracting table from text","group":"reasoning","details":[{"phase":"call","category":"tool_call","tool_name":"create_table_from_text","input_params":{"text":"Apple | $1.29\nBanana | $0.89\nOrange | $1.49","name":"fruit_prices","description":"Made-up fruit names and prices"}}],"tool_call":{"tool_name":"create_table_from_text","input":{"text":"Apple | $1.29\nBanana | $0.89\nOrange | $1.49","name":"fruit_prices","description":"Made-up fruit names and prices"}}}
+
+event: copilotStatusUpdate
+data: {"eventType":"INFO","message":"create_table_from_text returned a result","group":"reasoning","artifacts":[{"type":"table","uuid":"5904f166-7524-4158-8fe4-a81a7745c120","name":"fruit_prices","description":"Made-up fruit names and prices","content":[{"item":"Apple","price":1.29},{"item":"Banana","price":0.89},{"item":"Orange","price":1.49}]}]}
+
+event: copilotMessageArtifact
+data: {"type":"table","uuid":"5904f166-7524-4158-8fe4-a81a7745c120","name":"fruit_prices","description":"Made-up fruit names and prices","content":[{"item":"Apple","price":1.29},{"item":"Banana","price":0.89},{"item":"Orange","price":1.49}]}
+
+event: copilotMessageChunk
+data: {"delta":"Here"}
+
+event: copilotMessageChunk
+data: {"delta":" i"}
+
+event: copilotMessageChunk
+data: {"delta":"s the"}
+
+event: copilotMessageChunk
+data: {"delta":" table"}
+
+event: copilotMessageChunk
+data: {"delta":" artifact"}
+
+event: copilotMessageChunk
+data: {"delta":" with"}
+
+event: copilotMessageChunk
+data: {"delta":" three"}
+
+event: copilotMessageChunk
+data: {"delta":" row"}
+
+event: copilotMessageChunk
+data: {"delta":"s of"}
+
+event: copilotMessageChunk
+data: {"delta":" fruit"}
+
+event: copilotMessageChunk
+data: {"delta":" name"}
+
+event: copilotMessageChunk
+data: {"delta":"s and"}
+
+event: copilotMessageChunk
+data: {"delta":" price"}
+
+event: copilotMessageChunk
+data: {"delta":"s:\n\n"}
+
+event: copilotMessageChunk
+data: {"delta":"|"}
+
+event: copilotMessageChunk
+data: {"delta":" Fruit"}
+
+event: copilotMessageChunk
+data: {"delta":" "}
+
+event: copilotMessageChunk
+data: {"delta":" |"}
+
+event: copilotMessageChunk
+data: {"delta":" Price"}
+
+event: copilotMessageChunk
+data: {"delta":" |\n"}
+
+event: copilotMessageChunk
+data: {"delta":"|"}
+
+event: copilotMessageChunk
+data: {"delta":"--------"}
+
+event: copilotMessageChunk
+data: {"delta":"|"}
+
+event: copilotMessageChunk
+data: {"delta":"-------"}
+
+event: copilotMessageChunk
+data: {"delta":"|\n"}
+
+event: copilotMessageChunk
+data: {"delta":"|"}
+
+event: copilotMessageChunk
+data: {"delta":" Apple"}
+
+event: copilotMessageChunk
+data: {"delta":" "}
+
+event: copilotMessageChunk
+data: {"delta":" |"}
+
+event: copilotMessageChunk
+data: {"delta":" $"}
+
+event: copilotMessageChunk
+data: {"delta":"1"}
+
+event: copilotMessageChunk
+data: {"delta":"."}
+
+event: copilotMessageChunk
+data: {"delta":"2"}
+
+event: copilotMessageChunk
+data: {"delta":"9"}
+
+event: copilotMessageChunk
+data: {"delta":" |\n"}
+
+event: copilotMessageChunk
+data: {"delta":"|"}
+
+event: copilotMessageChunk
+data: {"delta":" Banana"}
+
+event: copilotMessageChunk
+data: {"delta":" |"}
+
+event: copilotMessageChunk
+data: {"delta":" $"}
+
+event: copilotMessageChunk
+data: {"delta":"0"}
+
+event: copilotMessageChunk
+data: {"delta":"."}
+
+event: copilotMessageChunk
+data: {"delta":"8"}
+
+event: copilotMessageChunk
+data: {"delta":"9"}
+
+event: copilotMessageChunk
+data: {"delta":" |\n"}
+
+event: copilotMessageChunk
+data: {"delta":"|"}
+
+event: copilotMessageChunk
+data: {"delta":" Orange"}
+
+event: copilotMessageChunk
+data: {"delta":" |"}
+
+event: copilotMessageChunk
+data: {"delta":" $"}
+
+event: copilotMessageChunk
+data: {"delta":"1"}
+
+event: copilotMessageChunk
+data: {"delta":"."}
+
+event: copilotMessageChunk
+data: {"delta":"4"}
+
+event: copilotMessageChunk
+data: {"delta":"9"}
+
+event: copilotMessageChunk
+data: {"delta":" |"}
+

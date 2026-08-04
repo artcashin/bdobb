@@ -51,6 +51,7 @@ function widgetFixture(widgetId: string, type = "table") {
       { field: "name", headerName: "Name" },
       { field: "age", headerName: "Age" },
     ],
+    mcpUrl: null,
     backendId: "b1",
   };
 }
