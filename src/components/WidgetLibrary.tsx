@@ -3,6 +3,7 @@ import { useRegistryStore } from "../stores/registryStore";
 import { useProviderKeysStore } from "../stores/providerKeysStore";
 import type { WidgetDef } from "../lib/types";
 import type { ProviderKeyStatus } from "../lib/providerKeys";
+import { widgetProviders } from "../lib/providerKeys";
 
 // The badge's only visible text is the provider name; keyed/unkeyed/unknown
 // is conveyed by background color alone (green/red/neutral). That reaches
@@ -40,8 +41,11 @@ export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }
   const statusFor = useProviderKeysStore((s) => s.statusFor);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [selectedProvider, setSelectedProvider] = useState<string>("All");
+  const [authorizedOnly, setAuthorizedOnly] = useState(false);
 
   const categories = ["All", ...Array.from(new Set(widgets.map((w) => w.category)))];
+  const providers = widgetProviders(widgets);
 
   const filteredWidgets = widgets.filter((widget) => {
     // Trimmed and matched against name/description/category/subCategory, not
@@ -55,7 +59,15 @@ export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }
     const matchesSearch = q === "" || haystack.includes(q);
     const matchesCategory =
       selectedCategory === "All" || widget.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const matchesProvider =
+      selectedProvider === "All" || widget.source.includes(selectedProvider);
+    // Sourceless widgets (builtins, key-maint itself) have no provider to be
+    // unauthorized FOR — the toggle never hides them.
+    const matchesAuthorized =
+      !authorizedOnly ||
+      widget.source.length === 0 ||
+      widget.source.some((s) => statusFor(s) === "keyed");
+    return matchesSearch && matchesCategory && matchesProvider && matchesAuthorized;
   });
 
   return (
@@ -107,6 +119,30 @@ export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }
               {category}
             </button>
           ))}
+        </div>
+
+        <div className="widget-library-provider-filter">
+          <select
+            aria-label="Filter by provider"
+            value={selectedProvider}
+            onChange={(e) => setSelectedProvider(e.target.value)}
+            className="widget-library-provider-select"
+          >
+            <option value="All">All providers</option>
+            {providers.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            aria-pressed={authorizedOnly}
+            onClick={() => setAuthorizedOnly((v) => !v)}
+            className={`widget-library-category-btn ${authorizedOnly ? "widget-library-category-btn-active" : ""}`}
+          >
+            Only my authorized providers
+          </button>
         </div>
       </div>
 

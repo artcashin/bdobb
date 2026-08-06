@@ -229,7 +229,7 @@ describe("WidgetLibrary", () => {
         source: "key-maint",
       });
       render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
-      const eodhd = screen.getByText("Eodhd");
+      const eodhd = screen.getByText("Eodhd", { selector: ".widget-library-widget-provider" });
       expect(eodhd.className).toContain("widget-library-widget-provider");
       expect(eodhd.className).toContain("keyed");
       expect(screen.getByText("IMF", { selector: ".widget-library-widget-provider" }).className).toContain(
@@ -240,7 +240,9 @@ describe("WidgetLibrary", () => {
     it("marks providers unknown while no source has answered", () => {
       useProviderKeysStore.setState({ status: {}, source: "none" });
       render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
-      expect(screen.getByText("Eodhd").className).toContain("unknown");
+      expect(
+        screen.getByText("Eodhd", { selector: ".widget-library-widget-provider" }).className
+      ).toContain("unknown");
     });
 
     it("renders no badge for a widget without a source", () => {
@@ -320,6 +322,55 @@ describe("WidgetLibrary", () => {
 
       const imfCard = screen.getByRole("button", { name: /^IMF Data/ });
       expect(imfCard).toHaveAccessibleName(/^IMF Data/);
+    });
+  });
+
+  describe("provider filtering", () => {
+    it("narrows the grid to the selected provider", () => {
+      useProviderKeysStore.setState({ status: {}, source: "key-maint" });
+      render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
+      fireEvent.change(screen.getByLabelText("Filter by provider"), {
+        target: { value: "Eodhd" },
+      });
+      expect(screen.getByText("Historical Prices")).toBeInTheDocument();
+      expect(screen.queryByText("IMF Data")).not.toBeInTheDocument();
+    });
+
+    it("authorized-only keeps keyed and keyless, drops unkeyed and unknown", () => {
+      useProviderKeysStore.setState({
+        status: { eodhd: "keyed", imf: "unkeyed" },
+        source: "key-maint",
+      });
+      render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
+      fireEvent.click(screen.getByRole("button", { name: "Only my authorized providers" }));
+      expect(screen.getByText("Historical Prices")).toBeInTheDocument(); // keyed
+      expect(screen.queryByText("IMF Data")).not.toBeInTheDocument(); // unkeyed
+      // "Portfolio" is ambiguous by itself: it's also the widget's own
+      // category name AND the always-rendered "Portfolio" category chip, so
+      // it needs the widget-title selector to target the card, not just any
+      // match. "Internal", unlisted -> keyless.
+      expect(
+        screen.getByText("Portfolio", { selector: ".widget-library-widget-title" })
+      ).toBeInTheDocument();
+    });
+
+    it("authorized-only keeps sourceless widgets", () => {
+      useProviderKeysStore.setState({ status: {}, source: "key-maint" });
+      const sourceless = [{ ...mockWidgets[0], id: "s", name: "Builtin-ish", source: [] as string[] }];
+      render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={sourceless} />);
+      fireEvent.click(screen.getByRole("button", { name: "Only my authorized providers" }));
+      expect(screen.getByText("Builtin-ish")).toBeInTheDocument();
+    });
+
+    it("provider filter composes with the category chips", () => {
+      useProviderKeysStore.setState({ status: {}, source: "key-maint" });
+      render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
+      fireEvent.change(screen.getByLabelText("Filter by provider"), {
+        target: { value: "Eodhd" },
+      });
+      fireEvent.click(screen.getByText("IMF", { selector: ".widget-library-category-btn" }));
+      expect(screen.queryByText("Historical Prices")).not.toBeInTheDocument();
+      expect(screen.queryByText("IMF Data")).not.toBeInTheDocument();
     });
   });
 });
