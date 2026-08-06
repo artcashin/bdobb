@@ -4,6 +4,7 @@ import { useBackendsStore } from "../../stores/backendsStore";
 import { isHttpUrl } from "../../lib/safeUrl";
 import { logError } from "../../lib/logger";
 import { useRegistryStore } from "../../stores/registryStore";
+import { useProviderKeysStore } from "../../stores/providerKeysStore";
 import type { BackendConfig } from "../../lib/types";
 
 export interface BackendsDialogProps {
@@ -31,6 +32,11 @@ export default function BackendsDialog({ isOpen, onClose }: BackendsDialogProps)
     useRegistryStore
       .getState()
       .refresh(useBackendsStore.getState().backends)
+      .then(() =>
+        useProviderKeysStore
+          .getState()
+          .refresh(useBackendsStore.getState().backends, useRegistryStore.getState().widgets)
+      )
       .catch(() => {});
 
   // formOpen drives visibility; editingBackend only distinguishes edit from

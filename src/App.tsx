@@ -5,6 +5,7 @@ import { useBackendsStore } from "./stores/backendsStore";
 import { useDashboardStore } from "./stores/dashboardStore";
 import { useChatStore } from "./stores/chatStore";
 import { useRegistryStore } from "./stores/registryStore";
+import { useProviderKeysStore } from "./stores/providerKeysStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { logError } from "./lib/logger";
 
@@ -40,6 +41,11 @@ export default function App() {
       useRegistryStore
         .getState()
         .refresh(useBackendsStore.getState().backends)
+        .then(() =>
+          useProviderKeysStore
+            .getState()
+            .refresh(useBackendsStore.getState().backends, useRegistryStore.getState().widgets)
+        )
         .catch((e) => logError(`startup: registry refresh failed: ${String(e)}`))
     );
   }, []);
