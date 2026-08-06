@@ -19,6 +19,7 @@ export const BUILTIN_NOTE_ID = "builtin:note";
 export const BUILTIN_CLOCK_ID = "builtin:clock";
 export const BUILTIN_WEBSITE_ID = "builtin:website";
 export const BUILTIN_NEWS_ID = "builtin:news";
+export const BUILTIN_SYMPHONY_ID = "builtin:symphony";
 
 /** Where a note's text lives — a card param, so it persists with the card. */
 export const NOTE_TEXT_PARAM = "text";
@@ -54,6 +55,11 @@ export const NEWS_USER_PARAM = "user";
  * websocket has no header option, so there (and only there) it rides the URL.
  */
 export const NEWS_TOKEN_PARAM = "token";
+
+export const SYMPHONY_POD_URL_PARAM = "podUrl";
+export const SYMPHONY_STREAM_ID_PARAM = "streamId";
+export const SYMPHONY_MODE_PARAM = "mode";
+export const SYMPHONY_THEME_PARAM = "theme";
 
 function param(over: Partial<ParamDef> & { paramName: string; label: string }): ParamDef {
   return {
@@ -185,6 +191,47 @@ export const BUILTIN_WIDGETS: WidgetDef[] = [
         options: [
           { label: "Dot matrix", value: "dots" },
           { label: "Solid", value: "solid" },
+        ],
+      }),
+    ],
+  }),
+  def({
+    id: BUILTIN_SYMPHONY_ID,
+    name: "Symphony",
+    type: "iframe",
+    description: "Symphony workspace widget.",
+    gridData: { w: 24, h: 16 },
+    params: [
+      param({
+        paramName: SYMPHONY_POD_URL_PARAM,
+        label: "Pod URL",
+        description: "Symphony pod URL (default from config)",
+        value: "",
+      }),
+      param({
+        paramName: SYMPHONY_STREAM_ID_PARAM,
+        label: "Stream ID",
+        description: "Symphony stream ID",
+        value: "",
+      }),
+      param({
+        paramName: SYMPHONY_MODE_PARAM,
+        label: "Mode",
+        description: "Display mode (focus or split)",
+        value: "focus",
+        options: [
+          { label: "Focus", value: "focus" },
+          { label: "Split", value: "split" },
+        ],
+      }),
+      param({
+        paramName: SYMPHONY_THEME_PARAM,
+        label: "Theme",
+        description: "Color theme (dark or light)",
+        value: "dark",
+        options: [
+          { label: "Dark", value: "dark" },
+          { label: "Light", value: "light" },
         ],
       }),
     ],
