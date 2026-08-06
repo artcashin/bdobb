@@ -624,6 +624,35 @@ describe("makeWidgetDataFetcher", () => {
       .rejects
       .toThrow("Backend not found: unknown");
   });
+
+  it("refuses to serve a keys widget's data even when its uuid is on the active dashboard " +
+    "(defense in depth: buildWidgetRefs filters keys refs out of what Rita ever sees, but " +
+    "this fetcher must not rely on that being the only path a uuid could arrive by)", async () => {
+    const keysWidget: WidgetDef = {
+      id: "keys_widget", name: "API Keys", description: "", category: "Test", subCategory: null,
+      type: "keys", endpoint: "/api/keys", gridData: { w: 20, h: 12 }, source: [],
+      runButton: false, raw: false, refetchInterval: null, params: [], dataKey: null,
+      columnsDefs: null, mcpUrl: null, backendId: "test",
+    };
+    const deps = {
+      getCards: () => [{
+        uuid: "keys-card", widgetId: "keys_widget", backendId: "nas",
+        layout: { x: 0, y: 0, w: 20, h: 12 }, params: {},
+        view: "default" as const satisfies import("../../lib/types").CardView,
+      }],
+      lookupWidget: () => keysWidget,
+      getBackend: () => ({ id: "nas", name: "NAS", baseUrl: "http://localhost:8000" }),
+    };
+
+    const fetcher = makeWidgetDataFetcher(deps);
+
+    // Same refusal shape as an unknown uuid ("not on the active dashboard"),
+    // not a keys-specific message: telling the agent *why* would itself leak
+    // that a keys widget exists on this uuid.
+    await expect(fetcher({ widget_uuid: "keys-card", origin: "nas", id: "keys_widget", input_args: {} }))
+      .rejects
+      .toThrow("Widget keys-card is not on the active dashboard");
+  });
 });
 
 describe("execute_agent_tool dispatch", () => {

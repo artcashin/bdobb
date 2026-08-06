@@ -283,6 +283,18 @@ export function makeWidgetDataFetcher(
       throw new Error(`Widget not found: ${source.id}`);
     }
 
+    // buildWidgetRefs already keeps a keys widget's uuid out of what Rita
+    // ever sees, but that is the only thing standing between this function
+    // and serving actual API key values: nothing here checked widget type,
+    // so any other path that produced a keys uuid (a stale ref, a hand-built
+    // tool call) would have this function fetch and hand back live secrets.
+    // Refuse in the same shape as an unknown uuid -- not a keys-specific
+    // message -- so the response itself doesn't tell the agent a keys widget
+    // exists at this uuid.
+    if (widget.type === "keys") {
+      throw new Error(`Widget ${source.widget_uuid} is not on the active dashboard`);
+    }
+
     const started = Date.now();
     let url = "";
     try {

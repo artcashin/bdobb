@@ -459,7 +459,16 @@ export default function WidgetCard({ card }: WidgetCardProps) {
             <div className="renderer-error">
               <p>This widget failed to render.</p>
               <pre className="renderer-error-detail">{err.message}</pre>
-              {data !== null && (
+              {/* A keys widget's fetched envelope carries tier-3 credential
+                  values, and isKeysEnvelope only checks that `rows` is an
+                  array, not the shape of each row -- a malformed row (e.g.
+                  a null element) makes KeysRenderer throw while reading it,
+                  landing here with the same unfiltered envelope the raw-view
+                  guard above exists to keep out of the DOM. Falling through
+                  to RawJsonView in that case would dump it verbatim, so this
+                  is a second, independent guard rather than a rely-on-the-
+                  renderer-not-throwing assumption. */}
+              {data !== null && widget?.type !== "keys" && (
                 <RawJsonView data={data} widgetDef={widget as WidgetDef} theme="dark" />
               )}
             </div>
