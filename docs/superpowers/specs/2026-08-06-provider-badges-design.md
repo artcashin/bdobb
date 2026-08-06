@@ -24,6 +24,11 @@ and filtering so the library can be reduced to "widgets that will work for me."
 3. **"Only my authorized providers"** toggle chip: keeps only widgets whose
    provider is keyed or keyless. Composes with search, category, and the
    provider select.
+4. **Rail collapses on open**: selecting Widget Library from the left rail
+   returns the rail to its icon-width strip (`panel.close()` before
+   `onOpenLibrary()`). Today the expanded rail — z-index 40 — stays painted
+   over the library overlay (z-index 30) until the pointer happens to leave
+   it; on touch it stays open indefinitely.
 
 ## Key state: `providerKeysStore`
 
@@ -103,7 +108,8 @@ normalizing and handled by the pairing rule above.
 - **Component tests**: badge renders with the right modifier class per
   status; no badge when `source` is empty; provider select narrows the grid;
   authorized-only toggle hides unkeyed providers and keeps keyless ones;
-  filters compose with search and category.
+  filters compose with search and category; LeftRail's Widget Library click
+  collapses the rail (existing LeftRail.test.tsx gains the case).
 - Hermetic: fetch and store mocked, same pattern as the dialog tests.
 
 ## Roll-up
