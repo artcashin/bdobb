@@ -11,8 +11,8 @@ polyfilled.
 
 Every path runs `scripts/generate-capabilities.mjs` first, because Tauri
 capabilities are compiled into the binary and must exist on disk before cargo
-runs. Release paths pass `--strict`, which fails the build rather than shipping
-the `https://*.ts.net/*` development fallback.
+runs. The HTTP scope is open to any http(s) host — backends are a runtime
+choice — so the script's real work is the fs scope below.
 
 The same script turns `VITE_SHARE_FOLDERS` into the fs scope, which is what
 lets a "Send to…" **file** share target export a Rita conversation into a
