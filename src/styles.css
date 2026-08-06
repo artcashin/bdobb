@@ -1259,8 +1259,10 @@ input, select, textarea {
    they jitter every second. The pull is asymmetric because the colon's dots
    sit hard-left in their cell (ink 12–243 of a 903-unit advance): matching
    the digits' bearings needs 384/1024em more taken off the right than the
-   left for the visual gaps to come out equal. */
-.clock-colon { margin: 0 -0.595em 0 -0.22em; }
+   left for the visual gaps to come out equal — then one dot-grid pitch
+   (dot plus its gap, 128/1024em = 0.125em) is given back on each side so
+   the colon reads as its own glyph rather than abutting the digits. */
+.clock-colon { margin: 0 -0.47em 0 -0.095em; }
 
 /* A bare A or P rather than Intl's AM/PM: at this size the two extra glyphs
    cost more width than the row can spare. */
