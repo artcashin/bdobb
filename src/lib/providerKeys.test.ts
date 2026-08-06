@@ -154,6 +154,32 @@ describe("pickProbeWidget", () => {
     expect(pickProbeWidget([w], "eodhd")?.id).toBe("w1");
     expect(pickProbeWidget([w], "fmp")).toBeNull();
   });
+
+  it("only considers table and chart widgets: html/markdown/pdf/multi_file_viewer bodies aren't JSON, so res.json() would throw", () => {
+    // Real fixture case: IMF's only widget is an html "presentation table".
+    const htmlWidget = widget({ id: "h", source: ["Imf"], type: "html" });
+    expect(pickProbeWidget([htmlWidget], "imf")).toBeNull();
+    const markdownWidget = widget({ id: "m", source: ["Imf"], type: "markdown" });
+    expect(pickProbeWidget([markdownWidget], "imf")).toBeNull();
+    const pdfWidget = widget({ id: "p", source: ["Imf"], type: "pdf" });
+    expect(pickProbeWidget([pdfWidget], "imf")).toBeNull();
+    const multiFileWidget = widget({ id: "mf", source: ["Imf"], type: "multi_file_viewer" });
+    expect(pickProbeWidget([multiFileWidget], "imf")).toBeNull();
+  });
+
+  it("accepts chart widgets, not just table, as probe candidates", () => {
+    const chartWidget = widget({ id: "c", source: ["Eodhd"], type: "chart" });
+    expect(pickProbeWidget([chartWidget], "eodhd")?.id).toBe("c");
+  });
+
+  it("returns null rather than firing a probe known to fail validation, when every candidate still has an unset param", () => {
+    const needy = widget({
+      id: "needy",
+      source: ["Eodhd"],
+      params: [{ paramName: "symbol", label: "S", type: "text", value: null }] as WidgetDef["params"],
+    });
+    expect(pickProbeWidget([needy], "eodhd")).toBeNull();
+  });
 });
 
 describe("widgetProviders", () => {

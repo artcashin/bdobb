@@ -86,22 +86,28 @@ function defaultlessParamCount(widget: WidgetDef): number {
 /**
  * The probe widget for a provider: one of that provider's OWN widgets (so
  * the endpoint certainly accepts the provider), preferring the one with the
- * fewest params lacking defaults — those get omitted from the request, and
- * a widget with all defaults present is the most likely to answer 200.
- * iframe widgets fetch foreign pages and live_grid speaks websockets, so
- * neither can serve as an HTTP probe.
+ * fewest params lacking defaults. Only "table" and "chart" widgets are
+ * eligible — every other type (iframe, live_grid, html, markdown, pdf,
+ * multi_file_viewer, ...) returns a body that isn't JSON, so `res.json()`
+ * would throw and the probe would be misclassified as "unknown" instead of
+ * skipped outright.
+ *
+ * If every candidate still has at least one param lacking a default, none of
+ * them can be probed without guessing a value — sending the request anyway
+ * fires a request known to fail validation (422), which is worse than not
+ * probing at all. In that case there is no usable probe widget: null.
  */
 export function pickProbeWidget(widgets: WidgetDef[], normProvider: string): WidgetDef | null {
   const candidates = widgets.filter(
     (w) =>
-      w.type !== "iframe" &&
-      w.type !== "live_grid" &&
+      (w.type === "table" || w.type === "chart") &&
       w.source.some((s) => normalizeProvider(s) === normProvider)
   );
   if (candidates.length === 0) return null;
-  return candidates.reduce((best, w) =>
+  const best = candidates.reduce((best, w) =>
     defaultlessParamCount(w) < defaultlessParamCount(best) ? w : best
   );
+  return defaultlessParamCount(best) === 0 ? best : null;
 }
 
 /** Distinct provider display names across the widget set, sorted. */
