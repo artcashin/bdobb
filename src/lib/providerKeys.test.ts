@@ -172,6 +172,11 @@ describe("pickProbeWidget", () => {
     expect(pickProbeWidget([chartWidget], "eodhd")?.id).toBe("c");
   });
 
+  it("accepts metric widgets as probe candidates: they return JSON like table/chart", () => {
+    const metricWidget = widget({ id: "m", source: ["Eodhd"], type: "metric" });
+    expect(pickProbeWidget([metricWidget], "eodhd")?.id).toBe("m");
+  });
+
   it("returns null rather than firing a probe known to fail validation, when every candidate still has an unset param", () => {
     const needy = widget({
       id: "needy",

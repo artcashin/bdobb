@@ -86,11 +86,11 @@ function defaultlessParamCount(widget: WidgetDef): number {
 /**
  * The probe widget for a provider: one of that provider's OWN widgets (so
  * the endpoint certainly accepts the provider), preferring the one with the
- * fewest params lacking defaults. Only "table" and "chart" widgets are
- * eligible — every other type (iframe, live_grid, html, markdown, pdf,
- * multi_file_viewer, ...) returns a body that isn't JSON, so `res.json()`
- * would throw and the probe would be misclassified as "unknown" instead of
- * skipped outright.
+ * fewest params lacking defaults. Only "table", "chart", and "metric"
+ * widgets are eligible — every other type (iframe, live_grid, html,
+ * markdown, pdf, multi_file_viewer, ...) returns a body that isn't JSON, so
+ * `res.json()` would throw and the probe would be misclassified as
+ * "unknown" instead of skipped outright.
  *
  * If every candidate still has at least one param lacking a default, none of
  * them can be probed without guessing a value — sending the request anyway
@@ -100,7 +100,7 @@ function defaultlessParamCount(widget: WidgetDef): number {
 export function pickProbeWidget(widgets: WidgetDef[], normProvider: string): WidgetDef | null {
   const candidates = widgets.filter(
     (w) =>
-      (w.type === "table" || w.type === "chart") &&
+      (w.type === "table" || w.type === "chart" || w.type === "metric") &&
       w.source.some((s) => normalizeProvider(s) === normProvider)
   );
   if (candidates.length === 0) return null;

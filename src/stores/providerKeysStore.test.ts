@@ -204,16 +204,9 @@ describe("providerKeysStore", () => {
     expect(useProviderKeysStore.getState().statusFor("A")).toBe("unknown");
     expect(useProviderKeysStore.getState().statusFor("G")).toBe("keyed"); // unclobbered
     expect(useProviderKeysStore.getState().source).toBe("probe");
-    expect(fetchWidgetDataImpl).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ id: "w1-4" }), // E
-      expect.anything()
-    );
-    expect(fetchWidgetDataImpl).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ id: "w1-5" }), // F
-      expect.anything()
-    );
+    const probedIds = fetchWidgetDataImpl.mock.calls.map((c) => (c[1] as WidgetDef).id);
+    expect(probedIds).not.toContain("w1-4"); // E
+    expect(probedIds).not.toContain("w1-5"); // F
   });
 
   it("commits results incrementally, so one hung backend doesn't block badges for providers that already answered", async () => {
