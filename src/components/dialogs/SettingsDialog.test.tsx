@@ -60,16 +60,13 @@ function setStoreState(overrides: { settings?: any; loadError?: string | null } 
 }
 
 /**
- * Renders the open dialog and waits for its mount-time log-load effect to
- * settle. Every open-dialog test needs this, not just the log-viewer ones --
- * otherwise the effect's state updates land after the test (and its
- * `render`'s implicit `act`) have already finished, producing an
- * "update not wrapped in act" warning on every other test.
+ * Renders the open dialog. The dialog opens on the Rita tab, which has no
+ * pending effects of its own, so there is nothing to await here -- unlike
+ * before the tab split, the log-load effect no longer fires on open; it
+ * fires only once the Logs tab mounts (see the log-viewer tests below).
  */
 async function renderOpen(props: Partial<SettingsDialogProps> = {}) {
-  const utils = render(<SettingsDialog isOpen={true} onClose={() => {}} {...props} />);
-  await waitFor(() => expect(readLogTail).toHaveBeenCalled());
-  return utils;
+  return render(<SettingsDialog isOpen={true} onClose={() => {}} {...props} />);
 }
 
 describe("SettingsDialog", () => {
@@ -99,22 +96,28 @@ describe("SettingsDialog", () => {
 
   it("renders MCP servers list", async () => {
     await renderOpen();
+    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
     expect(screen.getByText("MCP Servers")).toBeInTheDocument();
     expect(screen.getByText("http://localhost:7769/mcp")).toBeInTheDocument();
   });
 
   it("renders theme section with dark only", async () => {
     await renderOpen();
-    expect(screen.getByText("Appearance")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+    // "Appearance" now also labels the tab button, so scope to the section heading.
+    expect(screen.getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
     expect(screen.getByText("Dark (v1)")).toBeInTheDocument();
   });
 
   // --- Carried requirement 1: log viewer (readLogTail/getLogPath), ported
-  // from desk's dialogs.test.tsx and adapted to qwen's isOpen-gated mount. ---
+  // from desk's dialogs.test.tsx and adapted to qwen's isOpen-gated mount.
+  // Now that the log viewer lives in its own tab, these load the log by
+  // switching to the Logs tab rather than by opening the dialog. ---
 
   it("shows the log path and tail when opened", async () => {
     await renderOpen();
-    expect(screen.getByText(/sample line/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    await waitFor(() => expect(screen.getByText(/sample line/)).toBeInTheDocument());
     expect(screen.getByText("/Users/test/Library/logs/bdobb.log")).toBeInTheDocument();
   });
 
@@ -126,6 +129,7 @@ describe("SettingsDialog", () => {
   it("surfaces a log-read failure instead of swallowing it", async () => {
     vi.mocked(readLogTail).mockRejectedValueOnce(new Error("no such file or directory"));
     render(<SettingsDialog isOpen={true} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
     await waitFor(() =>
       expect(screen.getByText(/Failed to read log.*no such file/i)).toBeInTheDocument()
     );
@@ -133,6 +137,8 @@ describe("SettingsDialog", () => {
 
   it("reloads the log on demand", async () => {
     await renderOpen();
+    fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    await waitFor(() => expect(readLogTail).toHaveBeenCalledTimes(1));
     vi.mocked(readLogTail).mockResolvedValueOnce(["a fresh line"]);
     fireEvent.click(screen.getByText("Reload log"));
     await waitFor(() => expect(screen.getByText(/a fresh line/)).toBeInTheDocument());
@@ -140,6 +146,7 @@ describe("SettingsDialog", () => {
 
   it("disables Add and warns when the new MCP server URL is not a valid http(s) URL", async () => {
     await renderOpen();
+    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
     const input = screen.getByLabelText("New MCP server URL");
     fireEvent.change(input, { target: { value: "hello" } });
     expect(screen.getByText("Add")).toBeDisabled();
@@ -163,6 +170,7 @@ describe("SettingsDialog", () => {
       unreachable: [],
     });
     await renderOpen();
+    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
     fireEvent.click(screen.getByText("Check tool budget"));
     await waitFor(() => expect(screen.getByText(/tool\(s\) available/i)).toBeInTheDocument());
   });
@@ -174,6 +182,7 @@ describe("SettingsDialog", () => {
       unreachable: [{ serverId: "mcp-1", url: "http://localhost:7769/mcp", message: "connection refused" }],
     });
     await renderOpen();
+    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
     fireEvent.click(screen.getByText("Check tool budget"));
     await waitFor(() => expect(screen.getByText(/unreachable/i)).toBeInTheDocument());
   });
@@ -191,6 +200,7 @@ describe("SettingsDialog", () => {
         unreachable: [{ serverId: "mcp-1", url: "http://localhost:7769/mcp", message: "connection refused" }],
       });
     await renderOpen();
+    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
 
     expect(clearMcpCache).not.toHaveBeenCalled();
 
@@ -215,6 +225,7 @@ describe("SettingsDialog", () => {
       unreachable: [],
     });
     await renderOpen();
+    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
     fireEvent.click(screen.getByText("Check tool budget"));
     await waitFor(() => expect(screen.getByText(/tool\(s\) available/i)).toBeInTheDocument());
 
@@ -246,5 +257,72 @@ describe("SettingsDialog", () => {
       expect(alertMock).toHaveBeenCalledWith(expect.stringContaining("disk full"))
     );
     alertMock.mockRestore();
+  });
+
+  describe("tabs", () => {
+    it("shows four tabs and opens on Rita", async () => {
+      await renderOpen();
+      const tabs = screen.getAllByRole("tab");
+      expect(tabs.map((t) => t.textContent)).toEqual(["Rita", "MCP", "Appearance", "Logs"]);
+      expect(screen.getByRole("tab", { name: "Rita" })).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("swaps the panel when another tab is clicked", async () => {
+      await renderOpen();
+      // The Rita URL field is on the Rita tab; MCP's add-server field is not.
+      expect(screen.getByLabelText("Rita URL")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
+      expect(screen.queryByLabelText("Rita URL")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("New MCP server URL")).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "MCP" })).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("keeps an edit made on one tab when another tab is visited", async () => {
+      // The whole risk of this refactor: a tab unmounting must not drop a
+      // draft edit, because Save writes the draft, not the DOM.
+      await renderOpen();
+      fireEvent.change(screen.getByLabelText("Rita URL"), {
+        target: { value: "http://localhost:9999" },
+      });
+      fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
+      await waitFor(() => expect(readLogTail).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole("tab", { name: "Rita" }));
+      expect(screen.getByLabelText("Rita URL")).toHaveValue("http://localhost:9999");
+    });
+
+    it("saves an edit made on a tab that is not the active one", async () => {
+      await renderOpen();
+      fireEvent.change(screen.getByLabelText("Rita URL"), {
+        target: { value: "http://localhost:9999" },
+      });
+      fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+      fireEvent.click(screen.getByText("Save Settings"));
+      await waitFor(() =>
+        expect(update).toHaveBeenCalledWith(
+          expect.objectContaining({ ritaUrl: "http://localhost:9999" })
+        )
+      );
+    });
+
+    it("moves between tabs with arrow keys", async () => {
+      await renderOpen();
+      const rita = screen.getByRole("tab", { name: "Rita" });
+      rita.focus();
+      fireEvent.keyDown(rita, { key: "ArrowRight" });
+      expect(screen.getByRole("tab", { name: "MCP" })).toHaveAttribute("aria-selected", "true");
+      fireEvent.keyDown(screen.getByRole("tab", { name: "MCP" }), { key: "End" });
+      expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true");
+      // Landing on Logs mounts its async load effect; let it settle so the
+      // test doesn't finish with a state update outside of act().
+      await waitFor(() => expect(readLogTail).toHaveBeenCalled());
+    });
+
+    it("shows the load-error banner on every tab", async () => {
+      setStoreState({ loadError: "settings.json is corrupt" });
+      await renderOpen();
+      expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
+      expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument();
+    });
   });
 });
