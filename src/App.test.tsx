@@ -25,7 +25,9 @@ import App from "./App";
 import { useBackendsStore } from "./stores/backendsStore";
 import { useDashboardStore } from "./stores/dashboardStore";
 import { useRegistryStore } from "./stores/registryStore";
+import { useProviderKeysStore } from "./stores/providerKeysStore";
 import { useSettingsStore } from "./stores/settingsStore";
+import * as logger from "./lib/logger";
 
 function dashboardFileCount(): number {
   return [...files.keys()].filter(
@@ -156,6 +158,62 @@ describe("startup error banner (Finding 3)", () => {
     await settle();
 
     expect(container.querySelector(".startup-error-banner")).toBeNull();
+
+    act(() => root.unmount());
+    container.remove();
+  });
+});
+
+// Finding 6: the startup chain's single .catch labeled every failure in it
+// "registry refresh failed", even a providerKeys.refresh() failure that came
+// after the registry refresh had already succeeded.
+describe("startup refresh failure labeling (Finding 6)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("labels a provider-keys refresh failure accurately, not as a registry failure", async () => {
+    const logErrorSpy = vi.spyOn(logger, "logError");
+    vi.spyOn(useProviderKeysStore.getState(), "refresh").mockRejectedValue(
+      new Error("boom")
+    );
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let root: Root;
+    await act(async () => {
+      root = createRoot(container);
+      root.render(React.createElement(App));
+    });
+    await settle();
+
+    expect(logErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("provider keys refresh failed")
+    );
+    expect(logErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringMatching(/registry refresh failed.*boom/)
+    );
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it("still labels a registry refresh failure as a registry failure", async () => {
+    const logErrorSpy = vi.spyOn(logger, "logError");
+    vi.spyOn(useRegistryStore.getState(), "refresh").mockRejectedValue(
+      new Error("registry boom")
+    );
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let root: Root;
+    await act(async () => {
+      root = createRoot(container);
+      root.render(React.createElement(App));
+    });
+    await settle();
+
+    expect(logErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("registry refresh failed")
+    );
 
     act(() => root.unmount());
     container.remove();

@@ -41,12 +41,13 @@ export default function App() {
       useRegistryStore
         .getState()
         .refresh(useBackendsStore.getState().backends)
+        .catch((e) => logError(`startup: registry refresh failed: ${String(e)}`))
         .then(() =>
           useProviderKeysStore
             .getState()
             .refresh(useBackendsStore.getState().backends, useRegistryStore.getState().widgets)
+            .catch((e) => logError(`startup: provider keys refresh failed: ${String(e)}`))
         )
-        .catch((e) => logError(`startup: registry refresh failed: ${String(e)}`))
     );
   }, []);
 
