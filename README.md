@@ -12,6 +12,7 @@ section, and the app has exactly that chapter's functionality.
 | v5.0.0 | Ep. 5 — Kick the Tires in Ten Minutes | One-command reference backend, conformance suite, Workspace apps.json import/export + parameter groups |
 | v6.0.0 | Ep. 6 — The Analyst Who Never Leaves the Building | The chat pane: agent protocol client, SSE streaming, MCP tools, dashboard context |
 | v7.0.0 | Ep. 7 — The iPadOS Adventure | iPadOS builds, touch input, free-tier signing flow |
+| v8.0.0 | Ep. 8 — All the News That Fits, We Print | News rail built-in: the wire, natively |
 
 ## What you get (this release: v7.0.0)
 
@@ -29,6 +30,19 @@ section, and the app has exactly that chapter's functionality.
   of the way; the dashboard never reflows.
 - **Backends & settings** — add/edit backends with connection status; a
   rotating app log viewable in Settings.
+
+**New in v8.0.0 (Ep. 8):** the wire, natively. A **News rail** built-in
+widget that speaks an [rss-ticker](https://github.com/artcashin/rss-ticker)
+backend's protocol directly — REST seed plus websocket stream, no iframe.
+Point it at the ticker's URL and user id: under `tailscale_auth` your
+Tailscale identity is the whole credential (the token field stays blank and
+no secret exists anywhere); in token mode the REST call carries the token as
+an `Authorization` header so it never appears in a URL BDOBB controls (the
+websocket, which cannot carry headers, is the documented exception). Live
+frames prepend and dedupe by id, every reconnect re-seeds (which doubles as
+gap-fill), a 4401 close is terminal ("unauthorized", no retry storm),
+highlighted headlines take the accent color, and double-click/Enter opens
+the story in your browser — `http(s)` links only.
 
 **New in v7.0.0 (Ep. 7):** BDOBB on an **iPad**. `pnpm ios:check/init/dev/build`
 with a preflight that names each missing toolchain piece; free-Apple-ID

@@ -14,8 +14,11 @@ import {
   CLOCK_ZONES_PARAM, CLOCK_TZ_PARAM, CLOCK_HOUR12_PARAM, CLOCK_DEFAULT_ZONES,
   CLOCK_CYCLE_PARAM, CLOCK_FACE_PARAM,
   NOTE_TEXT_PARAM, WEBSITE_URL_PARAM,
-  BUILTIN_CLOCK_ID, BUILTIN_NOTE_ID, BUILTIN_WEBSITE_ID, findBuiltin, isBuiltinBackend,
+  NEWS_URL_PARAM, NEWS_USER_PARAM, NEWS_TOKEN_PARAM,
+  BUILTIN_CLOCK_ID, BUILTIN_NEWS_ID, BUILTIN_NOTE_ID, BUILTIN_WEBSITE_ID,
+  findBuiltin, isBuiltinBackend,
 } from "../lib/builtins";
+import NewsRailRenderer from "./renderers/NewsRailRenderer";
 import ClockRenderer from "./renderers/ClockRenderer";
 import NoteRenderer from "./renderers/NoteRenderer";
 import ChartRenderer from "./renderers/ChartRenderer";
@@ -220,6 +223,16 @@ export default function WidgetCard({ card }: WidgetCardProps) {
           theme={theme}
           src={String(fetchParams[WEBSITE_URL_PARAM] ?? "")}
           emptyHint="Set a URL in this card's parameters to embed a page."
+        />
+      );
+    }
+    if (card.widgetId === BUILTIN_NEWS_ID) {
+      return (
+        <NewsRailRenderer
+          url={String(fetchParams[NEWS_URL_PARAM] ?? "")}
+          user={String(fetchParams[NEWS_USER_PARAM] ?? "")}
+          token={String(fetchParams[NEWS_TOKEN_PARAM] ?? "")}
+          theme={theme}
         />
       );
     }
