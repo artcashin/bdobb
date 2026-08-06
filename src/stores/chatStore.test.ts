@@ -247,4 +247,48 @@ describe("chatStore", () => {
     expect(saved).toHaveLength(1);
     expect((saved[0] as any).messages).toHaveLength(2);
   });
+
+  it("records post_to_symphony tool calls for confirmation", async () => {
+    const toolCall = { tool_name: "post_to_symphony", input: { message: "Hello Symphony" } };
+    vi.spyOn(agentClient, "runAgentQuery").mockImplementation(async (o: any) => {
+      o.onEvent({ kind: "status", status: { eventType: "INFO", message: "tool call", tool_call: toolCall } });
+      o.onEvent({ kind: "chunk", delta: "Message sent to Symphony" });
+      return [];
+    });
+
+    await useChatStore.getState().send("hi", DEPS);
+
+    expect(useChatStore.getState().calls).toHaveLength(1);
+    expect(useChatStore.getState().calls[0]).toMatchObject({
+      kind: "agent_tool",
+      label: "post_to_symphony",
+      input: toolCall.input,
+    });
+    expect(useChatStore.getState().calls[0]).toHaveProperty("at");
+  });
+
+  it("tracks confirmation state for post_to_symphony", async () => {
+    useChatStore.getState().clear();
+    
+    const toolCall = { tool_name: "post_to_symphony", input: { message: "Test" } };
+    vi.spyOn(agentClient, "runAgentQuery").mockImplementation(async (o: any) => {
+      o.onEvent({ kind: "status", status: { eventType: "INFO", message: "tool call", tool_call: toolCall } });
+      return [];
+    });
+
+    await useChatStore.getState().send("hi", DEPS);
+
+    const state = useChatStore.getState();
+    expect(state.symphonyConfirmation).toBeDefined();
+    expect(state.symphonyConfirmation?.toolName).toBe("post_to_symphony");
+    expect(state.symphonyConfirmation?.input).toEqual(toolCall.input);
+    expect(state.symphonyConfirmation?.confirmed).toBe(false);
+  });
+
+  it("clears confirmation state after sending", async () => {
+    useChatStore.getState().clear();
+    useChatStore.getState().setSymphonyConfirmation({ toolName: "post_to_symphony", input: { message: "Test" }, confirmed: true });
+
+    expect(useChatStore.getState().symphonyConfirmation).toBeUndefined();
+  });
 });

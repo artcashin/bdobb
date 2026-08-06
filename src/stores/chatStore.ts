@@ -31,6 +31,12 @@ export interface SendDeps {
   workspaceOptions?: Record<string, unknown>;
 }
 
+export interface SymphonyConfirmation {
+  toolName: string;
+  input: Record<string, unknown>;
+  confirmed: boolean;
+}
+
 interface ChatState {
   messages: ChatMessage[];
   statuses: StatusUpdate[];
@@ -50,6 +56,8 @@ interface ChatState {
   hasUnread: boolean;
   /** Whether the pane is currently showing the transcript. */
   paneOpen: boolean;
+  /** Confirmation state for Rita's Symphony tool calls */
+  symphonyConfirmation?: SymphonyConfirmation;
 
   setPaneOpen(open: boolean): void;
   recordCall(call: AgentCall): void;
@@ -57,6 +65,7 @@ interface ChatState {
   send(text: string, deps: SendDeps): Promise<void>;
   cancel(): void;
   clear(): void;
+  setSymphonyConfirmation(confirmation: SymphonyConfirmation | undefined): void;
 }
 
 let controller: AbortController | null = null;
@@ -82,6 +91,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     set(open ? { paneOpen: true, hasUnread: false } : { paneOpen: false });
   },
 
+  setSymphonyConfirmation(confirmation) {
+    set({ symphonyConfirmation: confirmation?.confirmed ? undefined : confirmation });
+  },
+
   cancel() {
     controller?.abort();
     controller = null;
@@ -96,7 +109,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   clear() {
     get().cancel();
     void clearChat();
-    set({ messages: [], statuses: [], citations: [], suggestions: [], calls: [], error: null, agentOffline: false, hasUnread: false });
+    set({ messages: [], statuses: [], citations: [], suggestions: [], calls: [], error: null, agentOffline: false, hasUnread: false, symphonyConfirmation: undefined });
   },
 
   async send(text, deps) {
@@ -163,6 +176,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                   label: tc.tool_name,
                   input: tc.input,
                 });
+                if (tc.tool_name === "post_to_symphony") {
+                  get().setSymphonyConfirmation({
+                    toolName: tc.tool_name,
+                    input: tc.input ?? {},
+                    confirmed: false,
+                  });
+                }
               }
               // A completing step can carry the artifacts it produced.
               const carried = event.status.artifacts;
@@ -213,6 +233,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       if (protocolMsgs.length > 0) {
         set((s) => ({ messages: [...s.messages, ...protocolMsgs] }));
       }
+
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
       const message = err instanceof Error ? err.message : "Failed to send message";

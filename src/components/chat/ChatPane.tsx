@@ -20,6 +20,7 @@ import { safeUrl } from "../../lib/safeUrl";
 
 import ChatMessages from "./ChatMessages";
 import StatusTrail from "./StatusTrail";
+import Modal from "../Modal";
 
 /** Picks the `{type:"select",...}` feature out of `AgentInfo.features` (desk
  * ChatPane.tsx), e.g. agents.json's "model" picker. */
@@ -93,6 +94,7 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
   const error = useChatStore((s) => s.error);
   const agentOffline = useChatStore((s) => s.agentOffline);
   const calls = useChatStore((s) => s.calls);
+  const symphonyConfirmation = useChatStore((s) => s.symphonyConfirmation);
   const [exported, setExported] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const shareTargets = useSettingsStore((s) => s.settings?.shareTargets ?? NO_TARGETS);
@@ -238,6 +240,13 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
       toolName: string,
       parameters: Record<string, unknown>
     ) => {
+      if (toolName === "post_to_symphony") {
+        const confirmation = useChatStore.getState().symphonyConfirmation;
+        if (confirmation && !confirmation.confirmed) {
+          return null;
+        }
+      }
+
       if (serverId === LOCAL_TOOL_SERVER_ID) {
         return executeLocalTool(toolName, parameters, {
           getDashboards: () => useDashboardStore.getState().dashboards,
@@ -442,6 +451,42 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
           {agentOffline && <strong>Rita offline. </strong>}
           {error}
         </div>
+      )}
+
+      {symphonyConfirmation && (
+        <Modal
+          isOpen={true}
+          onClose={() => {
+            useChatStore.getState().setSymphonyConfirmation(undefined);
+          }}
+          title="Confirm Symphony Message"
+        >
+          <p>Send the following message to Symphony?</p>
+          <pre>{JSON.stringify(symphonyConfirmation.input, null, 2)}</pre>
+          <div className="modal-footer">
+            <button
+              type="button"
+              className="chat-send-btn"
+              onClick={() => {
+                useChatStore.getState().setSymphonyConfirmation({
+                  toolName: symphonyConfirmation.toolName,
+                  input: symphonyConfirmation.input,
+                  confirmed: true,
+                });
+              }}
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                useChatStore.getState().setSymphonyConfirmation(undefined);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </Modal>
       )}
 
       <div className="chat-input-area">
