@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import SettingsDialog, { type SettingsDialogProps } from "./SettingsDialog";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { readLogTail } from "../../lib/logger";
-import { assembleTools, clearMcpCache } from "../../lib/agent/mcp";
 
 vi.mock("../Modal", () => ({
   default: ({ isOpen, onClose, title, children, footer }: any) =>
@@ -82,156 +81,13 @@ describe("SettingsDialog", () => {
     expect(screen.getByDisplayValue("http://localhost:8002")).toBeInTheDocument();
   });
 
-  it("renders Rita URL input", async () => {
-    await renderOpen();
-    expect(screen.getByDisplayValue("http://localhost:8002")).toBeInTheDocument();
-    expect(screen.getByText("Rita URL")).toBeInTheDocument();
-  });
-
-  it("renders context sharing toggle", async () => {
-    await renderOpen();
-    const toggle = screen.getByRole("switch");
-    expect(toggle).toBeInTheDocument();
-  });
-
-  it("renders MCP servers list", async () => {
-    await renderOpen();
-    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
-    expect(screen.getByText("MCP Servers")).toBeInTheDocument();
-    expect(screen.getByText("http://localhost:7769/mcp")).toBeInTheDocument();
-  });
-
-  it("renders theme section with dark only", async () => {
-    await renderOpen();
-    fireEvent.click(screen.getByRole("tab", { name: "Appearance" }));
-    // "Appearance" now also labels the tab button, so scope to the section heading.
-    expect(screen.getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
-    expect(screen.getByText("Dark (v1)")).toBeInTheDocument();
-  });
-
-  // --- Carried requirement 1: log viewer (readLogTail/getLogPath), ported
-  // from desk's dialogs.test.tsx and adapted to qwen's isOpen-gated mount.
-  // Now that the log viewer lives in its own tab, these load the log by
-  // switching to the Logs tab rather than by opening the dialog. ---
-
-  it("shows the log path and tail when opened", async () => {
-    await renderOpen();
-    fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
-    await waitFor(() => expect(screen.getByText(/sample line/)).toBeInTheDocument());
-    expect(screen.getByText("/Users/test/Library/logs/bdobb.log")).toBeInTheDocument();
-  });
-
+  // Carried from the log-viewer suite: whether the log is read at all is
+  // gated by the dialog's isOpen/Modal wrapper, not by anything a tab
+  // component can express on its own (LogsTab always loads on mount), so
+  // this case stays here rather than moving with the rest of the log tests.
   it("does not read the log when the dialog is closed (avoids log I/O on every app launch)", () => {
     render(<SettingsDialog isOpen={false} onClose={() => {}} />);
     expect(readLogTail).not.toHaveBeenCalled();
-  });
-
-  it("surfaces a log-read failure instead of swallowing it", async () => {
-    vi.mocked(readLogTail).mockRejectedValueOnce(new Error("no such file or directory"));
-    render(<SettingsDialog isOpen={true} onClose={() => {}} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
-    await waitFor(() =>
-      expect(screen.getByText(/Failed to read log.*no such file/i)).toBeInTheDocument()
-    );
-  });
-
-  it("reloads the log on demand", async () => {
-    await renderOpen();
-    fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
-    await waitFor(() => expect(readLogTail).toHaveBeenCalledTimes(1));
-    vi.mocked(readLogTail).mockResolvedValueOnce(["a fresh line"]);
-    fireEvent.click(screen.getByText("Reload log"));
-    await waitFor(() => expect(screen.getByText(/a fresh line/)).toBeInTheDocument());
-  });
-
-  it("disables Add and warns when the new MCP server URL is not a valid http(s) URL", async () => {
-    await renderOpen();
-    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
-    const input = screen.getByLabelText("New MCP server URL");
-    fireEvent.change(input, { target: { value: "hello" } });
-    expect(screen.getByText("Add")).toBeDisabled();
-    expect(screen.getByText("Not a valid URL.")).toBeInTheDocument();
-
-    fireEvent.change(input, { target: { value: "javascript:alert(1)" } });
-    expect(screen.getByText("Add")).toBeDisabled();
-
-    fireEvent.change(input, { target: { value: "http://localhost:9999/mcp" } });
-    expect(screen.getByText("Add")).not.toBeDisabled();
-  });
-
-  // --- Carried requirement 3 (adjudicated): desk's SettingsDialog surfaces
-  // MCP budget/unreachable state inline (not chat-only, unlike Task 17's
-  // transient chat-turn banner), so it is ported here too. ---
-
-  it("shows the tool count after checking the MCP budget", async () => {
-    vi.mocked(assembleTools).mockResolvedValueOnce({
-      tools: [{ server_id: "mcp-1", name: "t", url: "u", endpoint: "e", description: "d", input_schema: {} }] as any,
-      budgetExceeded: [],
-      unreachable: [],
-    });
-    await renderOpen();
-    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
-    fireEvent.click(screen.getByText("Check tool budget"));
-    await waitFor(() => expect(screen.getByText(/tool\(s\) available/i)).toBeInTheDocument());
-  });
-
-  it("marks a server whose MCP discovery failed instead of giving a false all-clear", async () => {
-    vi.mocked(assembleTools).mockResolvedValueOnce({
-      tools: null,
-      budgetExceeded: [],
-      unreachable: [{ serverId: "mcp-1", url: "http://localhost:7769/mcp", message: "connection refused" }],
-    });
-    await renderOpen();
-    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
-    fireEvent.click(screen.getByText("Check tool budget"));
-    await waitFor(() => expect(screen.getByText(/unreachable/i)).toBeInTheDocument());
-  });
-
-  it("re-discovers fresh state on each press instead of reporting session-stale results", async () => {
-    vi.mocked(assembleTools)
-      .mockResolvedValueOnce({
-        tools: [{ server_id: "mcp-1", name: "t", url: "u", endpoint: "e", description: "d", input_schema: {} }] as any,
-        budgetExceeded: [],
-        unreachable: [],
-      })
-      .mockResolvedValueOnce({
-        tools: null,
-        budgetExceeded: [],
-        unreachable: [{ serverId: "mcp-1", url: "http://localhost:7769/mcp", message: "connection refused" }],
-      });
-    await renderOpen();
-    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
-
-    expect(clearMcpCache).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByText("Check tool budget"));
-    await waitFor(() => expect(screen.getByText(/tool\(s\) available/i)).toBeInTheDocument());
-    // the button itself must clear the module-level tool cache before every
-    // check, not just on server add/remove/toggle -- otherwise a second
-    // press could report a stale cached result instead of re-discovering.
-    expect(clearMcpCache).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByText("Check tool budget"));
-    // the server that succeeded on the first check is now correctly
-    // reported unreachable on the second, not masked by a stale success.
-    await waitFor(() => expect(screen.getByText(/unreachable/i)).toBeInTheDocument());
-    expect(clearMcpCache).toHaveBeenCalledTimes(2);
-  });
-
-  it("clears the stale tool-budget summary when a server is removed", async () => {
-    vi.mocked(assembleTools).mockResolvedValueOnce({
-      tools: [{ server_id: "mcp-1", name: "t", url: "u", endpoint: "e", description: "d", input_schema: {} }] as any,
-      budgetExceeded: [],
-      unreachable: [],
-    });
-    await renderOpen();
-    fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
-    fireEvent.click(screen.getByText("Check tool budget"));
-    await waitFor(() => expect(screen.getByText(/tool\(s\) available/i)).toBeInTheDocument());
-
-    fireEvent.click(screen.getByText("Remove"));
-    expect(clearMcpCache).toHaveBeenCalled();
-    expect(screen.queryByText(/tool\(s\) available/i)).not.toBeInTheDocument();
   });
 
   // --- Load-error visibility (spirit of desk's blank-render fix: qwen's
