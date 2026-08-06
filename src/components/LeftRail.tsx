@@ -46,7 +46,13 @@ export default function LeftRail({
           className="rail-item"
           title="Widget Library"
           aria-label="Widget Library"
-          onClick={onOpenLibrary}
+          onClick={() => {
+            // The expanded rail (z-index 40) otherwise stays painted over the
+            // library overlay (z-index 30) — indefinitely on touch, where no
+            // mouse-leave ever schedules the collapse.
+            panel.close();
+            onOpenLibrary();
+          }}
         >
           <span className="rail-icon" aria-hidden="true">⊞</span>
           {panel.expanded && <span>Widget Library</span>}

@@ -1,6 +1,33 @@
 import { useState } from "react";
 import { useRegistryStore } from "../stores/registryStore";
+import { useProviderKeysStore } from "../stores/providerKeysStore";
 import type { WidgetDef } from "../lib/types";
+import type { ProviderKeyStatus } from "../lib/providerKeys";
+import { widgetProviders } from "../lib/providerKeys";
+
+// The badge's only visible text is the provider name; keyed/unkeyed/unknown
+// is conveyed by background color alone (green/red/neutral). That reaches
+// neither a screen-reader user (hears just the name) nor a color-vision-
+// deficient user (green vs red read as similar lightness). This phrase is
+// used as both `title` (sighted hover) and a sr-only sibling node (screen
+// reader) so both audiences get the same explanation, in plain language
+// rather than the raw "keyed"/"unkeyed" token.
+//
+// "keyed" does NOT mean a key is configured: under source: "key-maint" (see
+// providerKeysStore.statusFor), a provider that key-maint doesn't list is
+// inferred "keyed" precisely because it's keyless — it needs no credential
+// at all. So the "keyed" text must stay true in both cases, without
+// asserting a key exists.
+function providerStatusLabel(providerName: string, status: ProviderKeyStatus): string {
+  switch (status) {
+    case "keyed":
+      return `${providerName}: ready — a key is configured, or none is required.`;
+    case "unkeyed":
+      return `${providerName}: missing API key, this widget will fail.`;
+    case "unknown":
+      return `${providerName}: key status unknown.`;
+  }
+}
 
 interface WidgetLibraryProps {
   onSelectWidget: (widget: WidgetDef) => void;
@@ -11,10 +38,20 @@ interface WidgetLibraryProps {
 export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }: WidgetLibraryProps) {
   const { widgets: storeWidgets } = useRegistryStore();
   const widgets = propsWidgets || storeWidgets;
+  // Whole-store form, not `useProviderKeysStore((s) => s.statusFor)`: the
+  // `statusFor` action is reference-stable across `set()`, so selecting it
+  // alone never re-renders when key state actually lands (zustand compares
+  // selector output with Object.is). Subscribing to the whole store means
+  // any `status`/`source` update is a new object, which does trigger a
+  // re-render; `statusFor` itself is still called the same way everywhere.
+  const { statusFor } = useProviderKeysStore();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [selectedProvider, setSelectedProvider] = useState<string>("All");
+  const [authorizedOnly, setAuthorizedOnly] = useState(false);
 
   const categories = ["All", ...Array.from(new Set(widgets.map((w) => w.category)))];
+  const providers = widgetProviders(widgets);
 
   const filteredWidgets = widgets.filter((widget) => {
     // Trimmed and matched against name/description/category/subCategory, not
@@ -28,7 +65,15 @@ export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }
     const matchesSearch = q === "" || haystack.includes(q);
     const matchesCategory =
       selectedCategory === "All" || widget.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const matchesProvider =
+      selectedProvider === "All" || widget.source.includes(selectedProvider);
+    // Sourceless widgets (builtins, key-maint itself) have no provider to be
+    // unauthorized FOR — the toggle never hides them.
+    const matchesAuthorized =
+      !authorizedOnly ||
+      widget.source.length === 0 ||
+      widget.source.some((s) => statusFor(s) === "keyed");
+    return matchesSearch && matchesCategory && matchesProvider && matchesAuthorized;
   });
 
   return (
@@ -81,6 +126,30 @@ export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }
             </button>
           ))}
         </div>
+
+        <div className="widget-library-provider-filter">
+          <select
+            aria-label="Filter by provider"
+            value={selectedProvider}
+            onChange={(e) => setSelectedProvider(e.target.value)}
+            className="widget-library-provider-select"
+          >
+            <option value="All">All providers</option>
+            {providers.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            aria-pressed={authorizedOnly}
+            onClick={() => setAuthorizedOnly((v) => !v)}
+            className={`widget-library-category-btn ${authorizedOnly ? "widget-library-category-btn-active" : ""}`}
+          >
+            Only my authorized providers
+          </button>
+        </div>
       </div>
 
       <div className="widget-library-list">
@@ -116,14 +185,32 @@ export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }
                       )}
                     </div>
                   </div>
-                  <span className="widget-library-widget-type">{widget.type}</span>
+                  <div className="widget-library-widget-badges">
+                    <span className="widget-library-widget-type">{widget.type}</span>
+                    {widget.source.length > 0 && (() => {
+                      const provider = widget.source[0];
+                      const status = statusFor(provider);
+                      const label = providerStatusLabel(provider, status);
+                      return (
+                        <>
+                          <span
+                            className={`widget-library-widget-provider ${status}`}
+                            title={label}
+                          >
+                            {provider}
+                          </span>
+                          {/* The badge span sits inside the whole-card button;
+                              an aria-label here would REPLACE this span's text
+                              contribution to the button's accessible name
+                              instead of being announced alongside it. A plain
+                              sr-only sibling reads in natural order instead. */}
+                          <span className="sr-only">{label}</span>
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
                 <p className="widget-library-widget-desc">{widget.description}</p>
-                <div className="widget-library-widget-source">
-                  {widget.source.length > 0 && (
-                    <span>Source: {widget.source.join(", ")}</span>
-                  )}
-                </div>
               </button>
             ))}
           </div>

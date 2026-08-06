@@ -66,4 +66,15 @@ describe("LeftRail", () => {
     fireEvent.click(screen.getByText("Macro"));
     expect(useDashboardStore.getState().activeId).toBe("d2");
   });
+
+  it("collapses the rail when Widget Library is opened", () => {
+    const { onOpenLibrary } = renderRail();
+    const rail = screen.getByLabelText("Navigation rail");
+    // Expand via hover, as a pointer user would.
+    fireEvent.mouseEnter(rail);
+    expect(rail.className).toContain("expanded");
+    fireEvent.click(screen.getByLabelText("Widget Library"));
+    expect(onOpenLibrary).toHaveBeenCalled();
+    expect(rail.className).not.toContain("expanded");
+  });
 });
