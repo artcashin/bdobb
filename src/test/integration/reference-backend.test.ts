@@ -54,7 +54,6 @@ const KNOWN_UNRENDERED = [
   "advanced_charting",
   "chart-highcharts",
   "chart-vegalite",
-  "live_grid",
   "newsfeed",
   "omni",
   "youtube",
@@ -138,6 +137,7 @@ describe.skipIf(!ENABLED)("OpenBB reference backend conformance", () => {
   it("has a renderer for every widget type except the known-unrendered set", () => {
     const RENDERED = [
       "table", "chart", "metric", "markdown", "html", "iframe", "pdf", "multi_file_viewer",
+      "live_grid",
     ];
     const seen = [...new Set(widgets.map((w) => w.type))].sort();
     const unaccounted = seen.filter(

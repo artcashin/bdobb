@@ -17,6 +17,8 @@ export function makeWidgetDef(over: Partial<WidgetDef> = {}): WidgetDef {
     refetchInterval: null,
     params: [],
     dataKey: null,
+    wsEndpoint: null,
+    wsRowIdColumn: null,
     columnsDefs: null,
     mcpUrl: null,
     backendId: "test",

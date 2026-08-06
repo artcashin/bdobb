@@ -90,6 +90,31 @@ export function buildWidgetUrl(
   return url.toString();
 }
 
+/**
+ * Websocket URL for a live_grid widget: wsEndpoint resolved against the
+ * backend's base URL with the scheme swapped to ws(s). Reuses resolveEndpoint
+ * so the same origin-pinning applies — nothing in widgets.json can retarget
+ * the socket at another host. String-replace rather than assigning
+ * url.protocol: the WHATWG protocol setter's special-scheme rules make
+ * http->ws swaps environment-dependent, and a silent no-op here would open a
+ * cleartext socket to an https backend.
+ */
+export function buildWidgetWsUrl(
+  backend: BackendConfig,
+  widget: WidgetDef
+): string | null {
+  const ep = widget.wsEndpoint ?? null;
+  if (!ep) return null;
+  let url: URL;
+  try {
+    url = resolveEndpoint(backend.baseUrl, ep);
+  } catch {
+    return null; // unparseable baseUrl — the card shows the fetch error instead
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  return url.toString().replace(/^http/, "ws");
+}
+
 export function extractData(json: unknown, dataKey: string | null): unknown {
   if (Array.isArray(json)) return json;
   if (dataKey === null) return json;

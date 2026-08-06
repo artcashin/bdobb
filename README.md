@@ -13,8 +13,9 @@ section, and the app has exactly that chapter's functionality.
 | v6.0.0 | Ep. 6 — The Analyst Who Never Leaves the Building | The chat pane: agent protocol client, SSE streaming, MCP tools, dashboard context |
 | v7.0.0 | Ep. 7 — The iPadOS Adventure | iPadOS builds, touch input, free-tier signing flow |
 | v8.0.0 | Ep. 8 — All the News That Fits, We Print | News rail built-in: the wire, natively |
+| v9.0.0 | Ep. 9 — The Tape Comes to the Closet | live_grid renderer: streaming quotes in your own app |
 
-## What you get (this release: v7.0.0)
+## What you get (this release: v9.0.0)
 
 - **Dashboard grid** — drag, resize, remove widget cards; multiple dashboards
   in a tab strip; everything persists as plain JSON files you can back up.
@@ -43,6 +44,19 @@ frames prepend and dedupe by id, every reconnect re-seeds (which doubles as
 gap-fill), a 4401 close is terminal ("unauthorized", no retry storm),
 highlighted headlines take the accent color, and double-click/Enter opens
 the story in your browser — `http(s)` links only.
+
+**New in v9.0.0 (Ep. 9):** prices that move. The **live_grid renderer**:
+point BDOBB at the companion stack's `live-grid` service (Ep. 9 of the
+series) and a watchlist of US equities, crypto and forex updates in place —
+seeded by a normal GET, then streamed over a WebSocket to the widget's
+`wsEndpoint`, rows matched by `wsRowIdColumn`. Updated cells flash (green
+up-ticks, red down-ticks; columns can opt out via `enableCellChangeWs:
+false`), signed columns color by `greenRed`/`showCellChange` render
+functions, and a status dot says whether the stream is live or re-dialing.
+The socket re-sends `{"params": …}` on every parameter change, so editing
+the symbol list retunes the backend's upstream subscriptions without a
+reconnect. Same origin-pinning as every other endpoint: nothing in
+widgets.json can point the socket at a different host.
 
 **New in v7.0.0 (Ep. 7):** BDOBB on an **iPad**. `pnpm ios:check/init/dev/build`
 with a preflight that names each missing toolchain piece; free-Apple-ID

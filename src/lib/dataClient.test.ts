@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BackendConfig, WidgetDef } from "./types";
 import {
-  HttpError, buildWidgetUrl, extractData, fetchWidgetData, fetchWidgetHtml,
-  fetchWidgetsJson, putJson, serializeParams,
+  HttpError, buildWidgetUrl, buildWidgetWsUrl, extractData, fetchWidgetData,
+  fetchWidgetHtml, fetchWidgetsJson, putJson, serializeParams,
 } from "./dataClient";
 import { fetch as tauriHttpFetch } from "@tauri-apps/plugin-http";
 import { startMockBackend, type MockBackend } from "../test/mockServer";
@@ -232,5 +232,36 @@ describe("putJson", () => {
     await expect(
       putJson("https://host.example/keys/FMP_API_KEY", { value: "x" }, backend, fetchImpl as unknown as typeof fetch)
     ).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+
+describe("buildWidgetWsUrl (v8, live_grid)", () => {
+  it("swaps https to wss and resolves under the backend's base path", () => {
+    const w = makeWidgetDef({ type: "live_grid", wsEndpoint: "/live_grid_ws" });
+    expect(buildWidgetWsUrl(backend, w)).toBe(
+      "wss://openbb.example.test/live_grid_ws"
+    );
+    expect(
+      buildWidgetWsUrl({ ...backend, baseUrl: "http://127.0.0.1:6903" }, w)
+    ).toBe("ws://127.0.0.1:6903/live_grid_ws");
+    expect(
+      buildWidgetWsUrl({ ...backend, baseUrl: "https://host.example/openbb/api" }, w)
+    ).toBe("wss://host.example/openbb/api/live_grid_ws");
+  });
+
+  it("returns null without a wsEndpoint", () => {
+    expect(buildWidgetWsUrl(backend, makeWidgetDef({ type: "live_grid" }))).toBeNull();
+    expect(
+      buildWidgetWsUrl(backend, makeWidgetDef({ type: "live_grid", wsEndpoint: null }))
+    ).toBeNull();
+  });
+
+  it("cannot be steered off-origin by a protocol-relative wsEndpoint", () => {
+    // widgets.json is remote input; "//evil.example/x" must stay a path under
+    // the backend origin, same as buildWidgetUrl.
+    const w = makeWidgetDef({ type: "live_grid", wsEndpoint: "//evil.example/x" });
+    const url = buildWidgetWsUrl(backend, w)!;
+    expect(new URL(url.replace(/^ws/, "http")).host).toBe("openbb.example.test");
   });
 });

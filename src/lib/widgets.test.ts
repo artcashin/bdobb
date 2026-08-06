@@ -100,3 +100,32 @@ describe("parseWidgetEntry defaults", () => {
     expect(w.mcpUrl).toBeNull();
   });
 });
+
+describe("live_grid parsing (v8)", () => {
+  it("parses wsEndpoint and data.wsRowIdColumn, normalizing the leading slash", () => {
+    const w = parseWidgetEntry("live_grid", {
+      name: "Live quotes",
+      type: "live_grid",
+      endpoint: "live_grid",
+      wsEndpoint: "live_grid_ws",
+      data: { wsRowIdColumn: "symbol" },
+    });
+    expect(w.type).toBe("live_grid");
+    expect(w.wsEndpoint).toBe("/live_grid_ws");
+    expect(w.wsRowIdColumn).toBe("symbol");
+  });
+
+  it("leaves both null when absent or the wrong type", () => {
+    const w = parseWidgetEntry("t", { name: "T", endpoint: "/t" });
+    expect(w.wsEndpoint).toBeNull();
+    expect(w.wsRowIdColumn).toBeNull();
+    const bad = parseWidgetEntry("t2", {
+      name: "T2",
+      endpoint: "/t2",
+      wsEndpoint: 42,
+      data: { wsRowIdColumn: ["symbol"] },
+    });
+    expect(bad.wsEndpoint).toBeNull();
+    expect(bad.wsRowIdColumn).toBeNull();
+  });
+});

@@ -27,6 +27,7 @@ import IframeRenderer from "./renderers/IframeRenderer";
 import MarkdownRenderer from "./renderers/MarkdownRenderer";
 import TableRenderer from "./renderers/TableRenderer";
 import KeysRenderer from "./renderers/KeysRenderer";
+import LiveGridRenderer from "./renderers/LiveGridRenderer";
 import MetricRenderer from "./renderers/MetricRenderer";
 import RawJsonView from "./renderers/RawJsonView";
 import UnsupportedRenderer from "./renderers/UnsupportedRenderer";
@@ -297,6 +298,19 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     }
     if (widget.type === "table") {
       return <TableRenderer data={data} widgetDef={widgetDef} theme={theme} />;
+    }
+    if (widget.type === "live_grid") {
+      // The GET fetch above seeded `data`; the renderer opens the widget's
+      // wsEndpoint itself and streams row updates into the grid.
+      return (
+        <LiveGridRenderer
+          data={data}
+          widgetDef={widgetDef}
+          backend={backend}
+          params={fetchParams}
+          theme={theme}
+        />
+      );
     }
     if (widget.type === "metric") {
       return <MetricRenderer data={data} widgetDef={widgetDef} theme={theme} />;
