@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  badgeFor,
   classifyProbeError,
   defaultParamValues,
   findKeyMaintBackend,
@@ -7,8 +8,10 @@ import {
   parseKeyMaintRows,
   pickProbeWidget,
   widgetProviders,
+  MULTISOURCE_LABEL,
 } from "./providerKeys";
 import type { WidgetDef } from "./types";
+import type { ProviderKeyStatus } from "./providerKeys";
 
 /** Minimal WidgetDef factory — only the fields this module reads. */
 function widget(over: Partial<WidgetDef>): WidgetDef {
@@ -196,5 +199,56 @@ describe("widgetProviders", () => {
       widget({ source: [] }),
     ];
     expect(widgetProviders(ws)).toEqual(["Alpaca", "Eodhd"]);
+  });
+});
+
+describe("badgeFor", () => {
+  const status = (map: Record<string, ProviderKeyStatus>) => (name: string) =>
+    map[name] ?? "unknown";
+
+  it("returns null when the widget names no provider", () => {
+    expect(badgeFor([], status({}))).toBeNull();
+  });
+
+  it("uses the provider's own name and status when there is exactly one", () => {
+    expect(badgeFor(["Eodhd"], status({ Eodhd: "unkeyed" }))).toEqual({
+      label: "Eodhd",
+      status: "unkeyed",
+      sources: ["Eodhd"],
+    });
+  });
+
+  it("labels several providers Multisource", () => {
+    expect(badgeFor(["Eodhd", "Fmp"], status({ Eodhd: "keyed", Fmp: "keyed" }))!.label).toBe(
+      MULTISOURCE_LABEL
+    );
+  });
+
+  it("is keyed when ANY provider is usable — the widget can be served", () => {
+    // Matches how the library's filters already treat multi-source widgets,
+    // so the badge and the filters cannot disagree.
+    expect(badgeFor(["Eodhd", "Fmp"], status({ Eodhd: "unkeyed", Fmp: "keyed" }))!.status).toBe(
+      "keyed"
+    );
+    expect(badgeFor(["Eodhd", "Fmp"], status({ Eodhd: "unknown", Fmp: "keyed" }))!.status).toBe(
+      "keyed"
+    );
+  });
+
+  it("is unkeyed only when EVERY provider is known to be missing its key", () => {
+    expect(badgeFor(["Eodhd", "Fmp"], status({ Eodhd: "unkeyed", Fmp: "unkeyed" }))!.status).toBe(
+      "unkeyed"
+    );
+  });
+
+  it("is unknown when nothing is usable but something is unresolved", () => {
+    // Never red on ambiguity: an unchecked provider might yet work.
+    expect(badgeFor(["Eodhd", "Fmp"], status({ Eodhd: "unkeyed", Fmp: "unknown" }))!.status).toBe(
+      "unknown"
+    );
+  });
+
+  it("keeps every source name for the caller to show", () => {
+    expect(badgeFor(["Eodhd", "Fmp"], status({}))!.sources).toEqual(["Eodhd", "Fmp"]);
   });
 });

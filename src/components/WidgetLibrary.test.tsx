@@ -238,10 +238,14 @@ describe("WidgetLibrary", () => {
       render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
       const eodhd = screen.getByText("Eodhd", { selector: ".widget-library-widget-provider" });
       expect(eodhd.className).toContain("widget-library-widget-provider");
-      expect(eodhd.className).toContain("keyed");
-      expect(screen.getByText("IMF", { selector: ".widget-library-widget-provider" }).className).toContain(
-        "unkeyed"
-      );
+      // classList, not a substring match: "unkeyed" CONTAINS "keyed", so
+      // `.className).toContain("keyed")` passes on a red badge too.
+      expect(eodhd.classList.contains("keyed")).toBe(true);
+      expect(
+        screen
+          .getByText("IMF", { selector: ".widget-library-widget-provider" })
+          .classList.contains("unkeyed")
+      ).toBe(true);
     });
 
     it("re-renders when key state lands after the library is already open", () => {
@@ -261,8 +265,10 @@ describe("WidgetLibrary", () => {
       });
 
       expect(
-        screen.getByText("Eodhd", { selector: ".widget-library-widget-provider" }).className
-      ).toContain("keyed");
+        screen
+          .getByText("Eodhd", { selector: ".widget-library-widget-provider" })
+          .classList.contains("keyed")
+      ).toBe(true);
     });
 
     it("marks providers unknown while no source has answered", () => {
@@ -350,6 +356,81 @@ describe("WidgetLibrary", () => {
 
       const imfCard = screen.getByRole("button", { name: /^IMF Data/ });
       expect(imfCard).toHaveAccessibleName(/^IMF Data/);
+    });
+  });
+
+  describe("multi-source widgets", () => {
+    const multi = (over: Partial<WidgetDef> = {}): WidgetDef => ({
+      ...mockWidgets[0],
+      id: "multi",
+      name: "Two Ways",
+      source: ["Eodhd", "Fmp"],
+      ...over,
+    });
+
+    it("badges several providers as Multisource, not as one of them", () => {
+      useProviderKeysStore.setState({
+        status: { eodhd: "keyed", fmp: "keyed" },
+        source: "key-maint",
+      });
+      const { container } = render(
+        <WidgetLibrary onSelectWidget={vi.fn()} widgets={[multi()]} />
+      );
+      const badge = container.querySelector(".widget-library-widget-provider")!;
+      expect(badge.textContent).toBe("Multisource");
+      expect(badge.classList.contains("keyed")).toBe(true);
+    });
+
+    it("stays green when only one of the providers is usable", () => {
+      useProviderKeysStore.setState({
+        status: { eodhd: "unkeyed", fmp: "keyed" },
+        source: "key-maint",
+      });
+      const { container } = render(
+        <WidgetLibrary onSelectWidget={vi.fn()} widgets={[multi()]} />
+      );
+      expect(
+        container.querySelector(".widget-library-widget-provider")!.classList.contains("keyed")
+      ).toBe(true);
+    });
+
+    it("goes red only when every provider is missing its key", () => {
+      useProviderKeysStore.setState({
+        status: { eodhd: "unkeyed", fmp: "unkeyed" },
+        source: "key-maint",
+      });
+      const { container } = render(
+        <WidgetLibrary onSelectWidget={vi.fn()} widgets={[multi()]} />
+      );
+      expect(
+        container.querySelector(".widget-library-widget-provider")!.classList.contains("unkeyed")
+      ).toBe(true);
+    });
+
+    it("names the actual providers in the badge's explanatory text", () => {
+      // The pill says "Multisource"; the names the old Source: footer carried
+      // must still reach the user somewhere.
+      useProviderKeysStore.setState({
+        status: { eodhd: "keyed", fmp: "keyed" },
+        source: "key-maint",
+      });
+      const { container } = render(
+        <WidgetLibrary onSelectWidget={vi.fn()} widgets={[multi()]} />
+      );
+      const badge = container.querySelector(".widget-library-widget-provider")!;
+      expect(badge.getAttribute("title")).toContain("Eodhd");
+      expect(badge.getAttribute("title")).toContain("Fmp");
+    });
+
+    it("still matches the provider filter for each of its providers", () => {
+      useProviderKeysStore.setState({ status: {}, source: "key-maint" });
+      render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={[multi()]} />);
+      fireEvent.change(screen.getByLabelText("Filter by provider"), {
+        target: { value: "Fmp" },
+      });
+      expect(
+        screen.getByText("Two Ways", { selector: ".widget-library-widget-title" })
+      ).toBeInTheDocument();
     });
   });
 

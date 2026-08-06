@@ -114,3 +114,45 @@ export function pickProbeWidget(widgets: WidgetDef[], normProvider: string): Wid
 export function widgetProviders(widgets: WidgetDef[]): string[] {
   return [...new Set(widgets.flatMap((w) => w.source))].sort();
 }
+
+/** Badge text for a widget served by more than one provider. */
+export const MULTISOURCE_LABEL = "Multisource";
+
+export interface ProviderBadge {
+  /** What the pill reads: the provider's name, or "Multisource". */
+  label: string;
+  status: ProviderKeyStatus;
+  /** Every provider the widget names, for the badge's explanatory text. */
+  sources: string[];
+}
+
+/**
+ * What a widget's `source` list earns as a badge.
+ *
+ * A widget naming several providers can be served by any one of them, so its
+ * status is the best of theirs: usable if any provider is usable. That is
+ * already how the library's provider filter and its authorized-only toggle
+ * treat multi-source widgets, so deriving the badge the same way keeps the
+ * pill and the filters from contradicting each other. Naming one of the
+ * providers on the pill would: filtering to provider B could show a card
+ * badged provider A.
+ *
+ * Red still requires certainty — every provider known to be missing its key.
+ * One unresolved provider leaves the whole badge unknown, because that
+ * provider might yet serve the widget.
+ */
+export function badgeFor(
+  sources: string[],
+  statusOf: (providerName: string) => ProviderKeyStatus
+): ProviderBadge | null {
+  if (sources.length === 0) return null;
+  if (sources.length === 1) {
+    return { label: sources[0], status: statusOf(sources[0]), sources };
+  }
+  const statuses = sources.map(statusOf);
+  const status: ProviderKeyStatus =
+    statuses.includes("keyed") ? "keyed"
+    : statuses.includes("unknown") ? "unknown"
+    : "unkeyed";
+  return { label: MULTISOURCE_LABEL, status, sources };
+}

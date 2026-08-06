@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useRegistryStore } from "../stores/registryStore";
 import { useProviderKeysStore } from "../stores/providerKeysStore";
 import type { WidgetDef } from "../lib/types";
-import type { ProviderKeyStatus } from "../lib/providerKeys";
-import { widgetProviders } from "../lib/providerKeys";
+import type { ProviderBadge } from "../lib/providerKeys";
+import { badgeFor, MULTISOURCE_LABEL, widgetProviders } from "../lib/providerKeys";
 
 // The badge's only visible text is the provider name; keyed/unkeyed/unknown
 // is conveyed by background color alone (green/red/neutral). That reaches
@@ -18,14 +18,23 @@ import { widgetProviders } from "../lib/providerKeys";
 // inferred "keyed" precisely because it's keyless — it needs no credential
 // at all. So the "keyed" text must stay true in both cases, without
 // asserting a key exists.
-function providerStatusLabel(providerName: string, status: ProviderKeyStatus): string {
-  switch (status) {
+function providerStatusLabel(badge: ProviderBadge): string {
+  // A "Multisource" pill names no provider, so the explanation carries the
+  // names — otherwise they would be lost with the Source: footer this badge
+  // replaced.
+  const multi = badge.sources.length > 1;
+  const who = multi ? `${MULTISOURCE_LABEL} (${badge.sources.join(", ")})` : badge.label;
+  switch (badge.status) {
     case "keyed":
-      return `${providerName}: ready — a key is configured, or none is required.`;
+      return multi
+        ? `${who}: ready — at least one of these providers is available.`
+        : `${who}: ready — a key is configured, or none is required.`;
     case "unkeyed":
-      return `${providerName}: missing API key, this widget will fail.`;
+      return multi
+        ? `${who}: every one of these providers is missing its API key, this widget will fail.`
+        : `${who}: missing API key, this widget will fail.`;
     case "unknown":
-      return `${providerName}: key status unknown.`;
+      return `${who}: key status unknown.`;
   }
 }
 
@@ -187,17 +196,17 @@ export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }
                   </div>
                   <div className="widget-library-widget-badges">
                     <span className="widget-library-widget-type">{widget.type}</span>
-                    {widget.source.length > 0 && (() => {
-                      const provider = widget.source[0];
-                      const status = statusFor(provider);
-                      const label = providerStatusLabel(provider, status);
+                    {(() => {
+                      const badge = badgeFor(widget.source, statusFor);
+                      if (!badge) return null;
+                      const label = providerStatusLabel(badge);
                       return (
                         <>
                           <span
-                            className={`widget-library-widget-provider ${status}`}
+                            className={`widget-library-widget-provider ${badge.status}`}
                             title={label}
                           >
-                            {provider}
+                            {badge.label}
                           </span>
                           {/* The badge span sits inside the whole-card button;
                               an aria-label here would REPLACE this span's text
