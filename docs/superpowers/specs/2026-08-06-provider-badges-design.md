@@ -92,8 +92,14 @@ normalizing and handled by the pairing rule above.
   phosphor `--clock-green`, which is tuned to read as an LED. The pair is
   defined with the badge CSS itself so it exists in every snapshot
   (v3–v7 predate live-grid, where these values first appeared).
-- Multi-source widgets (`source` arrays with several entries) show the first
-  source's badge; keyed-ness for filtering uses "any source keyed".
+- Multi-source widgets (`source` arrays with several entries) are badged
+  `Multisource` and take the best of their providers' statuses: green when
+  at least one can serve the widget, red only when every one is known to be
+  missing its key, neutral while any is unresolved. This matches how the
+  provider filter and the authorized-only toggle already treat them, so the
+  pill and the filters cannot contradict each other. The provider names are
+  carried in the badge's title and screen-reader text.
+  (Decided 2026-08-06, superseding "show the first source's badge".)
 - The provider `<select>` and the authorized-only toggle live in the header
   next to the category chips and are keyboard-accessible (real `<select>`,
   real `<button aria-pressed>`).
