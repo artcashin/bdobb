@@ -409,6 +409,78 @@ describe("buildWidgetRefs", () => {
 
     expect(refs).toHaveLength(0);
   });
+
+  it("excludes keys widgets from widget refs so key state never reaches the agent " +
+    "(Task 6): a tier-3 keys row carries actual credential values, and this is what feeds " +
+    "Rita's widgets field regardless of caller or contextSharing setting", () => {
+    const cards: DashboardCard[] = [
+      {
+        uuid: "keys-card",
+        widgetId: "keys_widget",
+        backendId: "nas",
+        layout: { x: 0, y: 0, w: 20, h: 12 },
+        params: {},
+        view: "default",
+      },
+      {
+        uuid: "table-card",
+        widgetId: "table_widget",
+        backendId: "nas",
+        layout: { x: 0, y: 0, w: 20, h: 12 },
+        params: {},
+        view: "default",
+      },
+    ];
+
+    const keysWidget: WidgetDef = {
+      id: "keys_widget",
+      name: "API Keys",
+      description: "",
+      category: "Test",
+      subCategory: null,
+      type: "keys",
+      endpoint: "/api/keys",
+      gridData: { w: 20, h: 12 },
+      source: [],
+      runButton: false,
+      raw: false,
+      refetchInterval: null,
+      params: [],
+      dataKey: null,
+      columnsDefs: null,
+      mcpUrl: null,
+      backendId: "test",
+    };
+
+    const tableWidget: WidgetDef = {
+      id: "table_widget",
+      name: "A Table",
+      description: "",
+      category: "Test",
+      subCategory: null,
+      type: "table",
+      endpoint: "/api/table",
+      gridData: { w: 20, h: 12 },
+      source: [],
+      runButton: false,
+      raw: false,
+      refetchInterval: null,
+      params: [],
+      dataKey: null,
+      columnsDefs: null,
+      mcpUrl: null,
+      backendId: "test",
+    };
+
+    const lookupWidget = (_backendId: string, widgetId: string) =>
+      widgetId === "keys_widget" ? keysWidget : widgetId === "table_widget" ? tableWidget : undefined;
+
+    const refs = buildWidgetRefs(cards, lookupWidget, () => "NAS");
+
+    expect(refs).toHaveLength(1);
+    expect(refs.map((r) => r.widget_id)).not.toContain("keys_widget");
+    expect(refs.map((r) => r.widget_id)).toContain("table_widget");
+  });
 });
 
 describe("makeWidgetDataFetcher", () => {

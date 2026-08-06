@@ -214,6 +214,14 @@ export function buildWidgetRefs(
       continue;
     }
 
+    // Key state must never reach an LLM, regardless of the user's
+    // contextSharing setting: filtering here (rather than in each caller,
+    // e.g. ChatPane) covers every caller of buildWidgetRefs, present and
+    // future.
+    if (widget.type === "keys") {
+      continue;
+    }
+
     const paramRefs: WidgetParamRef[] = [];
 
     for (const param of widget.params) {

@@ -274,7 +274,14 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     // The raw view fetches with raw=true and shows the JSON directly. It
     // previously fell through to the type renderer, which showed it only via
     // that renderer's shape-mismatch fallback.
-    if (card.view === "raw") {
+    //
+    // A keys widget's rows carry credential values at tier 3; the raw view
+    // would dump them verbatim into the DOM. The server already declares
+    // raw: false for this widget, but a card whose view was persisted as
+    // "raw" before this widget existed (or hand-edited in storage) would
+    // still reach this branch ahead of the type dispatch below, so the
+    // server flag alone is not enough — the client needs its own guard.
+    if (card.view === "raw" && widget.type !== "keys") {
       return <RawJsonView data={data} widgetDef={widgetDef} theme={theme} />;
     }
     if (card.view === "default" && widget.type === "chart") {
@@ -336,7 +343,10 @@ export default function WidgetCard({ card }: WidgetCardProps) {
   );
 
   const availableViews: CardView[] = ["default"];
-  if (widget?.raw) availableViews.push("raw");
+  // Never offer the raw view for a keys widget, even if the server flags it
+  // raw-capable: the point of the guard above is defeated if the UI still
+  // lets the user select the view it silently downgrades.
+  if (widget?.raw && widget.type !== "keys") availableViews.push("raw");
   // Spec: a widget with a date/time column can toggle table <-> chart. Many
   // widgets.json entries omit columnsDefs, so also offer it when the rows in
   // hand actually yield a figure.
