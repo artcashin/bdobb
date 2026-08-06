@@ -294,7 +294,7 @@ export default function WidgetCard({ card }: WidgetCardProps) {
       return <MarkdownRenderer data={data} widgetDef={widgetDef} theme={theme} />;
     }
     if (widget.type === "keys") {
-      return <KeysRenderer data={data} widgetDef={widgetDef} theme={theme} />;
+      return <KeysRenderer data={data} widgetDef={widgetDef} theme={theme} backend={backend} />;
     }
     if (widget.type === "table") {
       return <TableRenderer data={data} widgetDef={widgetDef} theme={theme} />;

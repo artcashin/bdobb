@@ -1040,6 +1040,38 @@ input, select, textarea {
 .keys-dot.down { background: #d9695f; }
 .keys-dot.idle { background: var(--text-dim); }
 
+/* Keys widget: the Refresh control that re-runs the ~18-vendor probe sweep,
+   and the row context menu ("Test this service") that re-probes just one
+   provider. Both are the only way to (re-)probe — a re-render never does. */
+.keys-toolbar {
+  display: flex; justify-content: flex-end;
+  padding: 4px 8px;
+}
+.keys-refresh {
+  font-size: 11px; padding: 3px 10px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.keys-refresh:hover:not(:disabled) { border-color: var(--text-dim); }
+.keys-refresh:disabled { opacity: 0.6; cursor: default; }
+.keys-context-menu-anchor { z-index: 100; }
+.keys-context-menu {
+  list-style: none; margin: 0; padding: 4px;
+  min-width: 160px;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.keys-context-menu li[role="menuitem"] {
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+  color: var(--text);
+}
+.keys-context-menu li[role="menuitem"]:hover,
+.keys-context-menu li[role="menuitem"]:focus {
+  background: var(--bg); outline: none;
+}
+
 .metric-value { font-size: 28px; font-weight: 600; color: var(--text); }
 .metric-container { display: flex; align-items: center; justify-content: center; }
 .raw-json-view pre {
