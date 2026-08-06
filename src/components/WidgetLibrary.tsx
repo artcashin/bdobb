@@ -38,7 +38,13 @@ interface WidgetLibraryProps {
 export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }: WidgetLibraryProps) {
   const { widgets: storeWidgets } = useRegistryStore();
   const widgets = propsWidgets || storeWidgets;
-  const statusFor = useProviderKeysStore((s) => s.statusFor);
+  // Whole-store form, not `useProviderKeysStore((s) => s.statusFor)`: the
+  // `statusFor` action is reference-stable across `set()`, so selecting it
+  // alone never re-renders when key state actually lands (zustand compares
+  // selector output with Object.is). Subscribing to the whole store means
+  // any `status`/`source` update is a new object, which does trigger a
+  // re-render; `statusFor` itself is still called the same way everywhere.
+  const { statusFor } = useProviderKeysStore();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [selectedProvider, setSelectedProvider] = useState<string>("All");

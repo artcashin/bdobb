@@ -1,8 +1,15 @@
-import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WidgetLibrary } from "./WidgetLibrary";
 import type { WidgetDef } from "../lib/types";
 import { useProviderKeysStore } from "../stores/providerKeysStore";
+
+beforeEach(() => {
+  // Without this, a test that doesn't explicitly seed the store inherits
+  // whatever the previous test left behind (each test currently does seed
+  // it, but that shouldn't be load-bearing for isolation).
+  useProviderKeysStore.setState({ status: {}, source: "none" });
+});
 
 describe("WidgetLibrary", () => {
   const mockWidgets: WidgetDef[] = [
@@ -235,6 +242,27 @@ describe("WidgetLibrary", () => {
       expect(screen.getByText("IMF", { selector: ".widget-library-widget-provider" }).className).toContain(
         "unkeyed"
       );
+    });
+
+    it("re-renders when key state lands after the library is already open", () => {
+      // The library was seeded BEFORE render in every other test here -- that
+      // is exactly why a reference-stable `statusFor` selector (zustand
+      // compares with Object.is, and the action never changes identity)
+      // could pass every other test while never actually re-rendering on a
+      // real store update. Render first, THEN mutate the store, to catch it.
+      useProviderKeysStore.setState({ status: {}, source: "none" });
+      render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
+      expect(
+        screen.getByText("Eodhd", { selector: ".widget-library-widget-provider" }).className
+      ).toContain("unknown");
+
+      act(() => {
+        useProviderKeysStore.setState({ status: { eodhd: "keyed" }, source: "probe" });
+      });
+
+      expect(
+        screen.getByText("Eodhd", { selector: ".widget-library-widget-provider" }).className
+      ).toContain("keyed");
     });
 
     it("marks providers unknown while no source has answered", () => {
