@@ -1009,6 +1009,37 @@ input, select, textarea {
   padding: 6px 8px;
   font-size: 12px; color: var(--text-dim);
 }
+/* Keys widget: a key-state pill and a vendor-reachability dot per provider
+   row. Colour is never the only carrier — the pill's own text names the
+   state, and the dot carries an aria-label naming the server result — so
+   both classes below exist purely as a visual reinforcement of text that's
+   already there. Reuses the green/red pair from .widget-library-widget-provider
+   (#4caf7d / #d9695f) and the amber already used for warnings elsewhere in
+   this file (#d9a75f), with the same dark-on-light pill text (#0e1116). */
+.keys-provider { display: inline-block; }
+.keys-pill {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
+  white-space: nowrap;
+}
+.keys-pill.own { background: #4caf7d; color: #0e1116; }
+.keys-pill.demo { background: #d9a75f; color: #0e1116; }
+.keys-pill.unset { background: #d9695f; color: #0e1116; }
+.keys-pill.unknown {
+  background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
+}
+/* The dot has no text of its own — a plain circle would fail contrast and
+   colour-blind readers alike, so aria-label carries the same state the pill
+   states in words. */
+.keys-dot {
+  display: inline-block;
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.keys-dot.ok { background: #4caf7d; }
+.keys-dot.warn { background: #d9a75f; }
+.keys-dot.down { background: #d9695f; }
+.keys-dot.idle { background: var(--text-dim); }
+
 .metric-value { font-size: 28px; font-weight: 600; color: var(--text); }
 .metric-container { display: flex; align-items: center; justify-content: center; }
 .raw-json-view pre {
