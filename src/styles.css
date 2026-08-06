@@ -1367,7 +1367,7 @@ input, select, textarea {
 }
 
 
-/* ---- live_grid (v8, Ep. 8) ---- */
+/* ---- live_grid (v9, Ep. 9) ---- */
 /* Candlestick green/red for signed values; the flash is a brief background
    pulse retriggered by the cell span remounting (its key carries an update
    counter), so no timers are involved. */
@@ -1406,7 +1406,7 @@ input, select, textarea {
   box-shadow: 0 0 6px color-mix(in srgb, var(--clock-green) 60%, transparent);
 }
 
-/* ---- News rail (v9, Ep. 9) ---- */
+/* ---- News rail (v8, Ep. 8) ---- */
 .news-rail { height: 100%; display: flex; flex-direction: column; }
 .news-rail-status {
   display: flex; align-items: center; gap: 6px;

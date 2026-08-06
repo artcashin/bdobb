@@ -43,7 +43,7 @@ export const CLOCK_DEFAULT_ZONES =
 /** Address the Website widget frames. */
 export const WEBSITE_URL_PARAM = "url";
 
-/** rss-ticker base URL for the News rail (Ep. 9). */
+/** rss-ticker base URL for the News rail (Ep. 8). */
 export const NEWS_URL_PARAM = "url";
 /** rss-ticker user id. */
 export const NEWS_USER_PARAM = "user";
@@ -127,7 +127,7 @@ export const BUILTIN_WIDGETS: WidgetDef[] = [
     name: "News rail",
     type: "news",
     description:
-      "Live headlines from an rss-ticker backend (Adventures in OpenBB, Ep. 9), " +
+      "Live headlines from an rss-ticker backend (Adventures in OpenBB, Ep. 8), " +
       "drawn natively — no iframe. Double-click a headline to open it.",
     gridData: { w: 40, h: 8, minW: 12, minH: 3 },
     params: [

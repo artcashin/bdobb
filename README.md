@@ -12,7 +12,8 @@ section, and the app has exactly that chapter's functionality.
 | v5.0.0 | Ep. 5 — Kick the Tires in Ten Minutes | One-command reference backend, conformance suite, Workspace apps.json import/export + parameter groups |
 | v6.0.0 | Ep. 6 — The Analyst Who Never Leaves the Building | The chat pane: agent protocol client, SSE streaming, MCP tools, dashboard context |
 | v7.0.0 | Ep. 7 — The iPadOS Adventure | iPadOS builds, touch input, free-tier signing flow |
-| v8.0.0 | Ep. 8 — The Tape Comes to the Closet | live_grid renderer: streaming quotes in your own app |
+| v8.0.0 | Ep. 8 — All the News That Fits, We Print | News rail built-in: the wire, natively |
+| v9.0.0 | Ep. 9 — The Tape Comes to the Closet | live_grid renderer: streaming quotes in your own app |
 
 ## What you get (this release: v9.0.0)
 
@@ -31,7 +32,7 @@ section, and the app has exactly that chapter's functionality.
 - **Backends & settings** — add/edit backends with connection status; a
   rotating app log viewable in Settings.
 
-**New in v9.0.0 (Ep. 9):** the wire, natively. A **News rail** built-in
+**New in v8.0.0 (Ep. 8):** the wire, natively. A **News rail** built-in
 widget that speaks an [rss-ticker](https://github.com/artcashin/rss-ticker)
 backend's protocol directly — REST seed plus websocket stream, no iframe.
 Point it at the ticker's URL and user id: under `tailscale_auth` your
@@ -44,8 +45,8 @@ gap-fill), a 4401 close is terminal ("unauthorized", no retry storm),
 highlighted headlines take the accent color, and double-click/Enter opens
 the story in your browser — `http(s)` links only.
 
-**New in v8.0.0 (Ep. 8):** prices that move. The **live_grid renderer**:
-point BDOBB at the companion stack's `live-grid` service (Ep. 8 of the
+**New in v9.0.0 (Ep. 9):** prices that move. The **live_grid renderer**:
+point BDOBB at the companion stack's `live-grid` service (Ep. 9 of the
 series) and a watchlist of US equities, crypto and forex updates in place —
 seeded by a normal GET, then streamed over a WebSocket to the widget's
 `wsEndpoint`, rows matched by `wsRowIdColumn`. Updated cells flash (green

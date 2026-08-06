@@ -5,7 +5,7 @@ import { logError } from "../../lib/logger";
 import { rethrowWithScopeHelp } from "../../lib/httpScope";
 
 /**
- * News rail (v9, Ep. 9): live headlines from an rss-ticker backend, drawn
+ * News rail (v8, Ep. 8): live headlines from an rss-ticker backend, drawn
  * natively rather than framed.
  *
  * Protocol: GET {url}/api/news?user=&limit= seeds the list (token, when
