@@ -86,7 +86,9 @@ export default function KeysRenderer({ data, theme }: KeysRendererProps) {
     () => [
       {
         id: "dot",
-        header: "",
+        // Visually blank — the column reads as an icon rail — but still
+        // named for screen readers, which otherwise get an unlabeled header.
+        header: () => <span className="sr-only">Reachability</span>,
         enableSorting: false,
         cell: ({ row }) => {
           const { cls, label } = dotFor(row.original);
@@ -157,7 +159,13 @@ export default function KeysRenderer({ data, theme }: KeysRendererProps) {
                       }
                     }}
                     aria-sort={
-                      sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"
+                      sortable
+                        ? sorted === "asc"
+                          ? "ascending"
+                          : sorted === "desc"
+                            ? "descending"
+                            : "none"
+                        : undefined
                     }
                   >
                     <span className="th-label">
