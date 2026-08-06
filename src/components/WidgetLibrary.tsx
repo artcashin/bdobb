@@ -2,6 +2,25 @@ import { useState } from "react";
 import { useRegistryStore } from "../stores/registryStore";
 import { useProviderKeysStore } from "../stores/providerKeysStore";
 import type { WidgetDef } from "../lib/types";
+import type { ProviderKeyStatus } from "../lib/providerKeys";
+
+// The badge's only visible text is the provider name; keyed/unkeyed/unknown
+// is conveyed by background color alone (green/red/neutral). That reaches
+// neither a screen-reader user (hears just the name) nor a color-vision-
+// deficient user (green vs red read as similar lightness). This phrase is
+// used as both `title` (sighted hover) and `aria-label` (screen reader) so
+// both audiences get the same explanation, in plain language rather than
+// the raw "keyed"/"unkeyed" token.
+function providerStatusLabel(providerName: string, status: ProviderKeyStatus): string {
+  switch (status) {
+    case "keyed":
+      return `${providerName}: API key configured, this widget should return data.`;
+    case "unkeyed":
+      return `${providerName}: no API key configured, this widget will fail.`;
+    case "unknown":
+      return `${providerName}: key status unknown.`;
+  }
+}
 
 interface WidgetLibraryProps {
   onSelectWidget: (widget: WidgetDef) => void;
@@ -120,13 +139,20 @@ export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }
                   </div>
                   <div className="widget-library-widget-badges">
                     <span className="widget-library-widget-type">{widget.type}</span>
-                    {widget.source.length > 0 && (
-                      <span
-                        className={`widget-library-widget-provider ${statusFor(widget.source[0])}`}
-                      >
-                        {widget.source[0]}
-                      </span>
-                    )}
+                    {widget.source.length > 0 && (() => {
+                      const provider = widget.source[0];
+                      const status = statusFor(provider);
+                      const label = providerStatusLabel(provider, status);
+                      return (
+                        <span
+                          className={`widget-library-widget-provider ${status}`}
+                          title={label}
+                          aria-label={label}
+                        >
+                          {provider}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
                 <p className="widget-library-widget-desc">{widget.description}</p>

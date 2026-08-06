@@ -251,5 +251,32 @@ describe("WidgetLibrary", () => {
       );
       expect(container.querySelector(".widget-library-widget-provider")).toBeNull();
     });
+
+    it("carries the key status as accessible text, not just badge color", () => {
+      // Color alone (keyed green vs unkeyed red) doesn't reach screen-reader
+      // users or color-vision-deficient users — this asserts a textual
+      // carrier (title/aria-label) exists and reads naturally, not just the
+      // raw "keyed"/"unkeyed" token.
+      useProviderKeysStore.setState({
+        status: { eodhd: "keyed", imf: "unkeyed" },
+        source: "key-maint",
+      });
+      render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
+
+      const eodhd = screen.getByText("Eodhd", { selector: ".widget-library-widget-provider" });
+      const eodhdLabel = eodhd.getAttribute("aria-label") ?? eodhd.getAttribute("title");
+      expect(eodhdLabel).toBeTruthy();
+      expect(eodhdLabel).not.toBe("keyed");
+      expect(eodhdLabel!.toLowerCase()).toContain("eodhd");
+      expect(eodhdLabel!.toLowerCase()).toMatch(/key/);
+      expect(eodhdLabel!.toLowerCase()).not.toMatch(/no api key|missing|fail/);
+
+      const imf = screen.getByText("IMF", { selector: ".widget-library-widget-provider" });
+      const imfLabel = imf.getAttribute("aria-label") ?? imf.getAttribute("title");
+      expect(imfLabel).toBeTruthy();
+      expect(imfLabel).not.toBe("unkeyed");
+      expect(imfLabel!.toLowerCase()).toContain("imf");
+      expect(imfLabel!.toLowerCase()).toMatch(/no.*key|missing.*key|fail/);
+    });
   });
 });
