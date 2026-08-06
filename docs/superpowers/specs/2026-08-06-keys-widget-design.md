@@ -42,17 +42,26 @@ needs them apart:
 |---|---|---|
 | `httpx.HTTPError` (timeout, refused, DNS) — no answer at all | `no_response` | **red** |
 | Any HTTP error status, including 401/403 | `error` / `auth_failed` | **amber** |
-| 2xx | `ok` | **green** |
+| 2xx whose body matches an `invalid_markers` string | `auth_failed` | **amber** |
+| 2xx, key accepted | `ok` | **green** |
 | No probe defined, or key not set | `skipped` | grey |
 
 `auth_failed` stays a distinct result (the UI shows it differently in the
 detail text) but is amber, because the vendor did answer.
 
-**Known gap, accepted:** a 2xx whose body matches an `invalid_markers` string
-means the vendor is healthy but the key is bad. The dot is green (the server
-is fine) and the pill is green (a key is configured), yet the key does not
-work. Neither indicator's vocabulary covers this, so it is surfaced in the
-row's detail text only. Revisit if it bites.
+**A 2xx that rejects the key is amber** (Art's call, 2026-08-06). Several
+vendors — Alpha Vantage and FMP among them — report a bad key with HTTP 200
+and an error string in the body, so the status code alone is not the signal.
+`_probe_one` already detects this via `invalid_markers` and returns
+`auth_failed`, which the table above puts in the amber bucket: the vendor
+answered, and the answer was an error. That is the same rule as an HTTP 4xx,
+applied one layer up.
+
+The **pill stays green** in that case, and deliberately so: the two
+indicators answer different questions. The pill says a key of your own is
+configured, which is true. The amber dot beside it is what says the key is
+not working. The row's detail text names which — `HTTP 200, rejected by
+body` — so the pair is never ambiguous.
 
 Detail strings keep the existing rule: built **only** from status codes and
 exception class names, never from URLs, bodies, or key material.
