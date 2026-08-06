@@ -8,15 +8,21 @@ import type { ProviderKeyStatus } from "../lib/providerKeys";
 // is conveyed by background color alone (green/red/neutral). That reaches
 // neither a screen-reader user (hears just the name) nor a color-vision-
 // deficient user (green vs red read as similar lightness). This phrase is
-// used as both `title` (sighted hover) and `aria-label` (screen reader) so
-// both audiences get the same explanation, in plain language rather than
-// the raw "keyed"/"unkeyed" token.
+// used as both `title` (sighted hover) and a sr-only sibling node (screen
+// reader) so both audiences get the same explanation, in plain language
+// rather than the raw "keyed"/"unkeyed" token.
+//
+// "keyed" does NOT mean a key is configured: under source: "key-maint" (see
+// providerKeysStore.statusFor), a provider that key-maint doesn't list is
+// inferred "keyed" precisely because it's keyless — it needs no credential
+// at all. So the "keyed" text must stay true in both cases, without
+// asserting a key exists.
 function providerStatusLabel(providerName: string, status: ProviderKeyStatus): string {
   switch (status) {
     case "keyed":
-      return `${providerName}: API key configured, this widget should return data.`;
+      return `${providerName}: ready — a key is configured, or none is required.`;
     case "unkeyed":
-      return `${providerName}: no API key configured, this widget will fail.`;
+      return `${providerName}: missing API key, this widget will fail.`;
     case "unknown":
       return `${providerName}: key status unknown.`;
   }
@@ -144,13 +150,20 @@ export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }
                       const status = statusFor(provider);
                       const label = providerStatusLabel(provider, status);
                       return (
-                        <span
-                          className={`widget-library-widget-provider ${status}`}
-                          title={label}
-                          aria-label={label}
-                        >
-                          {provider}
-                        </span>
+                        <>
+                          <span
+                            className={`widget-library-widget-provider ${status}`}
+                            title={label}
+                          >
+                            {provider}
+                          </span>
+                          {/* The badge span sits inside the whole-card button;
+                              an aria-label here would REPLACE this span's text
+                              contribution to the button's accessible name
+                              instead of being announced alongside it. A plain
+                              sr-only sibling reads in natural order instead. */}
+                          <span className="sr-only">{label}</span>
+                        </>
                       );
                     })()}
                   </div>

@@ -224,6 +224,18 @@ input, select, textarea {
 /* ---- shared bits used by later tasks ---- */
 .error-box { color: var(--error); padding: 8px; }
 .placeholder-box { color: var(--text-dim); padding: 8px; }
+/* Visually hidden but still in the accessibility tree (unlike display:none
+   or visibility:hidden, which remove a node from it). Standard clip-rect/1px
+   technique. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .raw-json {
   overflow: auto;
   font-family: ui-monospace, Menlo, monospace;

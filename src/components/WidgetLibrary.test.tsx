@@ -252,11 +252,13 @@ describe("WidgetLibrary", () => {
       expect(container.querySelector(".widget-library-widget-provider")).toBeNull();
     });
 
-    it("carries the key status as accessible text, not just badge color", () => {
+    it("carries the key status as text, not just badge color, without claiming a key exists when none may", () => {
       // Color alone (keyed green vs unkeyed red) doesn't reach screen-reader
       // users or color-vision-deficient users — this asserts a textual
-      // carrier (title/aria-label) exists and reads naturally, not just the
-      // raw "keyed"/"unkeyed" token.
+      // carrier (title) exists and reads naturally, not just the raw
+      // "keyed"/"unkeyed" token. Under source: "key-maint", "keyed" also
+      // covers providers that need no key at all (see providerKeysStore's
+      // statusFor), so the "keyed" text must not assert a key is configured.
       useProviderKeysStore.setState({
         status: { eodhd: "keyed", imf: "unkeyed" },
         source: "key-maint",
@@ -264,19 +266,60 @@ describe("WidgetLibrary", () => {
       render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
 
       const eodhd = screen.getByText("Eodhd", { selector: ".widget-library-widget-provider" });
-      const eodhdLabel = eodhd.getAttribute("aria-label") ?? eodhd.getAttribute("title");
+      const eodhdLabel = eodhd.getAttribute("title");
       expect(eodhdLabel).toBeTruthy();
       expect(eodhdLabel).not.toBe("keyed");
       expect(eodhdLabel!.toLowerCase()).toContain("eodhd");
       expect(eodhdLabel!.toLowerCase()).toMatch(/key/);
       expect(eodhdLabel!.toLowerCase()).not.toMatch(/no api key|missing|fail/);
+      // Must not assert a key is configured — key-maint infers "keyed" for
+      // providers it doesn't list precisely because they need no key.
+      expect(eodhdLabel!.toLowerCase()).not.toMatch(/api key configured/);
 
       const imf = screen.getByText("IMF", { selector: ".widget-library-widget-provider" });
-      const imfLabel = imf.getAttribute("aria-label") ?? imf.getAttribute("title");
+      const imfLabel = imf.getAttribute("title");
       expect(imfLabel).toBeTruthy();
       expect(imfLabel).not.toBe("unkeyed");
       expect(imfLabel!.toLowerCase()).toContain("imf");
       expect(imfLabel!.toLowerCase()).toMatch(/no.*key|missing.*key|fail/);
+    });
+
+    it("moves the status sentence to a visually-hidden node instead of aria-label, so it doesn't pollute the card's accessible name", () => {
+      // A previous fix put the status sentence in aria-label on the badge
+      // span. Since the badge sits inside the whole-card button, that
+      // aria-label REPLACED the badge's text contribution to the button's
+      // accessible name instead of being announced alongside it — splicing a
+      // full sentence with terminal punctuation into the middle of the
+      // card's name. The fix must carry the sentence as ordinary
+      // (visually-hidden) text instead.
+      useProviderKeysStore.setState({
+        status: { eodhd: "keyed", imf: "unkeyed" },
+        source: "key-maint",
+      });
+      render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
+
+      const eodhd = screen.getByText("Eodhd", { selector: ".widget-library-widget-provider" });
+      expect(eodhd).not.toHaveAttribute("aria-label");
+      // Visible text is unchanged: still just the provider name.
+      expect(eodhd.textContent).toBe("Eodhd");
+      const eodhdLabel = eodhd.getAttribute("title")!;
+
+      const imf = screen.getByText("IMF", { selector: ".widget-library-widget-provider" });
+      expect(imf).not.toHaveAttribute("aria-label");
+      expect(imf.textContent).toBe("IMF");
+      const imfLabel = imf.getAttribute("title")!;
+
+      // The same sentence still reaches screen readers, via a sr-only sibling.
+      expect(screen.getByText(eodhdLabel, { selector: ".sr-only" })).toBeInTheDocument();
+      expect(screen.getByText(imfLabel, { selector: ".sr-only" })).toBeInTheDocument();
+
+      // The enclosing card button's accessible name still contains the
+      // widget's own name intact, unreplaced by the status sentence.
+      const historicalCard = screen.getByRole("button", { name: /^Historical Prices/ });
+      expect(historicalCard).toHaveAccessibleName(/^Historical Prices/);
+
+      const imfCard = screen.getByRole("button", { name: /^IMF Data/ });
+      expect(imfCard).toHaveAccessibleName(/^IMF Data/);
     });
   });
 });
