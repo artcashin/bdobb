@@ -15,7 +15,8 @@ import {
   CLOCK_CYCLE_PARAM, CLOCK_FACE_PARAM,
   NOTE_TEXT_PARAM, WEBSITE_URL_PARAM,
   NEWS_URL_PARAM, NEWS_USER_PARAM, NEWS_TOKEN_PARAM,
-  BUILTIN_CLOCK_ID, BUILTIN_NEWS_ID, BUILTIN_NOTE_ID, BUILTIN_WEBSITE_ID,
+  SYMPHONY_POD_URL_PARAM, SYMPHONY_STREAM_ID_PARAM, SYMPHONY_MODE_PARAM,
+  BUILTIN_CLOCK_ID, BUILTIN_NEWS_ID, BUILTIN_NOTE_ID, BUILTIN_WEBSITE_ID, BUILTIN_SYMPHONY_ID,
   findBuiltin, isBuiltinBackend,
 } from "../lib/builtins";
 import NewsRailRenderer from "./renderers/NewsRailRenderer";
@@ -30,6 +31,7 @@ import LiveGridRenderer from "./renderers/LiveGridRenderer";
 import MetricRenderer from "./renderers/MetricRenderer";
 import RawJsonView from "./renderers/RawJsonView";
 import UnsupportedRenderer from "./renderers/UnsupportedRenderer";
+import SymphonyRenderer from "./renderers/SymphonyRenderer";
 
 export interface WidgetCardProps {
   card: DashboardCard;
@@ -252,6 +254,20 @@ export default function WidgetCard({ card }: WidgetCardProps) {
           zones={raw.split(",").map((z) => z.trim()).filter(Boolean)}
           hour12={hour12}
           face={fetchParams[CLOCK_FACE_PARAM] === "solid" ? "solid" : "dots"}
+        />
+      );
+    }
+    if (card.widgetId === BUILTIN_SYMPHONY_ID) {
+      return (
+        <SymphonyRenderer
+          data={null}
+          widgetDef={widgetDef}
+          theme={theme}
+          params={{
+            pod: String(fetchParams[SYMPHONY_POD_URL_PARAM] ?? ""),
+            id: String(fetchParams[SYMPHONY_STREAM_ID_PARAM] ?? ""),
+            pid: String(fetchParams[SYMPHONY_MODE_PARAM] ?? ""),
+          }}
         />
       );
     }
