@@ -1361,8 +1361,8 @@ input, select, textarea {
   background: none; border: none; color: inherit; cursor: pointer;
 }
 
-/* A backend URL the compiled HTTP allowlist cannot reach. Warning rather than
-   error: the value is valid, it just will not work in this build. */
+/* Amber advisory under a form field: the value needs attention but nothing
+   is blocked. */
 .backend-form-warn {
   display: block; margin-top: 4px;
   font-size: 11px; line-height: 1.5; color: #d9a75f;
