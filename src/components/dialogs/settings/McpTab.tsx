@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Settings } from "../../../lib/types";
 import { assembleTools, clearMcpCache } from "../../../lib/agent/mcp";
 import { logError } from "../../../lib/logger";
@@ -17,6 +17,15 @@ export default function McpTab({ settings, onChange }: McpTabProps) {
   const [mcpCheck, setMcpCheck] = useState<
     { toolCount: number; budgetExceeded: McpBudgetExceeded[]; unreachable: McpUnreachable[] } | null
   >(null);
+
+  // Mirrors the pre-split SettingsDialog effect that reset both the draft
+  // and the MCP budget-check result when the store's settings changed while
+  // the dialog was open. The draft reset now lives in SettingsDialog; this
+  // clears the check so a stale banner (computed against the pre-reset
+  // server list) doesn't linger on screen.
+  useEffect(() => {
+    setMcpCheck(null);
+  }, [settings]);
 
   const handleAddMcpServer = () => {
     const url = newMcpUrl.trim();
