@@ -39,6 +39,9 @@ describe("settings", () => {
       theme: "dark" as const,
       contextSharing: true,
       mcpServers: [] as any[],
+      symphonyPodUrl: "",
+      symphonyPartnerId: "",
+      symphonyBridgeUrl: "",
     };
     await persistence.setSettings(settings);
     const content = files.get("settings.json");
@@ -51,6 +54,9 @@ describe("settings", () => {
       theme: "dark" as const,
       contextSharing: true,
       mcpServers: [{ id: "1", url: "http://localhost:3000", enabled: true } as any],
+      symphonyPodUrl: "",
+      symphonyPartnerId: "",
+      symphonyBridgeUrl: "",
     };
     files.set("settings.json", JSON.stringify(settings, null, 2));
     const result = await persistence.getSettings();

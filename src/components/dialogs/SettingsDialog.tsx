@@ -7,6 +7,7 @@ import RitaTab from "./settings/RitaTab";
 import McpTab from "./settings/McpTab";
 import AppearanceTab from "./settings/AppearanceTab";
 import LogsTab from "./settings/LogsTab";
+import SymphonyTab from "./settings/SymphonyTab";
 
 export interface SettingsDialogProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ const TABS = [
   { id: "mcp", label: "MCP" },
   { id: "appearance", label: "Appearance" },
   { id: "logs", label: "Logs" },
+  { id: "symphony", label: "Symphony" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -46,6 +48,16 @@ export default function SettingsDialog({ isOpen, onClose }: SettingsDialogProps)
       return;
     }
 
+    if (localSettings.symphonyPodUrl && !isHttpUrl(localSettings.symphonyPodUrl)) {
+      alert("Please enter a valid HTTP/HTTPS URL for Symphony Pod");
+      return;
+    }
+
+    if (localSettings.symphonyBridgeUrl && !isHttpUrl(localSettings.symphonyBridgeUrl)) {
+      alert("Please enter a valid HTTP/HTTPS URL for Symphony Bridge");
+      return;
+    }
+
     // One awaited write. Four un-awaited setters each wrote settings.json in
     // the same tick, so which snapshot landed was non-deterministic and three
     // rejections went unhandled.
@@ -55,6 +67,9 @@ export default function SettingsDialog({ isOpen, onClose }: SettingsDialogProps)
         contextSharing: localSettings.contextSharing,
         mcpServers: localSettings.mcpServers,
         shareTargets: localSettings.shareTargets ?? [],
+        symphonyPodUrl: localSettings.symphonyPodUrl,
+        symphonyPartnerId: localSettings.symphonyPartnerId,
+        symphonyBridgeUrl: localSettings.symphonyBridgeUrl,
       });
     } catch (e) {
       alert(`Could not save settings: ${e instanceof Error ? e.message : String(e)}`);
@@ -140,6 +155,9 @@ export default function SettingsDialog({ isOpen, onClose }: SettingsDialogProps)
           )}
           {activeTab === "appearance" && <AppearanceTab settings={localSettings} />}
           {activeTab === "logs" && <LogsTab />}
+          {activeTab === "symphony" && (
+            <SymphonyTab settings={localSettings} onChange={onChange} fieldIds={fieldIds} />
+          )}
         </div>
       </div>
     </Modal>

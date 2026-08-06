@@ -20,7 +20,7 @@ interface SymphonyRendererProps {
 export default function SymphonyRenderer({
   params,
 }: SymphonyRendererProps) {
-  const { pod, id, partnerId, mode, theme } = params;
+  const { pod, id, partnerId, mode } = params;
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isVisible, setIsVisible] = useState(() => {
     if (typeof IntersectionObserver === "undefined") {

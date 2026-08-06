@@ -180,6 +180,9 @@ export interface Settings {
   theme: "dark";
   contextSharing: boolean;
   mcpServers: McpServerConfig[];
+  symphonyPodUrl: string;
+  symphonyPartnerId: string;
+  symphonyBridgeUrl: string;
   /** Places a conversation can be sent (Tolaria, Notion, a webhook…). */
   shareTargets?: ShareTarget[];
 }

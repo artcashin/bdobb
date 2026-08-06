@@ -119,7 +119,7 @@ describe("SettingsDialog", () => {
     it("shows four tabs and opens on Rita", async () => {
       await renderOpen();
       const tabs = screen.getAllByRole("tab");
-      expect(tabs.map((t) => t.textContent)).toEqual(["Rita", "MCP", "Appearance", "Logs"]);
+      expect(tabs.map((t) => t.textContent)).toEqual(["Rita", "MCP", "Appearance", "Logs", "Symphony"]);
       expect(screen.getByRole("tab", { name: "Rita" })).toHaveAttribute("aria-selected", "true");
     });
 
@@ -167,6 +167,8 @@ describe("SettingsDialog", () => {
       fireEvent.keyDown(rita, { key: "ArrowRight" });
       expect(screen.getByRole("tab", { name: "MCP" })).toHaveAttribute("aria-selected", "true");
       fireEvent.keyDown(screen.getByRole("tab", { name: "MCP" }), { key: "End" });
+      expect(screen.getByRole("tab", { name: "Symphony" })).toHaveAttribute("aria-selected", "true");
+      fireEvent.keyDown(screen.getByRole("tab", { name: "Symphony" }), { key: "ArrowLeft" });
       expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true");
       // Landing on Logs mounts its async load effect; let it settle so the
       // test doesn't finish with a state update outside of act().
