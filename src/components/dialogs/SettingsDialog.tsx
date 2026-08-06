@@ -6,30 +6,11 @@ import { DEFAULT_SETTINGS } from "../../lib/persistence";
 import { assembleTools, clearMcpCache } from "../../lib/agent/mcp";
 import { getLogPath, logError, readLogTail } from "../../lib/logger";
 import { isHttpUrl } from "../../lib/safeUrl";
-import { configuredHosts, isHostAllowed } from "../../lib/httpScope";
 import type { McpBudgetExceeded, McpUnreachable } from "../../lib/agent/types";
 
 export interface SettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
-}
-
-/**
- * Shared wording for a URL field whose host falls outside this build's
- * compiled network allowlist (`httpScope.isHostAllowed`, generated from
- * .env.local by scripts/generate-capabilities.mjs — see lib/httpScope.ts).
- * Deliberately softer than BackendsDialog's warning: a backend's base URL
- * always goes through the Tauri-scoped fetch (dataClient.ts), so it WILL be
- * rejected at the IPC layer. The Rita URL and MCP-server URL fields here
- * aren't uniformly on that scoped path today (some agent/MCP calls use plain
- * fetch — see lib/agent/mcp.ts, lib/agent/agentClient.ts), so this is
- * flagged as a signal worth checking rather than a guaranteed runtime
- * failure.
- */
-function scopeWarning(): string {
-  return configuredHosts().length
-    ? `Outside this build's configured network scope (allowed: ${configuredHosts().join(", ")}). Some request paths enforce this at the Tauri layer and would fail; add the host to .env.local and rebuild if it does.`
-    : "Outside this build's configured network scope (no endpoints configured, so only *.ts.net is allowed). Some request paths enforce this at the Tauri layer and would fail; add the host to .env.local and rebuild if it does.";
 }
 
 export default function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
@@ -201,14 +182,8 @@ export default function SettingsDialog({ isOpen, onClose }: SettingsDialogProps)
     }
   };
 
-  const ritaUrlTrimmed = localSettings.ritaUrl.trim();
-  const ritaUrlOutOfScope =
-    ritaUrlTrimmed !== "" && isHttpUrl(ritaUrlTrimmed) && !isHostAllowed(ritaUrlTrimmed);
-
   const newMcpUrlTrimmed = newMcpUrl.trim();
   const newMcpUrlValid = newMcpUrlTrimmed === "" || isHttpUrl(newMcpUrlTrimmed);
-  const newMcpUrlOutOfScope =
-    newMcpUrlTrimmed !== "" && newMcpUrlValid && !isHostAllowed(newMcpUrlTrimmed);
 
   return (
     <Modal
@@ -265,11 +240,6 @@ export default function SettingsDialog({ isOpen, onClose }: SettingsDialogProps)
               <p className="settings-hint">
                 The URL where Rita is running. Required for chat functionality.
               </p>
-              {ritaUrlOutOfScope && (
-                <p className="backend-form-warn" role="status">
-                  {scopeWarning()}
-                </p>
-              )}
             </div>
             <div className="settings-toggle">
               <label className="settings-toggle-label" id={`${fieldIds}-ctxLabel`}>
@@ -377,11 +347,6 @@ export default function SettingsDialog({ isOpen, onClose }: SettingsDialogProps)
             </div>
             {!newMcpUrlValid && newMcpUrlTrimmed !== "" && (
               <p className="settings-hint">Not a valid URL.</p>
-            )}
-            {newMcpUrlOutOfScope && (
-              <p className="backend-form-warn" role="status">
-                {scopeWarning()}
-              </p>
             )}
             {mcpCheck && (
               <p className="settings-hint">

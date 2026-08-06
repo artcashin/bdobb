@@ -52,21 +52,6 @@ vi.mock("../../lib/agent/mcp", () => ({
   clearMcpCache: vi.fn(),
 }));
 
-// A deterministic, hermetic stand-in for the env-generated allowlist (Task 8
-// survivor): "localhost" is in scope, anything else isn't. Real config.ts
-// reads import.meta.env, which is empty in tests, so this keeps the scope
-// tests independent of that.
-vi.mock("../../lib/httpScope", () => ({
-  configuredHosts: vi.fn(() => ["localhost"]),
-  isHostAllowed: vi.fn((url: string) => {
-    try {
-      return new URL(url).hostname === "localhost";
-    } catch {
-      return false;
-    }
-  }),
-}));
-
 function setStoreState(overrides: { settings?: any; loadError?: string | null } = {}) {
   const mod: any = useSettingsStore;
   mod.__settings = overrides.settings ?? baseSettings;
@@ -153,23 +138,6 @@ describe("SettingsDialog", () => {
     await waitFor(() => expect(screen.getByText(/a fresh line/)).toBeInTheDocument());
   });
 
-  // --- Carried requirement 2: out-of-scope warning on Rita/MCP URL fields,
-  // via the survivor modules (httpScope.isHostAllowed + safeUrl.isHttpUrl). ---
-
-  it("warns when the Rita URL falls outside the capability scope", async () => {
-    await renderOpen();
-    const input = screen.getByDisplayValue("http://localhost:8002");
-    fireEvent.change(input, { target: { value: "https://example.com" } });
-    expect(screen.getByText(/network scope/i)).toBeInTheDocument();
-  });
-
-  it("does not warn for a Rita URL in scope", async () => {
-    await renderOpen();
-    const input = screen.getByDisplayValue("http://localhost:8002");
-    fireEvent.change(input, { target: { value: "http://localhost:9002" } });
-    expect(screen.queryByText(/network scope/i)).not.toBeInTheDocument();
-  });
-
   it("disables Add and warns when the new MCP server URL is not a valid http(s) URL", async () => {
     await renderOpen();
     const input = screen.getByLabelText("New MCP server URL");
@@ -181,15 +149,6 @@ describe("SettingsDialog", () => {
     expect(screen.getByText("Add")).toBeDisabled();
 
     fireEvent.change(input, { target: { value: "http://localhost:9999/mcp" } });
-    expect(screen.getByText("Add")).not.toBeDisabled();
-  });
-
-  it("warns when the new MCP server URL is outside the capability scope", async () => {
-    await renderOpen();
-    const input = screen.getByLabelText("New MCP server URL");
-    fireEvent.change(input, { target: { value: "https://example.com/mcp" } });
-    expect(screen.getByText(/network scope/i)).toBeInTheDocument();
-    // still a valid, addable URL -- the warning is advisory, not blocking
     expect(screen.getByText("Add")).not.toBeDisabled();
   });
 

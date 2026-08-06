@@ -107,12 +107,13 @@ pnpm tauri dev                  # the desktop window (pnpm dev for frontend only
 
 Prereqs: Node 22+ with pnpm (`corepack enable pnpm`) and the Rust toolchain.
 
-The Tauri HTTP capability allowlist is **generated** from `.env.local` by
-`scripts/generate-capabilities.mjs` (run automatically by dev/build) — edit
-`src-tauri/capability.template.json`, never the generated `default.json`.
-With no `.env.local` the scope falls back to `https://*.ts.net/*` so a fresh
-clone still builds; pass `--strict` to make that a build failure (the release
-workflow does).
+The Tauri capability file is **generated** from
+`src-tauri/capability.template.json` by `scripts/generate-capabilities.mjs`
+(run automatically by dev/build) — edit the template, never the generated
+`default.json`. The HTTP scope is open to any http(s) host: BDOBB is a
+generic front end, and which backends it talks to is configured at runtime
+in the app, not compiled in. The generator's job is the machine-local part —
+extra fs scope entries for `VITE_SHARE_FOLDERS`.
 
 ## Build
 

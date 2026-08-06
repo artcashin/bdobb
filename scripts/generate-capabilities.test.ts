@@ -37,23 +37,15 @@ afterAll(() => {
 });
 
 describe("generate-capabilities", () => {
-  it("scopes HTTP to the configured origins, with a wildcard-port variant", () => {
+  it("keeps the HTTP scope open to any http(s) host, regardless of env", () => {
+    // BDOBB is a generic front end: backends are a runtime choice, so the
+    // scope must not narrow to whatever happens to be in the environment.
     const http = permission(run(BASE), "http:default");
-    const urls = http.allow.map((a: { url: string }) => a.url);
-    expect(urls).toContain("https://api.example.test/*");
-    // MCP runs on non-443 ports, so the host needs an any-port rule too.
-    expect(urls).toContain("https://api.example.test:*/*");
-    expect(urls).toContain("https://rita.example.test/*");
-  });
-
-  it("falls back to a tailnet wildcard when nothing is configured", () => {
-    const http = permission(
-      run({ VITE_OPENBB_API_URL: "", VITE_RITA_URL: "", VITE_MCP_SERVERS: "", VITE_SHARE_FOLDERS: "" }),
-      "http:default"
-    );
     expect(http.allow.map((a: { url: string }) => a.url)).toEqual([
-      "https://*.ts.net/*",
-      "https://*.ts.net:*/*",
+      "http://*/*",
+      "http://*:*/*",
+      "https://*/*",
+      "https://*:*/*",
     ]);
   });
 

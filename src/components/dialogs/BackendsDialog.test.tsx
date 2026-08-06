@@ -18,20 +18,6 @@ vi.mock("../Modal", () => ({
 
 vi.mock("../../lib/logger", () => ({ logError: vi.fn() }));
 
-// A deterministic, hermetic stand-in for the env-generated allowlist (Task 8
-// survivor): "localhost" and "openbb.tailnet.ts.net" are in scope, anything
-// else isn't. Real config.ts reads import.meta.env, which is empty in tests.
-vi.mock("../../lib/httpScope", () => ({
-  configuredHosts: vi.fn(() => ["localhost"]),
-  isHostAllowed: vi.fn((url: string) => {
-    try {
-      return new URL(url).hostname === "localhost";
-    } catch {
-      return false;
-    }
-  }),
-}));
-
 vi.mock("../../stores/backendsStore", () => {
   const addBackend = vi.fn();
   const removeBackend = vi.fn();
@@ -248,24 +234,6 @@ describe("BackendsDialog", () => {
     // The masked marker is still there, so the header IS configured -- this
     // isn't a test that just weakened the assertion into a false pass.
     expect(screen.getByText("Auth")).toBeInTheDocument();
-  });
-
-  it("warns when the entered base URL falls outside the capability scope", () => {
-    render(<BackendsDialog isOpen={true} onClose={() => {}} />);
-    fireEvent.click(screen.getByText("Add Backend"));
-    fireEvent.change(screen.getByLabelText("Base URL"), {
-      target: { value: "https://example.com" },
-    });
-    expect(screen.getByText(/capability scope/i)).toBeInTheDocument();
-  });
-
-  it("does not warn for a URL in scope", () => {
-    render(<BackendsDialog isOpen={true} onClose={() => {}} />);
-    fireEvent.click(screen.getByText("Add Backend"));
-    fireEvent.change(screen.getByLabelText("Base URL"), {
-      target: { value: "http://localhost:9999" },
-    });
-    expect(screen.queryByText(/capability scope/i)).not.toBeInTheDocument();
   });
 
   it("warns instead of silently dropping when a header value is entered without a header name", () => {

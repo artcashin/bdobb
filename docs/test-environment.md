@@ -23,10 +23,8 @@ with that base URL, or by putting it in `.env.local`:
 VITE_OPENBB_API_URL=http://127.0.0.1:7779
 ```
 
-Setting it in `.env.local` matters for more than convenience: the Tauri HTTP
-capability allowlist is generated from that file, so it is what lets a
-**packaged** build reach the backend at all. `pnpm dev` is more permissive and
-will hide the omission until you build.
+Setting it in `.env.local` makes the reference backend the app's default
+backend, so a fresh launch points at it without any dialog work.
 
 ## What you get
 

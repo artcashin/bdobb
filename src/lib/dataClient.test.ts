@@ -189,22 +189,7 @@ describe("buildWidgetUrl endpoint resolution", () => {
   });
 });
 
-describe("out-of-scope URLs", () => {
-  it("replaces plugin-http's refusal with something actionable", async () => {
-    // The original names the URL and stops, which leaves the reader to work out
-    // that the allowlist is compiled in, comes from .env.local, and needs a
-    // rebuild — none of it guessable from the wording.
-    const fetchImpl = vi.fn(async () => {
-      throw new Error("url not allowed on the configured scope: https://nope.example.com/widgets.json");
-    });
-    const backend = { id: "b", name: "b", baseUrl: "https://nope.example.com" } as BackendConfig;
-
-    await expect(fetchWidgetsJson(backend, fetchImpl as never)).rejects.toThrow(
-      /not in this build's HTTP allowlist/
-    );
-    await expect(fetchWidgetsJson(backend, fetchImpl as never)).rejects.toThrow(/\.env\.local/);
-  });
-
+describe("fetch failures", () => {
   it("leaves an ordinary network failure alone", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("Connection refused");

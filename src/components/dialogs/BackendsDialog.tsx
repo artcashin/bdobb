@@ -1,7 +1,6 @@
 import { useEffect, useState, useId } from "react";
 import Modal from "../Modal";
 import { useBackendsStore } from "../../stores/backendsStore";
-import { configuredHosts, isHostAllowed } from "../../lib/httpScope";
 import { isHttpUrl } from "../../lib/safeUrl";
 import { logError } from "../../lib/logger";
 import { useRegistryStore } from "../../stores/registryStore";
@@ -291,20 +290,6 @@ export default function BackendsDialog({ isOpen, onClose }: BackendsDialogProps)
                 {form.baseUrl?.trim() && !isHttpUrl(form.baseUrl) && (
                   <span className="backend-form-warn" role="status">
                     Not a valid URL.
-                  </span>
-                )}
-                {/* Warned about here rather than only at first fetch: the
-                    allowlist is compiled in, so a host outside it cannot be
-                    reached at all and saving the backend achieves nothing. */}
-                {form.baseUrl?.trim() && isHttpUrl(form.baseUrl) && !isHostAllowed(form.baseUrl) && (
-                  <span className="backend-form-warn" role="status">
-                    This host is outside the app&apos;s network capability
-                    scope — requests to it will be rejected at the Tauri IPC
-                    layer at runtime, not fail as a normal network error.{" "}
-                    {configuredHosts().length
-                      ? `Allowed: ${configuredHosts().join(", ")}.`
-                      : "No endpoints are configured, so only *.ts.net is allowed."}{" "}
-                    Add it to .env.local and rebuild.
                   </span>
                 )}
               </div>

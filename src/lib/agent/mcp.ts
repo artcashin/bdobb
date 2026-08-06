@@ -81,12 +81,10 @@ async function readSseRpcData(body: ReadableStream<Uint8Array>, id: number): Pro
 
 /**
  * Default transport for every exported function below. MCP server URLs are
- * user-configured (Settings dialog, arbitrary hosts), not fixed endpoints —
- * unlike the app's other outbound calls (`dataClient.ts`), which go through
- * `@tauri-apps/plugin-http` and are restricted to the hosts named in
- * `src-tauri/capabilities/default.json`'s http scope. Routing MCP traffic
- * through that scope would break any server the user points at a host not
- * already allowlisted there, so this stays on the webview's own fetch.
+ * user-configured (Settings dialog, arbitrary hosts). The webview's own
+ * fetch reaches them fine — the CSP's connect-src admits any http(s) host —
+ * so there is no reason to hop through `@tauri-apps/plugin-http` here the
+ * way `dataClient.ts` does.
  */
 const defaultFetch: typeof fetch = (...args) => window.fetch(...args);
 

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { logError } from "../../lib/logger";
-import { rethrowWithScopeHelp } from "../../lib/httpScope";
 
 /**
  * News rail (v8, Ep. 8): live headlines from an rss-ticker backend, drawn
@@ -124,19 +123,15 @@ export default function NewsRailRenderer({
     const target = `${base}/api/news?user=${encodeURIComponent(user)}&limit=${SEED_LIMIT}`;
     let res: Response;
     try {
-      try {
-        res = await fetchImpl(target, {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            // Token mode: as a header, so it never appears in this URL (or in
-            // any proxy's request-line log of it).
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-      } catch (e) {
-        rethrowWithScopeHelp(e, target);
-      }
+      res = await fetchImpl(target, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          // Token mode: as a header, so it never appears in this URL (or in
+          // any proxy's request-line log of it).
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
     } catch (e) {
       setState("error");
       setError(e instanceof Error ? e.message : String(e));

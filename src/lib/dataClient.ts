@@ -1,7 +1,6 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { BackendConfig, ParamValues, WidgetDef } from "./types";
 import { parseWidgetsJson } from "./widgets";
-import { rethrowWithScopeHelp } from "./httpScope";
 
 export class HttpError extends Error {
   constructor(
@@ -144,19 +143,11 @@ async function doFetch(
   fetchImpl: typeof fetch = tauriFetch,
   signal?: AbortSignal
 ): Promise<Response> {
-  let res: Response;
-  try {
-    res = await fetchImpl(url, {
-      method: "GET",
-      headers: { Accept: accept, ...authHeaders(backend) },
-      ...(signal ? { signal } : {}),
-    });
-  } catch (e) {
-    // plugin-http rejects an out-of-scope URL before any response exists, so
-    // this cannot be handled below with the status checks. Its own message is
-    // accurate but says nothing about where the allowlist comes from.
-    rethrowWithScopeHelp(e, url);
-  }
+  const res = await fetchImpl(url, {
+    method: "GET",
+    headers: { Accept: accept, ...authHeaders(backend) },
+    ...(signal ? { signal } : {}),
+  });
   if (!res.ok) {
     throw new HttpError(res.status, url, await res.text().catch(() => ""));
   }

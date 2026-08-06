@@ -136,8 +136,7 @@ export const BUILTIN_WIDGETS: WidgetDef[] = [
         label: "Ticker URL",
         description:
           "Base URL of the rss-ticker server, e.g. " +
-          "https://openbb.<your-tailnet>.ts.net:8088. Non-tailnet hosts must " +
-          "also be in the build's HTTP allowlist (.env.local).",
+          "https://openbb.<your-tailnet>.ts.net:8088.",
       }),
       param({
         paramName: NEWS_USER_PARAM,

@@ -86,18 +86,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # A release must not ship the https://*.ts.net/* development fallback,
-      # which would let the binary reach every host on any tailnet its user
-      # joins. --strict fails the build instead, so a missing repository
-      # variable is a red run rather than an over-broad artifact.
-      - name: Check the HTTP capability is scoped
-        run: node scripts/generate-capabilities.mjs --strict
-        env:
-          VITE_OPENBB_API_URL: ${{ vars.VITE_OPENBB_API_URL }}
-          VITE_RITA_URL: ${{ vars.VITE_RITA_URL }}
-          VITE_MCP_SERVERS: ${{ vars.VITE_MCP_SERVERS }}
-          VITE_SHARE_FOLDERS: ${{ vars.VITE_SHARE_FOLDERS }}
-
       - name: Build the app bundle
         uses: tauri-apps/tauri-action@v0
         env:

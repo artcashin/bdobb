@@ -124,8 +124,7 @@ export async function shareChat(
     return { target: target.name, detail: text || `${target.tool} succeeded` };
   }
 
-  // Goes through plugin-http so the request is governed by the Tauri
-  // capability allowlist, like every other non-streaming call in the app.
+  // Goes through plugin-http like every other non-streaming call in the app.
   const doFetch = deps.fetchImpl ?? (tauriFetch as unknown as typeof fetch);
   const res = await doFetch(target.url, {
     method: "POST",
