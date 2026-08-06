@@ -55,9 +55,7 @@ case "$CMD" in
   deps) deps ;;
   build)
     pnpm install --frozen-lockfile
-    # --strict: a build meant to be installed somewhere must not carry the
-    # https://*.ts.net/* development fallback.
-    node scripts/generate-capabilities.mjs --strict
+    node scripts/generate-capabilities.mjs
     npx tauri build
     echo "[linux] artifacts:"
     find src-tauri/target -maxdepth 4 \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) \

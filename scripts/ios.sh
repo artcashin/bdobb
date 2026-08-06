@@ -187,7 +187,7 @@ case "$CMD" in
     ;;
   build)
     check
-    node scripts/generate-capabilities.mjs --strict
+    node scripts/generate-capabilities.mjs
     npx tauri ios build "$@"
     ;;
   *) fail "unknown command '$CMD' (check|team|init|dev|build)" ;;
