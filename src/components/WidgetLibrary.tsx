@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useRegistryStore } from "../stores/registryStore";
+import { useProviderKeysStore } from "../stores/providerKeysStore";
 import type { WidgetDef } from "../lib/types";
 
 interface WidgetLibraryProps {
@@ -11,6 +12,7 @@ interface WidgetLibraryProps {
 export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }: WidgetLibraryProps) {
   const { widgets: storeWidgets } = useRegistryStore();
   const widgets = propsWidgets || storeWidgets;
+  const statusFor = useProviderKeysStore((s) => s.statusFor);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
 
@@ -116,14 +118,18 @@ export function WidgetLibrary({ onSelectWidget, onClose, widgets: propsWidgets }
                       )}
                     </div>
                   </div>
-                  <span className="widget-library-widget-type">{widget.type}</span>
+                  <div className="widget-library-widget-badges">
+                    <span className="widget-library-widget-type">{widget.type}</span>
+                    {widget.source.length > 0 && (
+                      <span
+                        className={`widget-library-widget-provider ${statusFor(widget.source[0])}`}
+                      >
+                        {widget.source[0]}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <p className="widget-library-widget-desc">{widget.description}</p>
-                <div className="widget-library-widget-source">
-                  {widget.source.length > 0 && (
-                    <span>Source: {widget.source.join(", ")}</span>
-                  )}
-                </div>
               </button>
             ))}
           </div>

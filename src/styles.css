@@ -910,11 +910,25 @@ input, select, textarea {
   padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
   background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
 }
+.widget-library-widget-badges {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  flex: none;
+}
+/* Provider pill: green when this deployment holds a working key (or none is
+   needed), red when the key is required and missing, neutral while unknown.
+   The green/red pair is defined here rather than reused from live-grid —
+   these classes roll up into snapshots that predate it. */
+.widget-library-widget-provider {
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
+  white-space: nowrap;
+}
+.widget-library-widget-provider.keyed { background: #4caf7d; color: #0e1116; }
+.widget-library-widget-provider.unkeyed { background: #d9695f; color: #0e1116; }
+.widget-library-widget-provider.unknown {
+  background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
+}
 .widget-library-widget-desc {
   font-size: 13px; color: var(--text-dim);
-}
-.widget-library-widget-source {
-  font-size: 12px; color: var(--text-dim); margin-top: 8px;
 }
 
 

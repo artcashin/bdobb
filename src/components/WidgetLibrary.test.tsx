@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { WidgetLibrary } from "./WidgetLibrary";
 import type { WidgetDef } from "../lib/types";
+import { useProviderKeysStore } from "../stores/providerKeysStore";
 
 describe("WidgetLibrary", () => {
   const mockWidgets: WidgetDef[] = [
@@ -152,11 +153,15 @@ describe("WidgetLibrary", () => {
     expect(screen.getByText("chart")).toBeInTheDocument();
   });
 
-  it("shows widget source", () => {
-    render(<WidgetLibrary widgets={mockWidgets} onSelectWidget={() => {}} />);
-    expect(screen.getByText("Source: Eodhd")).toBeInTheDocument();
-    expect(screen.getByText("Source: IMF")).toBeInTheDocument();
-    expect(screen.getByText("Source: Internal")).toBeInTheDocument();
+  it("shows widget source as the provider badge", () => {
+    useProviderKeysStore.setState({ status: {}, source: "none" });
+    const { container } = render(
+      <WidgetLibrary widgets={mockWidgets} onSelectWidget={() => {}} />
+    );
+    const badges = [...container.querySelectorAll(".widget-library-widget-provider")];
+    expect(badges.map((b) => b.textContent)).toEqual(
+      expect.arrayContaining(["Eodhd", "IMF", "Internal"])
+    );
   });
 
   it("exposes each entry as a keyboard-reachable button", () => {
@@ -215,5 +220,36 @@ describe("WidgetLibrary", () => {
 
     expect(screen.getByText("IMF Data")).toBeInTheDocument();
     expect(screen.queryByText("Historical Prices")).not.toBeInTheDocument();
+  });
+
+  describe("provider badge", () => {
+    it("shows the provider with its key status as the badge class", () => {
+      useProviderKeysStore.setState({
+        status: { eodhd: "keyed", imf: "unkeyed" },
+        source: "key-maint",
+      });
+      render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
+      const eodhd = screen.getByText("Eodhd");
+      expect(eodhd.className).toContain("widget-library-widget-provider");
+      expect(eodhd.className).toContain("keyed");
+      expect(screen.getByText("IMF", { selector: ".widget-library-widget-provider" }).className).toContain(
+        "unkeyed"
+      );
+    });
+
+    it("marks providers unknown while no source has answered", () => {
+      useProviderKeysStore.setState({ status: {}, source: "none" });
+      render(<WidgetLibrary onSelectWidget={vi.fn()} widgets={mockWidgets} />);
+      expect(screen.getByText("Eodhd").className).toContain("unknown");
+    });
+
+    it("renders no badge for a widget without a source", () => {
+      useProviderKeysStore.setState({ status: {}, source: "key-maint" });
+      const sourceless = [{ ...mockWidgets[0], id: "s", source: [] as string[] }];
+      const { container } = render(
+        <WidgetLibrary onSelectWidget={vi.fn()} widgets={sourceless} />
+      );
+      expect(container.querySelector(".widget-library-widget-provider")).toBeNull();
+    });
   });
 });
