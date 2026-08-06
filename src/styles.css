@@ -1245,11 +1245,22 @@ input, select, textarea {
 
 .clock-time.solid { font-family: "Erbos Draco Solid", ui-monospace, SFMono-Regular, Menlo, monospace; }
 
+/* The solid face is an inverse font — each glyph is a full-width solid tile
+   with the dots punched out as holes — so the dots-face pull would slide the
+   colon's solid tile OVER the neighbouring digits' holes and visibly eat
+   their edge columns. Its colon holes also sit near-centre (134–249 of a
+   448-unit tile), so only a slight asymmetric nudge is needed, capped where
+   the tiles would start covering hole columns. */
+.clock-time.solid .clock-colon { margin: 0 -0.10em 0 -0.04em; }
+
 /* The face is monospaced, so ":" claims a full cell and leaves a gap either
-   side wide enough to read as a word break. Pulling it in on both sides makes
-   it proportional without touching the digits, which must stay monospaced or
-   they jitter every second. */
-.clock-colon { margin: 0 -0.22em; }
+   side wide enough to read as a word break. Pulling it in makes it
+   proportional without touching the digits, which must stay monospaced or
+   they jitter every second. The pull is asymmetric because the colon's dots
+   sit hard-left in their cell (ink 12–243 of a 903-unit advance): matching
+   the digits' bearings needs 384/1024em more taken off the right than the
+   left for the visual gaps to come out equal. */
+.clock-colon { margin: 0 -0.595em 0 -0.22em; }
 
 /* A bare A or P rather than Intl's AM/PM: at this size the two extra glyphs
    cost more width than the row can spare. */
