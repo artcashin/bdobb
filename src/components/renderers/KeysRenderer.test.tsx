@@ -219,6 +219,51 @@ describe("KeysRenderer tier-3 editing", () => {
     expect(screen.getByText(/restart/i)).toBeInTheDocument();
   });
 
+  it("drops a stale status override once fresh server data reports the key unset", async () => {
+    // The override set after a successful write is only trustworthy against
+    // the `data` snapshot it patched. If the card later refetches and the
+    // server now reports the key as unset (revoked out-of-band, or the
+    // write never actually persisted), the stale override must not keep
+    // masking that with "Own key".
+    const fetchImpl = makeEditFetchImpl([UNSET], () =>
+      new Response(JSON.stringify({ status: "set", restart_required: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const { container, rerender } = render(
+      <KeysRenderer
+        data={data([UNSET], 3)}
+        widgetDef={WIDGET}
+        theme="dark"
+        backend={BACKEND}
+        fetchImpl={fetchImpl}
+      />
+    );
+    await waitFor(() => expect(asMock(fetchImpl)).toHaveBeenCalledTimes(1));
+
+    const input = openEditor(container);
+    fireEvent.change(input, { target: { value: "sk-freshoverride" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(screen.getByText("Own key")).toBeInTheDocument());
+
+    // A later refetch (new `data` reference) reports the row as empty again.
+    rerender(
+      <KeysRenderer
+        data={data([{ ...UNSET, status: "empty" }], 3)}
+        widgetDef={WIDGET}
+        theme="dark"
+        backend={BACKEND}
+        fetchImpl={fetchImpl}
+      />
+    );
+    await act(async () => {});
+
+    expect(screen.getByText("Not set")).toBeInTheDocument();
+    expect(screen.queryByText("Own key")).not.toBeInTheDocument();
+  });
+
   it("surfaces a failed write without logging or displaying the value", async () => {
     const fetchImpl = makeEditFetchImpl([UNSET], () => new Response("rejected", { status: 400 }));
     const { container } = render(
@@ -239,7 +284,10 @@ describe("KeysRenderer tier-3 editing", () => {
     await waitFor(() => expect(asMock(fetchImpl)).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
 
-    expect(container.textContent).not.toContain("sk-shouldnotappear");
+    // innerHTML, not textContent -- textContent can't see a leak into an
+    // attribute (e.g. title={value} or a data-* attribute), only into text
+    // nodes.
+    expect(container.innerHTML).not.toContain("sk-shouldnotappear");
     const remainingInput = container.querySelector("input[type='password']") as HTMLInputElement | null;
     expect(remainingInput?.value ?? "").not.toContain("sk-shouldnotappear");
     // Still tier-3-unset: the write did not silently take effect client-side.
@@ -381,7 +429,11 @@ describe("KeysRenderer probe cadence", () => {
     );
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
+    // findByRole retries until the mount sweep has fully settled (setProbing
+    // (false) applied) -- a plain getByRole here can land while the button's
+    // accessible name is still "Testing…", between the mock recording the
+    // call and the sweep's finally block flipping probing back off.
+    fireEvent.click(await screen.findByRole("button", { name: /refresh/i }));
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
     for (const call of asMock(fetchImpl).mock.calls) {
       expect(String(call[0])).toContain("run_tests=true");

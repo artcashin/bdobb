@@ -316,6 +316,24 @@ export default function KeysRenderer({
   const [editError, setEditError] = useState<{ envVar: string; message: string } | null>(null);
   const [restartNoticeVisible, setRestartNoticeVisible] = useState(false);
 
+  // A write's status override is only trustworthy against the `data`
+  // snapshot it patched. Once the card refetches -- a new `data` prop
+  // reference -- the server's own status is authoritative again, so the
+  // override is dropped rather than left to mask a key the server now
+  // reports as unset (revoked out-of-band, or a write that never actually
+  // persisted). Keyed on `data` identity, not a deep compare: WidgetCard
+  // already hands this renderer a fresh object per fetch, so identity is a
+  // reliable, cheap proxy for "the server was asked again." The mount's own
+  // first `data` must not trigger this -- there is nothing to drop yet.
+  const hasSeenDataRef = useRef(false);
+  useEffect(() => {
+    if (!hasSeenDataRef.current) {
+      hasSeenDataRef.current = true;
+      return;
+    }
+    setStatusOverrides({});
+  }, [data]);
+
   const rows = useMemo<KeysRow[]>(
     () =>
       baseRows.map((r) => {
