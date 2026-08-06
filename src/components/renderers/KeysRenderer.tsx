@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-table";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { BackendConfig, WidgetDef } from "../../lib/types";
-import { fetchJson, fetchWidgetData, resolveEndpoint } from "../../lib/dataClient";
+import { HttpError, fetchJson, fetchWidgetData, putJson, resolveEndpoint } from "../../lib/dataClient";
 import { logError } from "../../lib/logger";
 
 /** One row of the /keys envelope. `value` (tier 3) is deliberately not part
@@ -77,6 +77,22 @@ function asTestResult(json: unknown): KeysTestResult | null {
   const r = json as Record<string, unknown>;
   if (typeof r.result !== "string") return null;
   return { result: r.result, detail: typeof r.detail === "string" ? r.detail : "" };
+}
+
+interface KeysPutResult {
+  status: "set" | "empty";
+  restart_required: boolean;
+}
+
+/** Extracts a validated PUT response, or null if it doesn't look like one.
+ * Deliberately reads only `status` and `restart_required` -- the response to
+ * a key write is never expected to (and must not be trusted to) carry the
+ * value back. */
+function asPutResult(json: unknown): KeysPutResult | null {
+  if (json === null || typeof json !== "object") return null;
+  const r = json as Record<string, unknown>;
+  if (r.status !== "set" && r.status !== "empty") return null;
+  return { status: r.status, restart_required: r.restart_required === true };
 }
 
 interface KeysRendererProps {
@@ -182,6 +198,73 @@ function KeysContextMenu({
   );
 }
 
+/**
+ * Tier-3 inline editor for a single row's cell. Collapsed to a plain "Edit"
+ * button until clicked; then a password-masked input plus Save/Cancel. The
+ * typed value lives only in the parent's `value` prop passed back through
+ * `onChange` -- this component holds no state of its own, so there is no
+ * extra place for the secret to linger after the row stops editing.
+ */
+function KeysEditCell({
+  provider,
+  isEditing,
+  value,
+  submitting,
+  error,
+  onStart,
+  onChange,
+  onSubmit,
+  onCancel,
+}: {
+  provider: string;
+  isEditing: boolean;
+  value: string;
+  submitting: boolean;
+  error: string | null;
+  onStart: () => void;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  if (!isEditing) {
+    return (
+      <button type="button" className="keys-edit-btn" onClick={onStart}>
+        Edit
+      </button>
+    );
+  }
+  return (
+    <form
+      className="keys-edit-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      <input
+        type="password"
+        autoComplete="off"
+        spellCheck={false}
+        aria-label={`New value for ${provider}`}
+        value={value}
+        disabled={submitting}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button type="submit" className="keys-edit-save" disabled={submitting || value === ""}>
+        {submitting ? "Saving…" : "Save"}
+      </button>
+      <button type="button" className="keys-edit-cancel" onClick={onCancel} disabled={submitting}>
+        Cancel
+      </button>
+      {error && (
+        <span className="keys-edit-error" role="alert">
+          {error}
+        </span>
+      )}
+    </form>
+  );
+}
+
 // widgetDef is used to resolve probe endpoints (its own endpoint plus a
 // query param for the sweep, its endpoint plus /{env_var}/test for a single
 // row) — kept interchangeable with the other renderers WidgetCard dispatches
@@ -197,6 +280,11 @@ export default function KeysRenderer({
     () => (isKeysEnvelope(data) ? data.rows : []),
     [data]
   );
+  // Editing is a tier-3 privilege the server itself enforces (a PUT from a
+  // lower tier gets 403); this only controls whether the client bothers to
+  // offer the affordance at all.
+  const tier = isKeysEnvelope(data) ? data.tier : 0;
+  const canEdit = tier === 3 && Boolean(backend);
 
   // Per-provider probe results, keyed by env_var. Populated wholesale by the
   // mount sweep and by Refresh, patched one entry at a time by a row's "Test
@@ -208,12 +296,35 @@ export default function KeysRenderer({
   const [probing, setProbing] = useState(false);
   const [menu, setMenu] = useState<MenuState | null>(null);
 
+  // A successful edit's own response already carries the row's new state
+  // (`status`), so it patches in here the same way a test result does,
+  // rather than triggering a second round-trip just to re-read what the
+  // server already told us in the write's response.
+  const [statusOverrides, setStatusOverrides] = useState<
+    Record<string, Pick<KeysRow, "status" | "demo">>
+  >({});
+
+  // Tier-3 edit UI: which row (by env_var) has its inline form open, the
+  // value typed into it, in-flight/error state for the active submit, and
+  // whether the "restart openbb-api" notice has been earned yet. editValue
+  // is intentionally the only place the typed secret lives in this
+  // component's state, and it is cleared -- never left populated -- the
+  // moment a submit resolves, succeeds or fails.
+  const [editingEnvVar, setEditingEnvVar] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<{ envVar: string; message: string } | null>(null);
+  const [restartNoticeVisible, setRestartNoticeVisible] = useState(false);
+
   const rows = useMemo<KeysRow[]>(
     () =>
-      baseRows.map((r) =>
-        testResults[r.env_var] ? { ...r, test: testResults[r.env_var] } : r
-      ),
-    [baseRows, testResults]
+      baseRows.map((r) => {
+        let out = r;
+        if (statusOverrides[r.env_var]) out = { ...out, ...statusOverrides[r.env_var] };
+        if (testResults[r.env_var]) out = { ...out, test: testResults[r.env_var] };
+        return out;
+      }),
+    [baseRows, testResults, statusOverrides]
   );
 
   // True for the lifetime of the mounted component; guards state updates
@@ -286,6 +397,74 @@ export default function KeysRenderer({
     [backend, widgetDef.endpoint, fetchImpl]
   );
 
+  const startEdit = useCallback((envVar: string) => {
+    setEditingEnvVar(envVar);
+    setEditValue("");
+    setEditError(null);
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditingEnvVar(null);
+    setEditValue("");
+    setEditError(null);
+  }, []);
+
+  // Submits a tier-3 key edit. The typed value is read out of `editValue`
+  // exactly once, folded into the PUT body, and never touches a URL, a log
+  // line, a DOM attribute, or a React key -- see the module-level secrecy
+  // note. On any outcome (success, rejection, or a network failure) the
+  // input is cleared, so a failed write can never leave the value sitting
+  // in a form field for a later, unrelated render to expose.
+  const submitEdit = useCallback(
+    async (envVar: string, value: string) => {
+      if (!backend) return;
+      setEditSubmitting(true);
+      setEditError(null);
+      try {
+        const url = resolveEndpoint(
+          backend.baseUrl,
+          `${widgetDef.endpoint}/${encodeURIComponent(envVar)}`
+        ).toString();
+        const json = await putJson(url, { value }, backend, fetchImpl);
+        if (!isMountedRef.current) return;
+        const result = asPutResult(json);
+        if (!result) {
+          setEditError({ envVar, message: "The server's response was not understood. Try again." });
+          return;
+        }
+        setStatusOverrides((prev) => ({
+          ...prev,
+          [envVar]: { status: result.status, demo: false },
+        }));
+        if (result.restart_required) setRestartNoticeVisible(true);
+        setEditingEnvVar(null);
+      } catch (e) {
+        if (!isMountedRef.current) return;
+        if (e instanceof HttpError) {
+          logError(`keys widget key update failed for ${envVar}: HTTP ${e.status}`);
+          const message =
+            e.status === 400
+              ? "That value was rejected. It may contain a line break, leading/trailing whitespace, or a \" #\" sequence."
+              : e.status === 403
+                ? "You do not have permission to change this key."
+                : e.status === 404
+                  ? "Unknown provider."
+                  : `Failed to save (HTTP ${e.status}).`;
+          setEditError({ envVar, message });
+        } else {
+          logError(`keys widget key update failed for ${envVar}: network error`);
+          setEditError({ envVar, message: "Failed to reach the server. Check the connection and try again." });
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setEditSubmitting(false);
+          setEditValue("");
+        }
+      }
+    },
+    [backend, widgetDef.endpoint, fetchImpl]
+  );
+
   const openMenu = useCallback((row: KeysRow, x: number, y: number) => {
     setMenu({ envVar: row.env_var, provider: row.provider, x, y });
   }, []);
@@ -325,8 +504,34 @@ export default function KeysRenderer({
         enableSorting: false,
         cell: ({ row }) => <span>{row.original.test?.detail ?? ""}</span>,
       },
+      ...(canEdit
+        ? ([
+            {
+              id: "edit",
+              header: () => <span className="sr-only">Edit</span>,
+              enableSorting: false,
+              cell: ({ row }) => {
+                const envVar = row.original.env_var;
+                const isEditing = editingEnvVar === envVar;
+                return (
+                  <KeysEditCell
+                    provider={row.original.provider}
+                    isEditing={isEditing}
+                    value={isEditing ? editValue : ""}
+                    submitting={isEditing && editSubmitting}
+                    error={isEditing && editError?.envVar === envVar ? editError.message : null}
+                    onStart={() => startEdit(envVar)}
+                    onChange={setEditValue}
+                    onSubmit={() => void submitEdit(envVar, editValue)}
+                    onCancel={cancelEdit}
+                  />
+                );
+              },
+            },
+          ] satisfies TanstackColumnDef<KeysRow>[])
+        : []),
     ],
-    []
+    [canEdit, editingEnvVar, editValue, editSubmitting, editError, startEdit, submitEdit, cancelEdit]
   );
 
   const table = useReactTable({
@@ -355,6 +560,12 @@ export default function KeysRenderer({
           >
             {probing ? "Testing…" : "Refresh"}
           </button>
+        </div>
+      )}
+      {restartNoticeVisible && (
+        <div className="keys-restart-notice" role="status">
+          Restart the <code>openbb-api</code> container to apply this change — it reads
+          credentials from its environment only at startup.
         </div>
       )}
       <table className="table">

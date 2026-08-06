@@ -96,6 +96,157 @@ describe("KeysRenderer secrecy", () => {
   });
 });
 
+describe("KeysRenderer tier-3 editing", () => {
+  const BASE_BACKEND = BACKEND;
+
+  it("shows no edit control below tier 3", async () => {
+    const fetchImpl = makeFetchImpl([OWN]);
+    render(
+      <KeysRenderer
+        data={data([OWN], 2)}
+        widgetDef={WIDGET}
+        theme="dark"
+        backend={BASE_BACKEND}
+        fetchImpl={fetchImpl}
+      />
+    );
+    await waitFor(() => expect(asMock(fetchImpl)).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+  });
+
+  it("shows an edit control at tier 3", async () => {
+    const fetchImpl = makeFetchImpl([OWN]);
+    render(
+      <KeysRenderer
+        data={data([OWN], 3)}
+        widgetDef={WIDGET}
+        theme="dark"
+        backend={BASE_BACKEND}
+        fetchImpl={fetchImpl}
+      />
+    );
+    await waitFor(() => expect(asMock(fetchImpl)).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+  });
+
+  /** Fetch double for the edit tests. Records every call's URL and body so
+   * a test can assert on both. `onPut` decides the response for the PUT
+   * call; other calls (the mount sweep) get an idle envelope back. */
+  function makeEditFetchImpl(
+    rows: unknown[],
+    onPut: (envVar: string, body: unknown) => Response
+  ) {
+    return vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = new URL(String(url));
+      if (init?.method === "PUT") {
+        const m = u.pathname.match(/\/([^/]+)$/);
+        const envVar = m ? decodeURIComponent(m[1]) : "";
+        const body = init.body ? JSON.parse(String(init.body)) : undefined;
+        return onPut(envVar, body);
+      }
+      // Mount sweep (run_tests=true) -- respond with the untested rows.
+      return new Response(JSON.stringify({ tier: 3, rows }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+  }
+
+  function openEditor(container: HTMLElement) {
+    fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+    const input = container.querySelector("input[type='password']") as HTMLInputElement;
+    expect(input).toBeTruthy();
+    return input;
+  }
+
+  it("PUTs the new value in the request body, never in the URL", async () => {
+    const fetchImpl = makeEditFetchImpl([UNSET], () =>
+      new Response(JSON.stringify({ status: "set", restart_required: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const { container } = render(
+      <KeysRenderer
+        data={data([UNSET], 3)}
+        widgetDef={WIDGET}
+        theme="dark"
+        backend={BACKEND}
+        fetchImpl={fetchImpl}
+      />
+    );
+    await waitFor(() => expect(asMock(fetchImpl)).toHaveBeenCalledTimes(1));
+
+    const input = openEditor(container);
+    fireEvent.change(input, { target: { value: "sk-newsecretvalue" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(asMock(fetchImpl)).toHaveBeenCalledTimes(2));
+    const putCall = asMock(fetchImpl).mock.calls.find(
+      (c: unknown[]) => (c[1] as RequestInit | undefined)?.method === "PUT"
+    )!;
+    const [calledUrl, init] = putCall;
+    expect(String(calledUrl)).not.toContain("sk-newsecretvalue");
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ value: "sk-newsecretvalue" });
+  });
+
+  it("refreshes the row and shows a restart notice on success", async () => {
+    const fetchImpl = makeEditFetchImpl([UNSET], () =>
+      new Response(JSON.stringify({ status: "set", restart_required: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    const { container } = render(
+      <KeysRenderer
+        data={data([UNSET], 3)}
+        widgetDef={WIDGET}
+        theme="dark"
+        backend={BACKEND}
+        fetchImpl={fetchImpl}
+      />
+    );
+    await waitFor(() => expect(asMock(fetchImpl)).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Not set")).toBeInTheDocument();
+
+    const input = openEditor(container);
+    fireEvent.change(input, { target: { value: "sk-anothersecret" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(screen.getByText("Own key")).toBeInTheDocument());
+    expect(screen.queryByText("Not set")).not.toBeInTheDocument();
+    expect(screen.getByText(/openbb-api/)).toBeInTheDocument();
+    expect(screen.getByText(/restart/i)).toBeInTheDocument();
+  });
+
+  it("surfaces a failed write without logging or displaying the value", async () => {
+    const fetchImpl = makeEditFetchImpl([UNSET], () => new Response("rejected", { status: 400 }));
+    const { container } = render(
+      <KeysRenderer
+        data={data([UNSET], 3)}
+        widgetDef={WIDGET}
+        theme="dark"
+        backend={BACKEND}
+        fetchImpl={fetchImpl}
+      />
+    );
+    await waitFor(() => expect(asMock(fetchImpl)).toHaveBeenCalledTimes(1));
+
+    const input = openEditor(container);
+    fireEvent.change(input, { target: { value: "sk-shouldnotappear" } });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(asMock(fetchImpl)).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+
+    expect(container.textContent).not.toContain("sk-shouldnotappear");
+    const remainingInput = container.querySelector("input[type='password']") as HTMLInputElement | null;
+    expect(remainingInput?.value ?? "").not.toContain("sk-shouldnotappear");
+    // Still tier-3-unset: the write did not silently take effect client-side.
+    expect(screen.getByText("Not set")).toBeInTheDocument();
+  });
+});
+
 describe("KeysRenderer table behaviour", () => {
   it("sorts by provider when the header is clicked", () => {
     const { container } = renderKeys([UNSET, OWN]);

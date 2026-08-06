@@ -174,6 +174,37 @@ export async function fetchText(
   return res.text();
 }
 
+/**
+ * PUTs a JSON body (e.g. a tier-3 key edit) and returns the parsed JSON
+ * response. Mirrors doFetch's conventions (auth header, HttpError on
+ * non-2xx) but for a request with a body — every existing helper here is
+ * GET-only. The payload travels exclusively in the request body: it is never
+ * appended to `url`, so it cannot land in uvicorn's access log, Tailscale
+ * Serve's log, or a proxy log the way a query string would.
+ */
+export async function putJson(
+  url: string,
+  body: unknown,
+  backend?: BackendConfig,
+  fetchImpl: typeof fetch = tauriFetch,
+  signal?: AbortSignal
+): Promise<unknown> {
+  const res = await fetchImpl(url, {
+    method: "PUT",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...authHeaders(backend),
+    },
+    body: JSON.stringify(body),
+    ...(signal ? { signal } : {}),
+  });
+  if (!res.ok) {
+    throw new HttpError(res.status, url, await res.text().catch(() => ""));
+  }
+  return res.json();
+}
+
 export async function fetchWidgetData(
   backend: BackendConfig,
   widget: WidgetDef,

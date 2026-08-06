@@ -1072,6 +1072,43 @@ input, select, textarea {
   background: var(--bg); outline: none;
 }
 
+/* Keys widget: the tier-3 inline editor. The button collapses to the form
+   on click; the input is password-masked (type="password") so the value
+   never appears as plaintext on screen either, on top of never reaching a
+   URL, log, title, or React key -- see KeysRenderer's module-level secrecy
+   note. The restart notice reuses the amber warning colour: it is not an
+   error, but it is something the user must act on (the running API cannot
+   see the new key until openbb-api restarts). */
+.keys-edit-btn {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.keys-edit-btn:hover { border-color: var(--text-dim); }
+.keys-edit-form {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+.keys-edit-form input[type="password"] {
+  font-size: 11px; padding: 2px 6px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  width: 160px;
+}
+.keys-edit-form button {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.keys-edit-form button:disabled { opacity: 0.6; cursor: default; }
+.keys-edit-error {
+  font-size: 11px; color: #d9695f;
+  flex-basis: 100%;
+}
+.keys-restart-notice {
+  padding: 6px 8px; margin: 0 8px 8px;
+  font-size: 12px; color: #0e1116; background: #d9a75f;
+  border-radius: 4px;
+}
+
 .metric-value { font-size: 28px; font-weight: 600; color: var(--text); }
 .metric-container { display: flex; align-items: center; justify-content: center; }
 .raw-json-view pre {
