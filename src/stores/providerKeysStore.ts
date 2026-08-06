@@ -44,12 +44,23 @@ const PROBE_CONCURRENCY = 4;
 /** Discards a stale refresh: only the latest call may write the store. */
 let refreshToken = 0;
 
+/**
+ * The in-flight probe wave's abort controller, if any. A new refresh() call
+ * aborts whatever wave is still running before starting its own -- without
+ * this, three quick backend edits fan out three overlapping waves (up to 12
+ * concurrent live requests, since "capped at 4" is only ever per-wave).
+ */
+let activeProbeAbort: AbortController | null = null;
+
 export const useProviderKeysStore = create<ProviderKeysState>((set, get) => ({
   status: {},
   source: "none",
 
   async refresh(backends, widgets, deps = {}) {
     const token = ++refreshToken;
+    activeProbeAbort?.abort();
+    const abortController = new AbortController();
+    activeProbeAbort = abortController;
     const fj = deps.fetchJsonImpl ?? fetchJson;
     const fwd = deps.fetchWidgetDataImpl ?? fetchWidgetData;
 
@@ -57,9 +68,16 @@ export const useProviderKeysStore = create<ProviderKeysState>((set, get) => ({
     if (km) {
       try {
         const url = resolveEndpoint(km.baseUrl, "keys").toString();
-        const json = (await fj(url, km)) as { rows?: KeyMaintRow[] };
+        const json = (await fj(url, km)) as { rows?: unknown };
         if (token !== refreshToken) return;
-        set({ status: parseKeyMaintRows(json.rows ?? []), source: "key-maint" });
+        // A 200 with no rows array (an error body, a tier-gated response, a
+        // proxy page) is not "zero rows" -- treating it that way would badge
+        // every provider "keyed" via the unlisted-provider default below.
+        // Fall through to the same catch path as a hard fetch failure.
+        if (!Array.isArray(json.rows)) {
+          throw new Error("key-maint /keys response missing a rows array");
+        }
+        set({ status: parseKeyMaintRows(json.rows as KeyMaintRow[]), source: "key-maint" });
         return;
       } catch (e) {
         // A dead key-maint should not blank the feature: fall through to
@@ -76,14 +94,13 @@ export const useProviderKeysStore = create<ProviderKeysState>((set, get) => ({
       return;
     }
 
-    const results: Record<string, ProviderKeyStatus> = {};
     const queue = [...providers];
     const probeOne = async (p: string): Promise<ProviderKeyStatus> => {
       const w = pickProbeWidget(widgets, p);
       const backend = w ? backends.find((b) => b.id === w.backendId) : undefined;
       if (!w || !backend) return "unknown";
       try {
-        await fwd(backend, w, defaultParamValues(w));
+        await fwd(backend, w, defaultParamValues(w), {}, undefined, abortController.signal);
         return "keyed";
       } catch (e) {
         return classifyProbeError(e);
@@ -92,12 +109,16 @@ export const useProviderKeysStore = create<ProviderKeysState>((set, get) => ({
     await Promise.all(
       Array.from({ length: Math.min(PROBE_CONCURRENCY, queue.length) }, async () => {
         for (let p = queue.shift(); p !== undefined; p = queue.shift()) {
-          results[p] = await probeOne(p);
+          if (token !== refreshToken) return;
+          const result = await probeOne(p);
+          if (token !== refreshToken) return;
+          // Committed one provider at a time, not after the whole Promise.all
+          // settles: a single hung backend must not gate every other badge
+          // that already has an answer.
+          set((state) => ({ status: { ...state.status, [p]: result }, source: "probe" }));
         }
       })
     );
-    if (token !== refreshToken) return;
-    set({ status: results, source: "probe" });
   },
 
   statusFor(providerName) {
