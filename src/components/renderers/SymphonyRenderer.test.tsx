@@ -1,5 +1,16 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockOpenUrl = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: mockOpenUrl }));
+
+// The Rust framing preflight. Defaults to "allowed" so tests that don't care
+// about it render exactly as before.
+const mockInvoke = vi.hoisted(() =>
+  vi.fn(async () => ({ frameable: true, reason: "" }))
+);
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
+
 import SymphonyRenderer from "./SymphonyRenderer";
 
 /**
@@ -45,6 +56,9 @@ describe("SymphonyRenderer", () => {
   beforeEach(() => {
     FakeIntersectionObserver.instances = [];
     vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+    mockInvoke.mockClear();
+    mockInvoke.mockImplementation(async () => ({ frameable: true, reason: "" }));
+    mockOpenUrl.mockClear();
   });
 
   afterEach(() => {
@@ -148,5 +162,69 @@ describe("SymphonyRenderer", () => {
 
     act(() => FakeIntersectionObserver.instances[0].fire(true));
     expect(screen.getByTitle("Symphony")).toBeInTheDocument();
+  });
+
+  describe("framing preflight", () => {
+    it("checks the exact embed URL once the card becomes visible", async () => {
+      render(<SymphonyRenderer params={baseParams} />);
+      expect(mockInvoke).not.toHaveBeenCalled();
+
+      act(() => FakeIntersectionObserver.instances[0].fire(true));
+      expect(mockInvoke).toHaveBeenCalledWith("check_frame_options", {
+        url: "https://my-pod.symphony.com/embed/index.html?streamId=stream-123&partnerId=&mode=focus&theme=dark&condensed=true",
+      });
+    });
+
+    it("replaces the frame with an explanation when the pod refuses framing", async () => {
+      mockInvoke.mockImplementation(async () => ({
+        frameable: false,
+        reason: "X-Frame-Options: DENY",
+      }));
+      render(<SymphonyRenderer params={baseParams} />);
+      act(() => FakeIntersectionObserver.instances[0].fire(true));
+
+      expect(await screen.findByText(/refuses to be embedded/i)).toBeInTheDocument();
+      expect(screen.getByText("X-Frame-Options: DENY")).toBeInTheDocument();
+      expect(screen.queryByTitle("Symphony")).not.toBeInTheDocument();
+    });
+
+    it("offers an external escape hatch to the exact embed URL when refused", async () => {
+      mockInvoke.mockImplementation(async () => ({
+        frameable: false,
+        reason: "X-Frame-Options: DENY",
+      }));
+      render(<SymphonyRenderer params={baseParams} />);
+      act(() => FakeIntersectionObserver.instances[0].fire(true));
+
+      await screen.findByText(/refuses to be embedded/i);
+      screen.getByRole("button", { name: /Open externally/ }).click();
+      expect(mockOpenUrl).toHaveBeenCalledWith(
+        "https://my-pod.symphony.com/embed/index.html?streamId=stream-123&partnerId=&mode=focus&theme=dark&condensed=true"
+      );
+    });
+
+    it("keeps the iframe when the preflight itself fails, since that is not evidence of refusal", async () => {
+      mockInvoke.mockImplementation(async () => {
+        throw new Error("network unreachable");
+      });
+      render(<SymphonyRenderer params={baseParams} />);
+      act(() => FakeIntersectionObserver.instances[0].fire(true));
+
+      // Let the rejected promise settle.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByTitle("Symphony")).toBeInTheDocument();
+      expect(screen.queryByText(/refuses to be embedded/i)).not.toBeInTheDocument();
+    });
+
+    it("does not re-check on a later non-intersecting report", async () => {
+      render(<SymphonyRenderer params={baseParams} />);
+      act(() => FakeIntersectionObserver.instances[0].fire(true));
+      expect(mockInvoke).toHaveBeenCalledTimes(1);
+
+      act(() => FakeIntersectionObserver.instances[0].fire(false));
+      expect(mockInvoke).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { logError } from "../../lib/logger";
 
 /**
  * The five values a Symphony embed needs. Declared once, here, and
@@ -42,10 +45,17 @@ function buildEmbedUrl({ pod, id, partnerId, mode, theme }: SymphonyParams): str
  * mounted; going off-screen again must not tear down a live chat session.
  */
 export default function SymphonyRenderer({ params }: SymphonyRendererProps) {
-  const { pod, id, partnerId, mode, theme } = params;
+  const { pod, id } = params;
   const configured = pod.trim() !== "" && id.trim() !== "";
+  const embedUrl = configured ? buildEmbedUrl(params) : "";
   const containerRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
+  // Whether the pod permits framing. Undetectable from the webview — a
+  // refused frame fires `load` and reports a null document exactly like an
+  // allowed one — so a Rust-side preflight reads the headers instead. null
+  // while unknown or not yet checked; the iframe renders optimistically in
+  // that state and this swaps it out only if the check comes back negative.
+  const [refusal, setRefusal] = useState<string | null>(null);
 
   useEffect(() => {
     // Unconfigured cards render the hint below instead of the container div,
@@ -69,6 +79,27 @@ export default function SymphonyRenderer({ params }: SymphonyRendererProps) {
     return () => observer.disconnect();
   }, [visible, configured]);
 
+  useEffect(() => {
+    // Nothing to check until the card is about to actually load the pod —
+    // checking earlier would fire a network request for cards never scrolled
+    // into view, which is exactly what the lazy-loading above exists to avoid.
+    setRefusal(null);
+    if (!visible || !embedUrl) return;
+    let cancelled = false;
+    invoke<{ frameable: boolean; reason: string }>("check_frame_options", {
+      url: embedUrl,
+    })
+      .then((r) => {
+        if (!cancelled && !r.frameable) setRefusal(r.reason);
+      })
+      // A failed preflight is not evidence of refusal — the pod may be down,
+      // or blocking HEAD. Fall through and let the frame try.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, embedUrl]);
+
   if (!configured) {
     // Not configured yet — a normal state for a freshly dropped card, not an
     // error. Framing "https:///embed/..." would just show blank.
@@ -77,11 +108,34 @@ export default function SymphonyRenderer({ params }: SymphonyRendererProps) {
     );
   }
 
+  if (refusal) {
+    return (
+      <div className="symphony-container">
+        <div className="iframe-refused">
+          <strong>This pod refuses to be embedded.</strong>
+          <span className="iframe-refused-host">{new URL(embedUrl).hostname}</span>
+          <span className="iframe-refused-reason">{refusal}</span>
+          <button
+            type="button"
+            className="iframe-external"
+            onClick={() => {
+              openUrl(embedUrl).catch((e) =>
+                logError(`openUrl failed for ${embedUrl}: ${String(e)}`)
+              );
+            }}
+          >
+            Open externally ↗
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="symphony-container" ref={containerRef}>
       {visible && (
         <iframe
-          src={buildEmbedUrl({ pod, id, partnerId, mode, theme })}
+          src={embedUrl}
           // allow-same-origin is required here, unlike the general-purpose
           // Website iframe: Symphony's embed SDK needs its own origin's
           // storage to maintain the chat session.

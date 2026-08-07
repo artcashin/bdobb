@@ -22,8 +22,7 @@ pub struct FrameCheck {
 /// Website widget exists to load. That is not a widening of what the app can
 /// reach: the iframe is about to request this exact URL anyway under
 /// `frame-src`, so the preflight touches nothing new.
-#[tauri::command]
-async fn check_frameable(url: String) -> Result<FrameCheck, String> {
+async fn frame_check(url: String) -> Result<FrameCheck, String> {
     // Only the schemes the widget itself accepts. Anything else is refused
     // rather than handed to the HTTP client.
     let parsed = url::Url::parse(&url).map_err(|e| e.to_string())?;
@@ -100,6 +99,22 @@ async fn check_frameable(url: String) -> Result<FrameCheck, String> {
     })
 }
 
+/// The Website built-in's preflight. See `frame_check` above.
+#[tauri::command]
+async fn check_frameable(url: String) -> Result<FrameCheck, String> {
+    frame_check(url).await
+}
+
+/// Symphony's preflight, ahead of framing a pod's embed URL. Same headers,
+/// same undetectable-from-the-webview problem as the Website built-in (see
+/// `frame_check`) — a separate command rather than reusing `check_frameable`
+/// so the two call sites can evolve independently even though today they
+/// share every line of logic.
+#[tauri::command]
+async fn check_frame_options(url: String) -> Result<FrameCheck, String> {
+    frame_check(url).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -107,7 +122,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![check_frameable])
+        .invoke_handler(tauri::generate_handler![check_frameable, check_frame_options])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
