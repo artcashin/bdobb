@@ -144,6 +144,12 @@ vi.mock("./renderers/MetricRenderer", () => ({
   },
 }));
 
+vi.mock("./renderers/LiveChartRenderer", () => ({
+  default: ({ widgetDef }: { widgetDef: { id: string } }) => (
+    <div>live-chart-rendered:{widgetDef.id}</div>
+  ),
+}));
+
 vi.mock("../lib/dataClient", () => ({
   fetchWidgetData: vi.fn().mockResolvedValue([
     { name: "Alice", age: 30 },
@@ -242,6 +248,14 @@ describe("WidgetCard", () => {
     registryType = "iframe";
     render(<WidgetCard card={makeCard()} />);
     await waitFor(() => expect(screen.getByText("Test Widget")).toBeInTheDocument());
+    expect(vi.mocked(fetchWidgetData)).not.toHaveBeenCalled();
+    expect(vi.mocked(fetchWidgetHtml)).not.toHaveBeenCalled();
+  });
+
+  it("dispatches live_chart widgets to LiveChartRenderer and skips the generic seed fetch", async () => {
+    registryType = "live_chart";
+    render(<WidgetCard card={makeCard()} />);
+    await screen.findByText("live-chart-rendered:w1");
     expect(vi.mocked(fetchWidgetData)).not.toHaveBeenCalled();
     expect(vi.mocked(fetchWidgetHtml)).not.toHaveBeenCalled();
   });
