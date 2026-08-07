@@ -120,4 +120,41 @@ describe("ClockRenderer", () => {
     render(<ClockRenderer zones={["Mars/Olympus"]} />);
     expect(screen.getByText(/No valid time zones/)).toBeInTheDocument();
   });
+
+  it("defaults to the vertical digital list", () => {
+    const { container } = render(<ClockRenderer zones={["UTC"]} />);
+    expect(container.querySelector(".clock-list")).toBeInTheDocument();
+    expect(container.querySelector(".clock-gallery")).toBeNull();
+  });
+
+  it("horizontal layout renders one analog tile per zone instead of digital rows", () => {
+    const { container } = render(
+      <ClockRenderer zones={["America/New_York", "Asia/Tokyo"]} layout="horizontal" />
+    );
+    expect(container.querySelectorAll(".clock-tile")).toHaveLength(2);
+    expect(container.querySelector(".clock-time")).toBeNull();
+    expect(container.querySelector(".clock-list")).toBeNull();
+    expect(screen.getByText("New York")).toBeInTheDocument();
+    expect(screen.getByText("US/Eastern")).toBeInTheDocument();
+    expect(screen.getByText("GMT-4")).toBeInTheDocument();
+  });
+
+  it("horizontal layout labels each tile with the spoken time for screen readers", () => {
+    // 15:30 UTC, per the fixed system time this suite sets in beforeEach.
+    const { container } = render(<ClockRenderer zones={["UTC"]} layout="horizontal" />);
+    expect(container.querySelector(".clock-tile")).toHaveAttribute(
+      "aria-label",
+      "UTC, 15:30, UTC, GMT+0"
+    );
+  });
+
+  it("horizontal layout still reports an invalid zone", () => {
+    const { container } = render(
+      <ClockRenderer zones={["America/New_York", "Mars/Olympus"]} layout="horizontal" />
+    );
+    expect(container.querySelectorAll(".clock-tile")).toHaveLength(1);
+    expect(container.querySelector(".clock-invalid")).toHaveTextContent(
+      "Unknown time zone: Mars/Olympus"
+    );
+  });
 });
