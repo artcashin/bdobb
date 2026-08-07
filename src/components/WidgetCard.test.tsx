@@ -608,6 +608,94 @@ describe("WidgetCard built-in widgets", () => {
     backendsList = [BACKEND];
   });
 
+  it("renders a Symphony iframe from card params, mapped to SymphonyRenderer's shape, without fetching", () => {
+    backendsList = [];
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: {
+            podUrl: "my-pod.symphony.com",
+            streamId: "stream-1",
+            mode: "focus",
+            theme: "dark",
+          },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      "https://my-pod.symphony.com/embed/index.html?streamId=stream-1&partnerId=&mode=focus&theme=dark&condensed=true"
+    );
+    expect(vi.mocked(fetchWidgetData)).not.toHaveBeenCalled();
+    backendsList = [BACKEND];
+  });
+
+  it("strips a leading https:// scheme from the pod URL before framing it", () => {
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { podUrl: "https://my-pod.symphony.com", streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      expect.stringMatching(/^https:\/\/my-pod\.symphony\.com\/embed\//)
+    );
+  });
+
+  it("strips a leading http:// scheme from the pod URL before framing it", () => {
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { podUrl: "http://my-pod.symphony.com", streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      expect.stringMatching(/^https:\/\/my-pod\.symphony\.com\/embed\//)
+    );
+  });
+
+  it("strips a trailing slash from the pod URL before framing it", () => {
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { podUrl: "my-pod.symphony.com/", streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      expect.stringMatching(/^https:\/\/my-pod\.symphony\.com\/embed\//)
+    );
+  });
+
+  it("passes partnerId as an empty string rather than reading it from settings", () => {
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { podUrl: "my-pod.symphony.com", streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      expect.stringContaining("partnerId=&")
+    );
+  });
+
   it("offers no refresh control for a built-in", () => {
     render(
       <WidgetCard card={makeCard({ widgetId: "builtin:clock", backendId: "builtin" })} />

@@ -15,12 +15,14 @@ import {
   CLOCK_CYCLE_PARAM, CLOCK_FACE_PARAM,
   NOTE_TEXT_PARAM, WEBSITE_URL_PARAM,
   NEWS_URL_PARAM, NEWS_USER_PARAM, NEWS_TOKEN_PARAM,
-  BUILTIN_CLOCK_ID, BUILTIN_NEWS_ID, BUILTIN_NOTE_ID, BUILTIN_WEBSITE_ID,
+  SYMPHONY_POD_URL_PARAM, SYMPHONY_STREAM_ID_PARAM, SYMPHONY_MODE_PARAM, SYMPHONY_THEME_PARAM,
+  BUILTIN_CLOCK_ID, BUILTIN_NEWS_ID, BUILTIN_NOTE_ID, BUILTIN_WEBSITE_ID, BUILTIN_SYMPHONY_ID,
   findBuiltin, isBuiltinBackend,
 } from "../lib/builtins";
 import NewsRailRenderer from "./renderers/NewsRailRenderer";
 import ClockRenderer from "./renderers/ClockRenderer";
 import NoteRenderer from "./renderers/NoteRenderer";
+import SymphonyRenderer from "./renderers/SymphonyRenderer";
 import ChartRenderer from "./renderers/ChartRenderer";
 import HtmlRenderer from "./renderers/HtmlRenderer";
 import IframeRenderer from "./renderers/IframeRenderer";
@@ -41,6 +43,15 @@ export interface WidgetCardProps {
  * re-renders forever.
  */
 const NO_GROUPS: ParamGroup[] = [];
+
+/**
+ * SymphonyRenderer interpolates `pod` raw into `https://${pod}/embed/...`. A
+ * pod URL typed with its scheme already on it, or with a trailing slash,
+ * would otherwise double up ("https://https://…") or double-slash the path.
+ */
+function normalizeSymphonyPod(raw: string): string {
+  return raw.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+}
 
 export default function WidgetCard({ card }: WidgetCardProps) {
   const removeCard = useDashboardStore((s) => s.removeCard);
@@ -252,6 +263,22 @@ export default function WidgetCard({ card }: WidgetCardProps) {
           zones={raw.split(",").map((z) => z.trim()).filter(Boolean)}
           hour12={hour12}
           face={fetchParams[CLOCK_FACE_PARAM] === "solid" ? "solid" : "dots"}
+        />
+      );
+    }
+
+    if (card.widgetId === BUILTIN_SYMPHONY_ID) {
+      // partnerId is an app-level setting Task 5 wires in; until then every
+      // call site (this one included) passes "" rather than inventing a source.
+      return (
+        <SymphonyRenderer
+          params={{
+            pod: normalizeSymphonyPod(String(fetchParams[SYMPHONY_POD_URL_PARAM] ?? "")),
+            id: String(fetchParams[SYMPHONY_STREAM_ID_PARAM] ?? ""),
+            partnerId: "",
+            mode: String(fetchParams[SYMPHONY_MODE_PARAM] ?? ""),
+            theme: String(fetchParams[SYMPHONY_THEME_PARAM] ?? ""),
+          }}
         />
       );
     }
