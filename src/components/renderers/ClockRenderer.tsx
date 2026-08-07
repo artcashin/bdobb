@@ -136,6 +136,8 @@ export default function ClockRenderer({
 
   if (layout === "horizontal") {
     return (
+      // aria-live off: a list of clocks announcing itself every second would make
+      // the card unusable with a screen reader.
       <div className="clock-gallery" aria-live="off">
         {rows.map((r) => {
           const hourNum = parseInt(r.hh, 10) % 12;
@@ -143,8 +145,9 @@ export default function ClockRenderer({
           return (
             <div
               className="clock-tile"
+              role="img"
               key={r.zone}
-              aria-label={`${r.city}, ${r.hh}:${r.mm}, ${r.label}, ${r.offset}`}
+              aria-label={`${r.city}, ${r.hh}:${r.mm}${r.meridiem ? ` ${r.meridiem}M` : ""}, ${r.label}, ${r.offset}`}
             >
               <AnalogFace hour={hourNum} minute={minuteNum} />
               <div className="clock-tile-caption">
