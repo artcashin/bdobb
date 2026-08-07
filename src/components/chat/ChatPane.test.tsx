@@ -818,18 +818,25 @@ describe("ChatPane", () => {
   // (the call's resolved MCP server URL matches settings.symphonyBridgeUrl)
   // instead, OR'd onto the name check so it can only ever widen gating.
   describe("Fix 1: provenance gate for non-symphony-named tools from the bridge server", () => {
-    const BRIDGE_URL = "https://bridge.test/mcp";
+    // The bridge's HTTP base (what settings.symphonyBridgeUrl actually holds
+    // -- chatShare.ts posts to `${bridgeUrl}/messages`) and its MCP `/mcp`
+    // endpoint (what an AgentTool.url actually holds) are two different
+    // paths on the same origin, never string-equal in a real install. Using
+    // the same literal for both here would validate an impossible
+    // configuration -- see Task 7 review.
+    const BRIDGE_BASE_URL = "https://bridge.test";
+    const BRIDGE_MCP_URL = "https://bridge.test/mcp";
 
     afterEach(() => {
       restoreDefaultMockSettings();
     });
 
     it("gates send_message when it originates from the configured Symphony bridge server", async () => {
-      mockSettings({ symphonyBridgeUrl: BRIDGE_URL });
+      mockSettings({ symphonyBridgeUrl: BRIDGE_BASE_URL });
       const SEND_MESSAGE_TOOL: AgentTool = {
         server_id: "symphony-bridge",
         name: "send_message",
-        url: BRIDGE_URL,
+        url: BRIDGE_MCP_URL,
         endpoint: "",
         description: "Send a message via the bridge",
         input_schema: {},
@@ -878,7 +885,7 @@ describe("ChatPane", () => {
     });
 
     it("does not gate a non-Symphony tool from a non-Symphony server", async () => {
-      mockSettings({ symphonyBridgeUrl: BRIDGE_URL });
+      mockSettings({ symphonyBridgeUrl: BRIDGE_BASE_URL });
       const OTHER_TOOL: AgentTool = {
         server_id: "weather-server",
         name: "get_weather",
@@ -917,6 +924,90 @@ describe("ChatPane", () => {
       expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
       expect(callToolSpy).toHaveBeenCalledWith("https://weather.example/mcp", "get_weather", { city: "NYC" });
       expect(outcome).toEqual({ content: "sunny" });
+    });
+
+    // Regression: isFromSymphonyBridge must treat an empty/unset bridge URL
+    // as "matches nothing", not as a wildcard that happens to match every
+    // origin. Previously this rested on code inspection alone (Task 7).
+    it("does not gate a non-local MCP tool when symphonyBridgeUrl is empty", async () => {
+      mockSettings({ symphonyBridgeUrl: "" });
+      const OTHER_TOOL: AgentTool = {
+        server_id: "weather-server",
+        name: "get_weather",
+        url: "https://weather.example/mcp",
+        endpoint: "",
+        description: "Get the current weather",
+        input_schema: {},
+      };
+      vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+        tools: [OTHER_TOOL],
+        budgetExceeded: [],
+        unreachable: [],
+      });
+      const callToolSpy = vi
+        .spyOn(mcpModule, "callMcpTool")
+        .mockResolvedValue({ content: [{ type: "text", text: "sunny" }] });
+      const runQuerySpy = vi.spyOn(agentClientModule, "runAgentQuery").mockResolvedValue([]);
+
+      render(<ChatPane />);
+      const input = screen.getByPlaceholderText("Message Rita...");
+      fireEvent.change(input, { target: { value: "what's the weather" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+      const runAgentTool = runQuerySpy.mock.calls[0][0].runAgentTool!;
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      await act(async () => {
+        outcome = await runAgentTool("weather-server", "get_weather", { city: "NYC" });
+      });
+
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+      expect(callToolSpy).toHaveBeenCalledWith("https://weather.example/mcp", "get_weather", { city: "NYC" });
+      expect(outcome).toEqual({ content: "sunny" });
+    });
+
+    // Regression: origin comparison must not become a substring/prefix match
+    // -- a tool served from a different origin than the configured bridge,
+    // with a non-Symphony name, must not be gated (Task 7).
+    it("does not gate a non-Symphony tool served from a different origin than the bridge", async () => {
+      mockSettings({ symphonyBridgeUrl: BRIDGE_BASE_URL });
+      const OTHER_ORIGIN_TOOL: AgentTool = {
+        server_id: "other-server",
+        name: "send_message",
+        url: "https://other.test/mcp",
+        endpoint: "",
+        description: "Send a message via an unrelated server",
+        input_schema: {},
+      };
+      vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+        tools: [OTHER_ORIGIN_TOOL],
+        budgetExceeded: [],
+        unreachable: [],
+      });
+      const callToolSpy = vi
+        .spyOn(mcpModule, "callMcpTool")
+        .mockResolvedValue({ content: [{ type: "text", text: "sent" }] });
+      const runQuerySpy = vi.spyOn(agentClientModule, "runAgentQuery").mockResolvedValue([]);
+
+      render(<ChatPane />);
+      const input = screen.getByPlaceholderText("Message Rita...");
+      fireEvent.change(input, { target: { value: "send it" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+      const runAgentTool = runQuerySpy.mock.calls[0][0].runAgentTool!;
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      await act(async () => {
+        outcome = await runAgentTool("other-server", "send_message", { text: "hi" });
+      });
+
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+      expect(callToolSpy).toHaveBeenCalledWith("https://other.test/mcp", "send_message", { text: "hi" });
+      expect(outcome).toEqual({ content: "sent" });
     });
   });
 

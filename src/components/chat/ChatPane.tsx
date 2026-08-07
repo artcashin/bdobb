@@ -60,17 +60,23 @@ function isSymphonyPostTool(toolName: string): boolean {
   return SYMPHONY_TOOL_PATTERN.test(toolName);
 }
 
-function normalizeMcpUrlForCompare(url: string): string {
-  return url.trim().replace(/\/+$/, "");
-}
-
 /**
  * Provenance half of the gate: true when `toolUrl` -- the resolved MCP
- * server URL a call actually arrived from -- is the configured Symphony
- * bridge (`settings.symphonyBridgeUrl`). Closes the gap `isSymphonyPostTool`
- * cannot: a bridge tool named `send_message` never matches `/symphony/i`,
- * but if it is served by the bridge itself it is still a Symphony post and
- * must still be gated.
+ * server URL a call actually arrived from -- shares an origin with the
+ * configured Symphony bridge (`settings.symphonyBridgeUrl`). Closes the gap
+ * `isSymphonyPostTool` cannot: a bridge tool named `send_message` never
+ * matches `/symphony/i`, but if it is served by the bridge itself it is
+ * still a Symphony post and must still be gated.
+ *
+ * Compared by origin, not full-string equality: `symphonyBridgeUrl` is the
+ * bridge's HTTP base (chatShare.ts posts to `${bridgeUrl}/messages`,
+ * SymphonyTab.tsx hints `http://localhost:PORT`), while an MCP tool's `url`
+ * is that same bridge's `/mcp` endpoint, configured separately in the MCP
+ * settings tab -- the two are never string-equal in a real install even
+ * though they name the same server. `URL.origin` also normalizes host/scheme
+ * casing, so this subsumes what would otherwise be a separate
+ * case-sensitivity bug. Wrapped in try/catch so an unparseable or empty
+ * value yields `false` rather than throwing.
  *
  * OR'd with the name check at the call site, never AND'd and never a
  * replacement for it, so this can only ADD gating, never remove it -- a
@@ -80,7 +86,11 @@ function normalizeMcpUrlForCompare(url: string): string {
  */
 function isFromSymphonyBridge(toolUrl: string | undefined, symphonyBridgeUrl: string): boolean {
   if (!toolUrl || !symphonyBridgeUrl.trim()) return false;
-  return normalizeMcpUrlForCompare(toolUrl) === normalizeMcpUrlForCompare(symphonyBridgeUrl);
+  try {
+    return new URL(toolUrl).origin === new URL(symphonyBridgeUrl).origin;
+  } catch {
+    return false;
+  }
 }
 
 /** The parameter names that might carry the post's destination, in the order
