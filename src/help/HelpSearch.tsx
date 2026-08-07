@@ -9,7 +9,11 @@ export default function HelpSearch({ onSelect }: HelpSearchProps) {
   const index = useMemo(() => loadSearchIndex(), []);
   const [query, setQuery] = useState("");
 
-  const results = query.trim() ? index.search(query) : [];
+  // MiniSearch defaults to exact-token matching only. Real help queries are
+  // short and often partial ("quote" for "Live Quotes") or mistyped
+  // ("instal"), so prefix + light fuzzy matching is needed for search to be
+  // useful at all.
+  const results = query.trim() ? index.search(query, { prefix: true, fuzzy: 0.2 }) : [];
 
   return (
     <div className="help-search">
