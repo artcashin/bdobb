@@ -1,4 +1,6 @@
 use serde::Serialize;
+use tauri::menu::{Menu, MenuItem, Submenu};
+use tauri::Manager;
 
 #[derive(Serialize)]
 pub struct FrameCheck {
@@ -108,6 +110,24 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![check_frameable])
+        .setup(|app| {
+            let help_item = MenuItem::with_id(app, "help_open", "BDOBB Help", true, None::<&str>)?;
+            let help_menu = Submenu::with_items(app, "Help", true, &[&help_item])?;
+            let menu = Menu::with_items(app, &[&help_menu])?;
+            app.set_menu(menu)?;
+
+            let handle = app.handle().clone();
+            app.on_menu_event(move |_app, event| {
+                if event.id() == "help_open" {
+                    if let Some(window) = handle.get_webview_window("help") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            });
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
