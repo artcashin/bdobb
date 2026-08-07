@@ -199,11 +199,12 @@ class Config:
 def load_config(env: Mapping[str, str] | None = None) -> Config:
     e = os.environ if env is None else env
     raw_allowed = e.get("BRIDGE_ALLOWED_DESTINATIONS", "").strip()
-    allowed = (
-        frozenset(part.strip() for part in raw_allowed.split(",") if part.strip())
-        if raw_allowed
-        else None
-    )
+    parsed = frozenset(part.strip() for part in raw_allowed.split(",") if part.strip())
+    # `or None` collapses EVERY input that yields no members -- blank,
+    # whitespace-only, and comma-only alike -- to "no allowlist configured".
+    # An empty frozenset would mean "permit nothing" and silently break all
+    # sending, which is the failure this three-state contract exists to avoid.
+    allowed = parsed or None
     return Config(
         pod_host=e.get("SYMPHONY_POD_HOST", ""),
         agent_host=e.get("SYMPHONY_AGENT_HOST", ""),

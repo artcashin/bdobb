@@ -41,3 +41,9 @@ def test_reads_pod_settings():
     assert cfg.bot_username == "test-bot"
     assert cfg.bot_key_path == "/run/secrets/bot.pem"
     assert cfg.bind == "127.0.0.1:8099"
+
+
+def test_comma_only_allowlist_is_none_not_an_empty_set():
+    # An empty frozenset would mean "permit nothing" -- every send blocked.
+    for raw in (",", " , ", ",,"):
+        assert load_config({"BRIDGE_ALLOWED_DESTINATIONS": raw}).allowed_destinations is None
