@@ -1,6 +1,6 @@
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, Submenu, HELP_SUBMENU_ID};
-use tauri::{Manager, WindowEvent};
+use tauri::Manager;
 
 #[derive(Serialize)]
 pub struct FrameCheck {
@@ -132,29 +132,42 @@ pub fn run() {
             }
             app.set_menu(menu)?;
 
-            // The "help" window is declared statically (and hidden) in
-            // tauri.conf.json, so it already exists here. Without this
-            // interceptor, Tauri destroys the window on close and
-            // `get_webview_window("help")` would return `None` on every
-            // subsequent menu click, permanently disabling the menu item
-            // until the app restarts. Hide instead of destroy so the same
-            // window instance can always be re-shown.
-            if let Some(help_window) = app.get_webview_window("help") {
-                let help_window_for_close = help_window.clone();
-                help_window.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = help_window_for_close.hide();
-                    }
-                });
-            }
-
+            // The "help" window is created on demand rather than declared
+            // statically in tauri.conf.json. An earlier version kept a
+            // hidden, permanently-alive "help" window (intercepting its
+            // close event with `prevent_close` + `hide`) so a menu click
+            // after the user closed it wouldn't just silently no-op. That
+            // traded one bug for a worse one: Tauri only exits when its
+            // window map becomes empty on `Destroyed`, so with a hidden
+            // window that never dies, closing the main window no longer
+            // quit the app at all. Building fresh whenever the window is
+            // absent -- first click ever, or any click after the user
+            // closed it -- fixes the original problem without that
+            // regression, and lets the help window close/destroy normally.
             let handle = app.handle().clone();
             app.on_menu_event(move |_app, event| {
                 if event.id() == "help_open" {
                     if let Some(window) = handle.get_webview_window("help") {
                         let _ = window.show();
                         let _ = window.set_focus();
+                        return;
+                    }
+                    match tauri::WebviewWindowBuilder::new(
+                        &handle,
+                        "help",
+                        tauri::WebviewUrl::App("help.html".into()),
+                    )
+                    .title("BDOBB Help")
+                    .inner_size(1000.0, 720.0)
+                    .min_inner_size(640.0, 480.0)
+                    .build()
+                    {
+                        Ok(window) => {
+                            let _ = window.set_focus();
+                        }
+                        Err(err) => {
+                            eprintln!("failed to create help window: {err}");
+                        }
                     }
                 }
             });

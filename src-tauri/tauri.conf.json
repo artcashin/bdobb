@@ -17,16 +17,6 @@
         "height": 900,
         "minWidth": 1024,
         "minHeight": 700
-      },
-      {
-        "label": "help",
-        "title": "BDOBB Help",
-        "url": "help.html",
-        "width": 1000,
-        "height": 720,
-        "minWidth": 640,
-        "minHeight": 480,
-        "visible": false
       }
     ],
     "security": {
