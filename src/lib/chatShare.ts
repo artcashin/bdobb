@@ -1,5 +1,7 @@
 import { callMcpTool } from "./agent/mcp";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import type { ColumnDef } from "./types";
+import { defaultRenderChartPng, markdownToMessageML, rowsToCsv } from "./symphonyPayload";
 
 /**
  * A place a conversation can be sent — an MCP server exposing a
@@ -139,6 +141,115 @@ export async function shareChat(
     );
   }
   return { target: target.name, detail: `HTTP ${res.status}` };
+}
+
+// ---- widget-content sharing (Task 6): a card's content pushed into a
+// Symphony conversation via the bot bridge, as distinct from shareChat's
+// whole-conversation export above. ----
+
+export type SymphonyShareKind = "note" | "table" | "chart";
+
+export interface SymphonyShareInput {
+  kind: SymphonyShareKind;
+  /** settings.symphonyBridgeUrl -- the bot-bridge HTTP service, no trailing slash required. */
+  bridgeUrl: string;
+  /** The Symphony stream (room or IM) id to post into. */
+  streamId: string;
+  /** The widget/card name, used for the CSV/PNG attachment filename. */
+  title: string;
+  /** note: markdown text. table: row records. chart: whatever the card fetched. */
+  data: unknown;
+  /** table only: the widget's declared columns, for header labels/order. */
+  columns?: ColumnDef[] | null;
+}
+
+function slugify(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "widget";
+}
+
+function toBase64Utf8(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+/** A short MessageML message, used as the caption on an attachment share. */
+function captionMessageML(title: string): string {
+  return markdownToMessageML(title);
+}
+
+/**
+ * Pushes a widget card's content into a Symphony conversation via the bot
+ * bridge. Three widget kinds, three payload shapes:
+ *  - note: markdown converted to MessageML, sent as the message body.
+ *  - table: rows converted to CSV, sent as a base64 attachment.
+ *  - chart: rendered to PNG (see symphonyPayload.ts), sent as a base64
+ *    attachment.
+ *
+ * Both `bridgeUrl` and `streamId` are required -- the caller (WidgetCard)
+ * is expected to have already gated the button's visibility on a configured
+ * bridge URL, but this function still validates both itself rather than
+ * trusting that, since a missing/empty streamId would otherwise post to a
+ * meaningless `/messages` destination.
+ */
+export async function shareWidgetToSymphony(
+  input: SymphonyShareInput,
+  deps: {
+    fetchImpl?: typeof fetch;
+    renderChartPng?: (data: unknown) => Promise<{ base64: string; mimeType: string }>;
+  } = {}
+): Promise<ShareResult> {
+  if (!input.bridgeUrl) throw new Error("Symphony: no bridge URL configured");
+  if (!input.streamId) throw new Error("Symphony: no stream ID given");
+
+  let body: Record<string, unknown>;
+
+  if (input.kind === "note") {
+    const markdown = typeof input.data === "string" ? input.data : "";
+    body = { streamId: input.streamId, messageML: markdownToMessageML(markdown) };
+  } else if (input.kind === "table") {
+    if (!Array.isArray(input.data)) throw new Error("Symphony: no table data to send");
+    const csv = rowsToCsv(input.data as Record<string, unknown>[], input.columns ?? null);
+    body = {
+      streamId: input.streamId,
+      messageML: captionMessageML(input.title),
+      attachment: {
+        filename: `${slugify(input.title)}.csv`,
+        contentType: "text/csv",
+        data: toBase64Utf8(csv),
+      },
+    };
+  } else {
+    const render = deps.renderChartPng ?? defaultRenderChartPng;
+    const { base64, mimeType } = await render(input.data);
+    body = {
+      streamId: input.streamId,
+      messageML: captionMessageML(input.title),
+      attachment: {
+        filename: `${slugify(input.title)}.png`,
+        contentType: mimeType,
+        data: base64,
+      },
+    };
+  }
+
+  const doFetch = deps.fetchImpl ?? (tauriFetch as unknown as typeof fetch);
+  const res = await doFetch(`${input.bridgeUrl.replace(/\/+$/, "")}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Symphony: HTTP ${res.status}${detail ? ` — ${detail.slice(0, 200)}` : ""}`);
+  }
+  return { target: "Symphony", detail: `HTTP ${res.status}` };
 }
 
 /** Sensible starting template for a new target of each kind. */

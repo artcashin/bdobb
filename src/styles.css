@@ -311,6 +311,11 @@ input, select, textarea {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .card-actions { display: flex; gap: 4px; }
+.card-symphony-status {
+  font-size: 11px; color: var(--text-dim);
+  padding: 2px 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* The hover controls had no rule at all, so they laid out in normal flow and
    pushed the card's header and body down every time the pointer entered it. */
 .card-hover-panel {

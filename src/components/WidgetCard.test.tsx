@@ -4,6 +4,7 @@ import type { DashboardCard } from "../lib/types";
 import WidgetCard from "./WidgetCard";
 import { fetchWidgetData, fetchWidgetHtml } from "../lib/dataClient";
 import { logError } from "../lib/logger";
+import { shareWidgetToSymphony } from "../lib/chatShare";
 
 // The store's removeCard is async (Promise<void>); the card chains .catch on
 // it, so the mock must hand back a promise like the real action does.
@@ -108,15 +109,24 @@ vi.mock("../stores/backendsStore", () => ({
 // App-level Symphony settings the Task 5 wiring reads. Empty by default so
 // every pre-existing test (written before settings existed) sees the same
 // "" partnerId and card-supplied pod it always did.
-let settingsFixture: { symphonyPodUrl: string; symphonyPartnerId: string } = {
+let settingsFixture: {
+  symphonyPodUrl: string;
+  symphonyPartnerId: string;
+  symphonyBridgeUrl: string;
+} = {
   symphonyPodUrl: "",
   symphonyPartnerId: "",
+  symphonyBridgeUrl: "",
 };
 vi.mock("../stores/settingsStore", () => ({
   useSettingsStore: (selector: (s: any) => any) => selector({ settings: settingsFixture }),
 }));
 
 vi.mock("../lib/logger", () => ({ logError: vi.fn() }));
+
+vi.mock("../lib/chatShare", () => ({
+  shareWidgetToSymphony: vi.fn(async () => ({ target: "Symphony", detail: "HTTP 200" })),
+}));
 
 // Desk Finding 1 graft: force a real renderer throw inside the card body to
 // prove the ErrorBoundary wired into WidgetCard catches it. The sentinel data
@@ -164,7 +174,7 @@ beforeEach(() => {
     { name: "Bob", age: 25 },
   ]);
   backendsList = [BACKEND];
-  settingsFixture = { symphonyPodUrl: "", symphonyPartnerId: "" };
+  settingsFixture = { symphonyPodUrl: "", symphonyPartnerId: "", symphonyBridgeUrl: "" };
 });
 
 describe("WidgetCard", () => {
@@ -711,7 +721,7 @@ describe("WidgetCard built-in widgets", () => {
   // Task 5 owns wiring the real partnerId in -- Task 2/3 shipped it as a
   // hardcoded "" because there was nowhere to source it from yet.
   it("passes partnerId from settings.symphonyPartnerId", () => {
-    settingsFixture = { symphonyPodUrl: "", symphonyPartnerId: "partner-9" };
+    settingsFixture = { symphonyPodUrl: "", symphonyPartnerId: "partner-9", symphonyBridgeUrl: "" };
     render(
       <WidgetCard
         card={makeCard({
@@ -728,7 +738,7 @@ describe("WidgetCard built-in widgets", () => {
   });
 
   it("prefers the card's own podUrl param over settings.symphonyPodUrl", () => {
-    settingsFixture = { symphonyPodUrl: "settings-pod.symphony.com", symphonyPartnerId: "" };
+    settingsFixture = { symphonyPodUrl: "settings-pod.symphony.com", symphonyPartnerId: "", symphonyBridgeUrl: "" };
     render(
       <WidgetCard
         card={makeCard({
@@ -745,7 +755,7 @@ describe("WidgetCard built-in widgets", () => {
   });
 
   it("falls back to settings.symphonyPodUrl when the card's own podUrl param is empty", () => {
-    settingsFixture = { symphonyPodUrl: "settings-pod.symphony.com", symphonyPartnerId: "" };
+    settingsFixture = { symphonyPodUrl: "settings-pod.symphony.com", symphonyPartnerId: "", symphonyBridgeUrl: "" };
     render(
       <WidgetCard
         card={makeCard({
@@ -762,7 +772,7 @@ describe("WidgetCard built-in widgets", () => {
   });
 
   it("normalizes settings.symphonyPodUrl the same way as a card-supplied pod (strips scheme and trailing slash)", () => {
-    settingsFixture = { symphonyPodUrl: "https://settings-pod.symphony.com/", symphonyPartnerId: "" };
+    settingsFixture = { symphonyPodUrl: "https://settings-pod.symphony.com/", symphonyPartnerId: "", symphonyBridgeUrl: "" };
     render(
       <WidgetCard
         card={makeCard({
@@ -891,6 +901,147 @@ describe("WidgetCard renderer error containment (desk graft)", () => {
     // contained to one card, not the whole tree.
     expect(screen.getByText("metric-ok")).toBeInTheDocument();
     consoleErrorSpy.mockRestore();
+  });
+});
+
+describe("Send to Symphony", () => {
+  const sendButton = () => screen.getByRole("button", { name: /send to symphony/i });
+
+  it("is absent when no Symphony bridge URL is configured", async () => {
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText("Test Widget")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /send to symphony/i })).not.toBeInTheDocument();
+  });
+
+  it("appears for a table widget once a bridge URL is configured", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(sendButton()).toBeInTheDocument());
+  });
+
+  it("appears for a chart widget", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    registryType = "chart";
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(sendButton()).toBeInTheDocument());
+  });
+
+  it("appears for a markdown widget", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    registryType = "markdown";
+    vi.mocked(fetchWidgetHtml).mockResolvedValue("**hi**");
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(sendButton()).toBeInTheDocument());
+  });
+
+  it("appears for the built-in Note widget", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    render(
+      <WidgetCard
+        card={makeCard({ widgetId: "builtin:note", backendId: "builtin", params: { text: "hi" } })}
+      />
+    );
+    await waitFor(() => expect(sendButton()).toBeInTheDocument());
+  });
+
+  it("is absent for a widget type with no defined payload shape (e.g. metric)", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    registryType = "metric";
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText("Test Widget")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /send to symphony/i })).not.toBeInTheDocument();
+  });
+
+  it("is absent for an iframe widget", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    registryType = "iframe";
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText("Test Widget")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /send to symphony/i })).not.toBeInTheDocument();
+  });
+
+  it("prompts for a stream ID and does nothing when the user cancels", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue(null);
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(sendButton()).toBeInTheDocument());
+    fireEvent.click(sendButton());
+    expect(promptSpy).toHaveBeenCalled();
+    expect(vi.mocked(shareWidgetToSymphony)).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+
+  it("does nothing when the user submits a blank stream ID", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("   ");
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(sendButton()).toBeInTheDocument());
+    fireEvent.click(sendButton());
+    expect(vi.mocked(shareWidgetToSymphony)).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+
+  it("sends fetched rows and columns for a table widget", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("stream-42");
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText(/Alice/i)).toBeInTheDocument());
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(vi.mocked(shareWidgetToSymphony)).toHaveBeenCalled());
+    const [input] = vi.mocked(shareWidgetToSymphony).mock.calls[0];
+    expect(input).toMatchObject({
+      kind: "table",
+      bridgeUrl: "http://localhost:9911",
+      streamId: "stream-42",
+      data: [
+        { name: "Alice", age: 30 },
+        { name: "Bob", age: 25 },
+      ],
+    });
+    promptSpy.mockRestore();
+  });
+
+  it("sends the note's own text (not fetched data) for the built-in Note widget", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("stream-9");
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:note",
+          backendId: "builtin",
+          params: { text: "hello *world*" },
+        })}
+      />
+    );
+    await waitFor(() => expect(sendButton()).toBeInTheDocument());
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(vi.mocked(shareWidgetToSymphony)).toHaveBeenCalled());
+    const [input] = vi.mocked(shareWidgetToSymphony).mock.calls[0];
+    expect(input).toMatchObject({ kind: "note", streamId: "stream-9", data: "hello *world*" });
+    expect(vi.mocked(fetchWidgetData)).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+
+  it("shows a confirmation after a successful send", async () => {
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("stream-1");
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText(/Alice/i)).toBeInTheDocument());
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByText(/Symphony: HTTP 200/)).toBeInTheDocument());
+    promptSpy.mockRestore();
+  });
+
+  it("shows the failure reason and logs it when the send fails", async () => {
+    vi.mocked(shareWidgetToSymphony).mockRejectedValueOnce(new Error("bot not in room"));
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("stream-1");
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText(/Alice/i)).toBeInTheDocument());
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByText(/Failed: bot not in room/)).toBeInTheDocument());
+    expect(vi.mocked(logError)).toHaveBeenCalledWith(expect.stringContaining("bot not in room"));
+    promptSpy.mockRestore();
   });
 });
 
