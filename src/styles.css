@@ -73,7 +73,7 @@ body {
 /* Long-press on app chrome should not raise the text-selection callout. Cards
    and chat text are deliberately excluded — selecting a figure to copy it is
    the whole point of a research tool. */
-.left-rail, .dash-tabs, .card-header, .card-actions, .card-hover-panel {
+.left-rail, .dash-tabs, .card-header, .card-actions {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
@@ -291,7 +291,6 @@ input, select, textarea {
 /* ---- widget card ---- */
 .widget-card {
   height: 100%;
-  /* Containing block for .card-hover-panel, which is absolutely positioned. */
   position: relative;
   display: flex; flex-direction: column;
   background: var(--bg-card);
@@ -311,14 +310,6 @@ input, select, textarea {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .card-actions { display: flex; gap: 4px; }
-/* The hover controls had no rule at all, so they laid out in normal flow and
-   pushed the card's header and body down every time the pointer entered it. */
-.card-hover-panel {
-  position: absolute; top: 4px; right: 4px; z-index: 2;
-  display: flex; gap: 4px;
-  padding: 2px; border-radius: 6px;
-  background: var(--bg-card); border: 1px solid var(--border);
-}
 .card-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
 
 /* ---- renderer containers ---- */

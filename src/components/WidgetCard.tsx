@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useHoverPanel } from "../hooks/useHoverPanel";
 import ErrorBoundary from "./ErrorBoundary";
 import type { CardView, DashboardCard, ParamGroup, ParamValues, WidgetDef } from "../lib/types";
 import { effectiveParams, groupedParamNames, splitParamEdit } from "../lib/paramGroups";
@@ -87,10 +86,6 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     if (!paramsOpen) setDraftParams(fetchParams);
   }, [fetchParams, paramsOpen]);
 
-  const { expanded, onMouseEnter, onMouseLeave, open, close } = useHoverPanel({
-    collapseDelayMs: 500,
-    sticky: loading,
-  });
 
   /**
    * Identifies the newest request. Widget fetches are not cancellable and
@@ -359,23 +354,9 @@ export default function WidgetCard({ card }: WidgetCardProps) {
   return (
     <div
       className="widget-card"
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
     >
-      {expanded && (
-        <div className="card-hover-panel">
-          {!builtin && (
-            <button onClick={handleRefresh} title="Refresh">
-              ↻
-            </button>
-          )}
-          <button onClick={close} title="Hide controls">
-            ✕
-          </button>
-        </div>
-      )}
       <div className="card-header">
-        <span className="card-title" onClick={open}>
+        <span className="card-title">
           {widget?.name ?? card.widgetId}
         </span>
         <span className="card-actions">

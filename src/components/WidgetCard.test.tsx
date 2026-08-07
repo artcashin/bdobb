@@ -223,6 +223,30 @@ describe("WidgetCard", () => {
     expect(mockRemoveCard).toHaveBeenCalledWith("c1");
   });
 
+  // .card-hover-panel is position:absolute top:4px right:4px z-index:2 -- the
+  // exact corner .card-actions occupies. Measured against the real stylesheet,
+  // the panel spanned x 351-415 while the Remove button sat at 383-411, so the
+  // panel covered it completely and swallowed the click. Its own X was
+  // onClick={close} ("Hide controls"), so hitting the visible X dismissed the
+  // panel and left the widget on the dashboard. Trimming the panel's contents
+  // does not help: with only the Refresh button it still spanned 383-415.
+  it("puts nothing on top of the Remove button while the card is hovered", async () => {
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText("Test Widget")).toBeInTheDocument());
+    fireEvent.mouseEnter(document.querySelector(".widget-card")!);
+
+    expect(document.querySelector(".card-hover-panel")).toBeNull();
+
+    const crosses = screen
+      .getAllByRole("button")
+      .filter((b) => b.textContent?.includes("\u2715"));
+    expect(crosses).toHaveLength(1);
+    expect(crosses[0]).toHaveAttribute("aria-label", "Remove widget");
+
+    crosses[0].click();
+    expect(mockRemoveCard).toHaveBeenCalledWith("c1");
+  });
+
   describe("table <-> chart toggle", () => {
     const OHLC = [
       { date: "2026-07-01", open: 1, high: 2, low: 0.5, close: 1.5 },
