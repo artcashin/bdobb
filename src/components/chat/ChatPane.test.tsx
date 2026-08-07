@@ -5,6 +5,7 @@ import * as agentClientModule from "../../lib/agent/agentClient";
 import * as mcpModule from "../../lib/agent/mcp";
 import type { AgentTool } from "../../lib/agent/types";
 import { useChatStore } from "../../stores/chatStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { LOCAL_TOOL_SERVER_ID } from "../../lib/agent/localTools";
 import ChatPane from "./ChatPane";
 import RitaPane from "../RitaPane";
@@ -34,6 +35,37 @@ vi.mock("../../stores/settingsStore", () => {
     __esModule: true,
   };
 });
+
+/** The settingsStore mock's default `settings`, as a base for tests that
+ * need to override one field (e.g. `symphonyBridgeUrl`) without repeating
+ * every other default. */
+const DEFAULT_MOCK_SETTINGS = {
+  ritaUrl: "http://localhost:8002",
+  theme: "dark" as const,
+  contextSharing: false,
+  mcpServers: [] as const,
+};
+
+/** Overrides the mocked `useSettingsStore` for one test. Must be paired with
+ * a call restoring the default (see `restoreDefaultMockSettings` below) so
+ * the override doesn't leak into later tests -- `vi.clearAllMocks()` in the
+ * top-level `beforeEach` clears call history but not a mock's
+ * implementation. */
+function mockSettings(overrides: Record<string, unknown>) {
+  vi.mocked(useSettingsStore).mockImplementation((selector: any) =>
+    selector({
+      settings: { ...DEFAULT_MOCK_SETTINGS, ...overrides },
+      setRitaUrl: vi.fn(),
+      setContextSharing: vi.fn(),
+      setMcpServers: vi.fn(),
+      load: vi.fn(),
+    })
+  );
+}
+
+function restoreDefaultMockSettings() {
+  mockSettings({});
+}
 
 describe("ChatPane", () => {
   beforeEach(() => {
@@ -535,6 +567,29 @@ describe("ChatPane", () => {
       expect(details).toHaveAttribute("open");
     });
 
+    // Fix 3 (Task 7 review, minor): streamId/stream_id is a camelCase/
+    // snake_case duplicate naming the SAME destination, not two candidate
+    // destinations -- collapsing by distinct value before deciding ambiguity
+    // must treat this as resolved, not raise a false "multiple possible
+    // destinations" alarm.
+    it("does not flag camelCase/snake_case duplicates of the same value as ambiguous", async () => {
+      vi.spyOn(mcpModule, "callMcpTool").mockResolvedValue({ content: [] });
+      const runAgentTool = await getRunAgentTool();
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "trading-desk",
+          stream_id: "trading-desk",
+          message: "Markets are closed for the holiday.",
+        });
+      });
+
+      expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
+      const summary = document.querySelector(".symphony-confirm-summary");
+      expect(summary!.textContent).toBe("Rita wants to post this message to Symphony (trading-desk):");
+      expect(screen.queryByText(/multiple possible destinations/i)).not.toBeInTheDocument();
+    });
+
     it("declining via the dialog's Decline button resolves the gate", async () => {
       const callToolSpy = vi.spyOn(mcpModule, "callMcpTool");
       const runAgentTool = await getRunAgentTool();
@@ -664,9 +719,13 @@ describe("ChatPane", () => {
 
     // The gate is store-level plumbing (one `pendingToolConfirmation` slot),
     // but the agent can make two separate post_to_symphony calls across a
-    // turn (e.g. two different rooms). Each must get its own id and settle
-    // independently -- resolving the second must not affect the outcome
-    // already recorded for the first.
+    // turn (e.g. two different rooms). This test resolves the first call
+    // before the second is ever raised, so it exercises sequential reuse of
+    // that one slot -- each call gets its own id, and resolving the second
+    // does not affect the outcome already recorded for the first. It does
+    // NOT exercise two confirmations pending or resolving concurrently; the
+    // agent protocol only ever raises one function call at a time, so that
+    // case doesn't arise here.
     it("gives two post_to_symphony calls in the same turn their own confirmation", async () => {
       const callToolSpy = vi
         .spyOn(mcpModule, "callMcpTool")
@@ -749,6 +808,198 @@ describe("ChatPane", () => {
       // server_id.
       await waitFor(() => expect(outcome).toBeDefined());
       expect(outcome).toEqual({ content: "Unknown tool: post_to_symphony", isError: true });
+    });
+  });
+
+  // Fix 1 (Task 7 review, IMPORTANT): the name pattern alone (`/symphony/i`)
+  // fails OPEN for a bridge tool that just isn't named anything like
+  // "symphony" -- `send_message`, `post_message`, etc are all plausible
+  // names for the same bridge. This second trigger gates on provenance
+  // (the call's resolved MCP server URL matches settings.symphonyBridgeUrl)
+  // instead, OR'd onto the name check so it can only ever widen gating.
+  describe("Fix 1: provenance gate for non-symphony-named tools from the bridge server", () => {
+    const BRIDGE_URL = "https://bridge.test/mcp";
+
+    afterEach(() => {
+      restoreDefaultMockSettings();
+    });
+
+    it("gates send_message when it originates from the configured Symphony bridge server", async () => {
+      mockSettings({ symphonyBridgeUrl: BRIDGE_URL });
+      const SEND_MESSAGE_TOOL: AgentTool = {
+        server_id: "symphony-bridge",
+        name: "send_message",
+        url: BRIDGE_URL,
+        endpoint: "",
+        description: "Send a message via the bridge",
+        input_schema: {},
+      };
+      vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+        tools: [SEND_MESSAGE_TOOL],
+        budgetExceeded: [],
+        unreachable: [],
+      });
+      const callToolSpy = vi
+        .spyOn(mcpModule, "callMcpTool")
+        .mockResolvedValue({ content: [{ type: "text", text: "sent" }] });
+      const runQuerySpy = vi.spyOn(agentClientModule, "runAgentQuery").mockResolvedValue([]);
+
+      render(<ChatPane />);
+      const input = screen.getByPlaceholderText("Message Rita...");
+      fireEvent.change(input, { target: { value: "send it" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+      const runAgentTool = runQuerySpy.mock.calls[0][0].runAgentTool!;
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool("symphony-bridge", "send_message", { text: "hi" }).then((r) => {
+          outcome = r;
+        });
+      });
+
+      // Gated: not called until approved, even though the name doesn't
+      // contain "symphony" at all.
+      expect(callToolSpy).not.toHaveBeenCalled();
+      expect(useChatStore.getState().pendingToolConfirmation).toMatchObject({
+        serverId: "symphony-bridge",
+        toolName: "send_message",
+      });
+
+      const id = useChatStore.getState().pendingToolConfirmation!.id;
+      await act(async () => {
+        useChatStore.getState().resolveToolConfirmation(id, "approved");
+      });
+
+      await waitFor(() => expect(callToolSpy).toHaveBeenCalled());
+      expect(outcome).toEqual({ content: "sent" });
+    });
+
+    it("does not gate a non-Symphony tool from a non-Symphony server", async () => {
+      mockSettings({ symphonyBridgeUrl: BRIDGE_URL });
+      const OTHER_TOOL: AgentTool = {
+        server_id: "weather-server",
+        name: "get_weather",
+        url: "https://weather.example/mcp",
+        endpoint: "",
+        description: "Get the current weather",
+        input_schema: {},
+      };
+      vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+        tools: [OTHER_TOOL],
+        budgetExceeded: [],
+        unreachable: [],
+      });
+      const callToolSpy = vi
+        .spyOn(mcpModule, "callMcpTool")
+        .mockResolvedValue({ content: [{ type: "text", text: "sunny" }] });
+      const runQuerySpy = vi.spyOn(agentClientModule, "runAgentQuery").mockResolvedValue([]);
+
+      render(<ChatPane />);
+      const input = screen.getByPlaceholderText("Message Rita...");
+      fireEvent.change(input, { target: { value: "what's the weather" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+      const runAgentTool = runQuerySpy.mock.calls[0][0].runAgentTool!;
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      await act(async () => {
+        outcome = await runAgentTool("weather-server", "get_weather", { city: "NYC" });
+      });
+
+      // Neither trigger matches (name has no "symphony", server isn't the
+      // bridge) -- the broadened gate must not have over-widened into
+      // gating everything.
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+      expect(callToolSpy).toHaveBeenCalledWith("https://weather.example/mcp", "get_weather", { city: "NYC" });
+      expect(outcome).toEqual({ content: "sunny" });
+    });
+  });
+
+  // Fix 2 (Task 7 review, IMPORTANT): Fix 1's broadened gate can now catch
+  // read-only or unrelated tools (symphony_list_rooms, a bridge tool named
+  // send_message, ...) that are not actually posting a message. The dialog
+  // must not assert a destination/message it never parsed for those.
+  describe("Fix 2: dialog phrasing matches what the gate actually knows", () => {
+    it("uses neutral phrasing naming the tool and server, and claims no message/destination, for a non-post_to_symphony call", async () => {
+      const LIST_ROOMS_TOOL: AgentTool = {
+        server_id: "symphony-bridge",
+        name: "symphony_list_rooms",
+        url: "https://bridge.test/mcp",
+        endpoint: "",
+        description: "List Symphony rooms",
+        input_schema: {},
+      };
+      vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+        tools: [LIST_ROOMS_TOOL],
+        budgetExceeded: [],
+        unreachable: [],
+      });
+      const runQuerySpy = vi.spyOn(agentClientModule, "runAgentQuery").mockResolvedValue([]);
+
+      render(<ChatPane />);
+      const input = screen.getByPlaceholderText("Message Rita...");
+      fireEvent.change(input, { target: { value: "list the rooms" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+      const runAgentTool = runQuerySpy.mock.calls[0][0].runAgentTool!;
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "symphony_list_rooms", {});
+      });
+
+      expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+      const summary = document.querySelector(".symphony-confirm-summary");
+      expect(summary!.textContent).toContain("symphony_list_rooms");
+      expect(summary!.textContent).toContain("symphony-bridge");
+      // Never asserts more than it knows: no claim of a message or a
+      // destination for a tool it doesn't know posts one.
+      expect(screen.queryByText(/wants to post this message/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/destination could not be determined/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/no message text found/i)).not.toBeInTheDocument();
+    });
+
+    it("still shows the original confident phrasing for a genuine post_to_symphony call (regression guard)", async () => {
+      const SYMPHONY_TOOL: AgentTool = {
+        server_id: "symphony-bridge",
+        name: "post_to_symphony",
+        url: "https://bridge.test/mcp",
+        endpoint: "",
+        description: "Post a message to a Symphony room",
+        input_schema: {},
+      };
+      vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+        tools: [SYMPHONY_TOOL],
+        budgetExceeded: [],
+        unreachable: [],
+      });
+      const runQuerySpy = vi.spyOn(agentClientModule, "runAgentQuery").mockResolvedValue([]);
+
+      render(<ChatPane />);
+      const input = screen.getByPlaceholderText("Message Rita...");
+      fireEvent.change(input, { target: { value: "post to symphony" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+      const runAgentTool = runQuerySpy.mock.calls[0][0].runAgentTool!;
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "hello room",
+        });
+      });
+
+      expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
+      const summary = document.querySelector(".symphony-confirm-summary");
+      expect(summary!.textContent).toBe("Rita wants to post this message to Symphony (room1):");
     });
   });
 
