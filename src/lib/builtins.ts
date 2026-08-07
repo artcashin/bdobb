@@ -19,6 +19,7 @@ export const BUILTIN_NOTE_ID = "builtin:note";
 export const BUILTIN_CLOCK_ID = "builtin:clock";
 export const BUILTIN_WEBSITE_ID = "builtin:website";
 export const BUILTIN_NEWS_ID = "builtin:news";
+export const BUILTIN_SYMPHONY_ID = "builtin:symphony";
 
 /** Where a note's text lives — a card param, so it persists with the card. */
 export const NOTE_TEXT_PARAM = "text";
@@ -54,6 +55,15 @@ export const NEWS_USER_PARAM = "user";
  * websocket has no header option, so there (and only there) it rides the URL.
  */
 export const NEWS_TOKEN_PARAM = "token";
+
+/** Symphony pod base URL, e.g. https://my-pod.symphony.com. */
+export const SYMPHONY_POD_URL_PARAM = "podUrl";
+/** Symphony stream (room/IM) id to open. */
+export const SYMPHONY_STREAM_ID_PARAM = "streamId";
+/** Symphony embed layout: "focus" or "split". */
+export const SYMPHONY_MODE_PARAM = "mode";
+/** Symphony embed color theme: "dark" or "light". */
+export const SYMPHONY_THEME_PARAM = "theme";
 
 function param(over: Partial<ParamDef> & { paramName: string; label: string }): ParamDef {
   return {
@@ -150,6 +160,37 @@ export const BUILTIN_WIDGETS: WidgetDef[] = [
         description:
           "Per-user token. Leave blank under tailscale_auth — your Tailscale " +
           "identity is the credential.",
+      }),
+    ],
+  }),
+  def({
+    id: BUILTIN_SYMPHONY_ID,
+    name: "Symphony",
+    type: "iframe",
+    description: "A Symphony chat stream, embedded in a card.",
+    gridData: { w: 24, h: 16 },
+    params: [
+      param({
+        paramName: SYMPHONY_POD_URL_PARAM,
+        label: "Pod URL",
+        description: "Symphony pod base URL, e.g. https://my-pod.symphony.com.",
+      }),
+      param({
+        paramName: SYMPHONY_STREAM_ID_PARAM,
+        label: "Stream ID",
+        description: "The Symphony stream (room or IM) id to open.",
+      }),
+      param({
+        paramName: SYMPHONY_MODE_PARAM,
+        label: "Mode",
+        description: "Embed layout.",
+        value: "focus",
+      }),
+      param({
+        paramName: SYMPHONY_THEME_PARAM,
+        label: "Theme",
+        description: "Embed color theme.",
+        value: "dark",
       }),
     ],
   }),
