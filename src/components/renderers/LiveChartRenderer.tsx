@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { BackendConfig, ParamValues, WidgetDef } from "../../lib/types";
-import { fetchJson, resolveEndpoint, serializeParams } from "../../lib/dataClient";
+import { buildWidgetWsUrl, fetchJson, resolveEndpoint, serializeParams } from "../../lib/dataClient";
 import {
   applyTick, seedToBar, BUCKET_MS,
   type Bar, type SeedBar,
@@ -66,7 +66,15 @@ export default function LiveChartRenderer({
       Object.fromEntries(symbols.map((s) => [s, { bars: [], loading: true, error: null }]))
     );
     for (const symbol of symbols) {
-      const url = resolveEndpoint(backend.baseUrl, widgetDef.endpoint);
+      let url: URL;
+      try {
+        url = resolveEndpoint(backend.baseUrl, widgetDef.endpoint);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logError(`live_chart ${widgetDef.id}: seed failed for ${symbol}: ${msg}`);
+        setBySymbol((s) => ({ ...s, [symbol]: { bars: [], loading: false, error: msg } }));
+        continue;
+      }
       url.searchParams.set("symbol", symbol);
       url.searchParams.set("interval", interval);
       fetchJson(url.toString(), backend, fetchImpl)
@@ -91,12 +99,10 @@ export default function LiveChartRenderer({
   // Live: one websocket, shared across every subscribed symbol -- same
   // protocol LiveGridRenderer uses. Each tick is routed by its own `symbol`
   // field and bucketed into that symbol's series.
-  const wsUrl = useMemo(() => {
-    if (!backend || !widgetDef.wsEndpoint) return null;
-    const url = resolveEndpoint(backend.baseUrl, widgetDef.wsEndpoint);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    return url.toString().replace(/^http/, "ws");
-  }, [backend, widgetDef.wsEndpoint]);
+  const wsUrl = useMemo(
+    () => (backend ? buildWidgetWsUrl(backend, widgetDef) : null),
+    [backend, widgetDef]
+  );
 
   const subscribeMsg = useMemo(
     () => JSON.stringify({ params: serializeParams({ symbol: symbols.join(",") }) }),

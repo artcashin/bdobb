@@ -283,6 +283,25 @@ describe("LiveChartRenderer", () => {
     expect(MockWebSocket.instances.length).toBe(socketCountAfterOpen);
   });
 
+  it("sets a per-symbol error instead of throwing when backend.baseUrl is unparseable", async () => {
+    // resolveEndpoint(backend.baseUrl, ...) throws on a malformed baseUrl.
+    // The seed loop must catch that per-symbol -- like a failed fetchJson --
+    // rather than letting it escape the effect and crash the component.
+    const badBackend: BackendConfig = { ...backend, baseUrl: "not a url" };
+    const fetchImpl = fetchImplFor({ AAPL: [bar("2026-08-07T00:00:00", 100)] });
+    render(
+      <LiveChartRenderer
+        widgetDef={widget()}
+        backend={badBackend}
+        params={{ symbol: "AAPL", interval: "1m" }}
+        theme="dark"
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />
+    );
+    await waitFor(() => expect(screen.getByText(/error|invalid|url/i)).toBeInTheDocument());
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("shows a static seed-only chart when the widget has no wsEndpoint", async () => {
     const fetchImpl = fetchImplFor({ AAPL: [bar("2026-08-07T00:00:00", 100)] });
     render(

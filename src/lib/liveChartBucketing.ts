@@ -42,9 +42,22 @@ function toFiniteNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+/**
+ * /series (kdb-backed) emits offset-less ISO timestamps -- e.g.
+ * "2026-08-07T18:03:00" -- that are already UTC (timezone-naive pandas
+ * timestamps serialized via .isoformat()). `new Date()` parses an
+ * offset-less date-*time* string as local time, which would disagree with
+ * `applyTick`'s true-UTC `Date.now()` bucket math by the browser's UTC
+ * offset. Appending "Z" when no zone is present forces UTC parsing, matching
+ * the same pattern NewsRailRenderer.tsx uses for this exact backend shape.
+ */
+function parseUtc(stamp: string): number {
+  return new Date(stamp.endsWith("Z") || stamp.includes("+") ? stamp : `${stamp}Z`).getTime();
+}
+
 export function seedToBar(seed: SeedBar): Bar {
   return {
-    date: new Date(seed.date).getTime(),
+    date: parseUtc(seed.date),
     open: seed.open,
     high: seed.high,
     low: seed.low,
@@ -94,9 +107,12 @@ export function applyTick(bars: Bar[], tick: Tick, bucketMs: number, nowMs: numb
 }
 
 /** Whether any bar in the series carries real volume data -- false for a
- * forex symbol, whose ticks are bid/ask quotes with no last_size. */
+ * forex symbol, whose ticks are bid/ask quotes with no last_size. The tick
+ * recorder coerces a missing last_size to 0.0 rather than null, so a forex
+ * seed bar's volume is a number (0), not null -- checking `> 0` as well as
+ * non-null is what actually excludes forex, whose bars are all-zero. */
 export function hasVolumeData(bars: Bar[]): boolean {
-  return bars.some((b) => b.volume !== null);
+  return bars.some((b) => b.volume !== null && b.volume > 0);
 }
 
 /** Percent change from the series' first bar's open -- the shared basis a

@@ -13,11 +13,11 @@ describe("bucketStartMs", () => {
 });
 
 describe("seedToBar", () => {
-  it("parses an ISO date string into an epoch-ms bar", () => {
+  it("parses an ISO date string into an epoch-ms bar, as UTC", () => {
     const bar = seedToBar({
       date: "2026-08-07T13:59:00", open: 1, high: 2, low: 0.5, close: 1.5, volume: 100,
     });
-    expect(bar.date).toBe(new Date("2026-08-07T13:59:00").getTime());
+    expect(bar.date).toBe(Date.UTC(2026, 7, 7, 13, 59, 0));
     expect(bar).toMatchObject({ open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 });
   });
 
@@ -26,6 +26,16 @@ describe("seedToBar", () => {
       date: "2026-08-07T13:59:00", open: 1, high: 1, low: 1, close: 1, volume: null,
     });
     expect(bar.volume).toBeNull();
+  });
+
+  it("parses an offset-less timestamp as UTC, not browser-local time", () => {
+    // /series (kdb-backed) emits offset-less ISO strings that are already
+    // UTC. If seedToBar let `new Date()` parse them as local time, this
+    // would drift by the test runner's UTC offset.
+    const bar = seedToBar({
+      date: "2026-08-07T18:03:00", open: 1, high: 1, low: 1, close: 1, volume: null,
+    });
+    expect(bar.date).toBe(Date.UTC(2026, 7, 7, 18, 3, 0));
   });
 });
 
@@ -66,6 +76,30 @@ describe("applyTick", () => {
     const next = applyTick([], { symbol: "EURUSD", price: 1.08 }, bucketMs, 0);
     expect(next[0].volume).toBeNull();
   });
+
+  it("updates the seeded bar in place for a tick a few seconds later in the same UTC bucket", () => {
+    // Regression test for the seed/live time-base mismatch: /series emits
+    // offset-less timestamps that seedToBar must parse as UTC (see the
+    // seedToBar UTC test above). If seedToBar instead parsed them as
+    // browser-local time, the seeded bar's `date` would be shifted by the
+    // browser's UTC offset relative to `Date.now()`-derived tick timing, and
+    // in any timezone behind UTC the tick's bucket start would land BEFORE
+    // the (wrongly shifted-later) seeded bar -- tripping applyTick's
+    // out-of-order guard and silently dropping every live tick forever.
+    //
+    // nowMs is built explicitly via Date.UTC, not by re-parsing seed.date
+    // with `new Date()`, so this test doesn't repeat the bug it's meant to
+    // catch.
+    const seeded = seedToBar({
+      date: "2026-08-07T18:03:00", open: 100, high: 101, low: 99, close: 100, volume: null,
+    });
+    const nowMs = Date.UTC(2026, 7, 7, 18, 3, 5); // 5s after the seed bar's bucket start
+    const next = applyTick([seeded], { symbol: "AAPL", price: 102.5 }, bucketMs, nowMs);
+
+    expect(next).toHaveLength(1); // updated in place, not dropped or appended
+    expect(next[0].close).toBe(102.5);
+    expect(next[0].date).toBe(seeded.date);
+  });
 });
 
 describe("hasVolumeData", () => {
@@ -77,6 +111,17 @@ describe("hasVolumeData", () => {
       { date: 0, open: 1, high: 1, low: 1, close: 1, volume: null },
       { date: 1, open: 1, high: 1, low: 1, close: 1, volume: 10 },
     ])).toBe(true);
+  });
+  it("is false for all-zero (non-null) volume bars -- the forex seed shape", () => {
+    // The tick recorder coerces a missing last_size (forex has none -- it's
+    // bid/ask quotes) to 0.0 rather than null, so forex seed bars arrive with
+    // volume: 0, a number. hasVolumeData must still treat this as "no volume
+    // data" so the spec's forex-never-shows-volume rule holds for the seed
+    // path, not just the live-tick path.
+    expect(hasVolumeData([
+      { date: 0, open: 1, high: 1, low: 1, close: 1, volume: 0 },
+      { date: 1, open: 1, high: 1, low: 1, close: 1, volume: 0 },
+    ])).toBe(false);
   });
 });
 
