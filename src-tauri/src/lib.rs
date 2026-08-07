@@ -62,22 +62,45 @@ async fn frame_check(url: String) -> Result<FrameCheck, String> {
     };
 
     let xfo = get("x-frame-options");
-    if xfo.contains("deny") {
+    // frame-ancestors supersedes X-Frame-Options where both are present, but
+    // `framing_refusal` below checks X-Frame-Options first regardless --
+    // behavior unchanged from before the extraction, just moved into a pure
+    // function so it can be unit-tested without a network layer.
+    let csp = get("content-security-policy");
+
+    if let Some(reason) = framing_refusal(&xfo, &csp) {
         return Ok(FrameCheck {
             frameable: false,
-            reason: "X-Frame-Options: DENY".into(),
-        });
-    }
-    // SAMEORIGIN permits only the site framing itself, which this app never is.
-    if xfo.contains("sameorigin") {
-        return Ok(FrameCheck {
-            frameable: false,
-            reason: "X-Frame-Options: SAMEORIGIN".into(),
+            reason,
         });
     }
 
-    // frame-ancestors supersedes X-Frame-Options where both are present.
-    let csp = get("content-security-policy");
+    Ok(FrameCheck {
+        frameable: true,
+        reason: String::new(),
+    })
+}
+
+/// Pure verdict: does a site refuse to be framed, given its (already
+/// lowercased) `X-Frame-Options` and `Content-Security-Policy` header
+/// values? `Some(reason)` is a refusal, `None` is permitted. Empty strings
+/// mean the header was absent.
+///
+/// Extracted out of `frame_check` (final review, Blocking 3) so the
+/// string→verdict logic -- the part this branch actually changed, by
+/// tokenizing `frame-ancestors` instead of substring-matching it -- has
+/// automated coverage. Before this, `src-tauri/` had no `#[cfg(test)]`
+/// anywhere and `cargo check` only proved the parser compiled, not that it
+/// classified a single case correctly.
+fn framing_refusal(xfo: &str, csp: &str) -> Option<String> {
+    if xfo.contains("deny") {
+        return Some("X-Frame-Options: DENY".into());
+    }
+    // SAMEORIGIN permits only the site framing itself, which this app never is.
+    if xfo.contains("sameorigin") {
+        return Some("X-Frame-Options: SAMEORIGIN".into());
+    }
+
     if let Some(idx) = csp.find("frame-ancestors") {
         let directive = csp[idx..].split(';').next().unwrap_or_default();
         // Only the CSP wildcard and bare-scheme source forms are actually
@@ -90,17 +113,76 @@ async fn frame_check(url: String) -> Result<FrameCheck, String> {
             .split_whitespace()
             .any(|tok| tok == "*" || tok == "https:" || tok == "http:");
         if !permissive {
-            return Ok(FrameCheck {
-                frameable: false,
-                reason: format!("Content-Security-Policy {}", directive.trim()),
-            });
+            return Some(format!("Content-Security-Policy {}", directive.trim()));
         }
     }
 
-    Ok(FrameCheck {
-        frameable: true,
-        reason: String::new(),
-    })
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::framing_refusal;
+
+    #[test]
+    fn host_allow_list_is_a_refusal_not_a_substring_match() {
+        // The exact case the fix turned around: a naive substring test on
+        // "https:" would misread this as permissive.
+        let reason = framing_refusal("", "frame-ancestors 'self' https://*.symphony.com");
+        assert_eq!(
+            reason,
+            Some("Content-Security-Policy frame-ancestors 'self' https://*.symphony.com".into())
+        );
+    }
+
+    #[test]
+    fn wildcard_source_is_permitted() {
+        assert_eq!(framing_refusal("", "frame-ancestors *"), None);
+    }
+
+    #[test]
+    fn bare_https_scheme_source_is_permitted() {
+        assert_eq!(framing_refusal("", "frame-ancestors https:"), None);
+    }
+
+    #[test]
+    fn none_source_is_a_refusal() {
+        let reason = framing_refusal("", "frame-ancestors 'none'");
+        assert_eq!(
+            reason,
+            Some("Content-Security-Policy frame-ancestors 'none'".into())
+        );
+    }
+
+    #[test]
+    fn empty_source_list_is_a_refusal() {
+        let reason = framing_refusal("", "frame-ancestors");
+        assert_eq!(
+            reason,
+            Some("Content-Security-Policy frame-ancestors".into())
+        );
+    }
+
+    #[test]
+    fn x_frame_options_deny_is_a_refusal_with_its_own_reason() {
+        assert_eq!(
+            framing_refusal("deny", ""),
+            Some("X-Frame-Options: DENY".into())
+        );
+    }
+
+    #[test]
+    fn x_frame_options_sameorigin_is_a_refusal_with_its_own_reason() {
+        assert_eq!(
+            framing_refusal("sameorigin", ""),
+            Some("X-Frame-Options: SAMEORIGIN".into())
+        );
+    }
+
+    #[test]
+    fn no_relevant_headers_is_permitted() {
+        assert_eq!(framing_refusal("", ""), None);
+    }
 }
 
 /// The Website built-in's preflight. See `frame_check` above.
