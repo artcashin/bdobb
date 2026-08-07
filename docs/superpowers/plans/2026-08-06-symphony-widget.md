@@ -41,6 +41,22 @@
 Not started. A previous attempt was rolled back on 2026-08-07 (see below); the
 branch is back at `e0ccb48` plus docs, typecheck clean, 839 tests passing.
 
+### Resolved decisions (2026-08-07) — these govern where the task text disagrees
+
+1. **`partnerId` is deferred to Task 5.** Tasks 2–3 render with `partnerId: ""`.
+   `SymphonyRendererProps.params` still declares the full shape
+   `{pod, id, partnerId, mode, theme}` from Task 2 onward so the contract never
+   drifts — only the *value* arrives late. **Task 5 owns wiring the real value
+   into the `WidgetCard` call site** and updating the Task 2 URL tests. If Task 5
+   adds settings without touching `WidgetCard`, that is the exact defect that
+   sank the first attempt.
+2. **`mode` and `theme` are separate URL params.** The iframe URL carries
+   `&mode={mode}&theme={theme}`, not a hardcoded `mode=dark`. Settle this in
+   Task 2; Tasks 3–5 consume it unchanged.
+3. **The bridge URL comes from `settings.symphonyBridgeUrl` only.** There is no
+   `VITE_SYMPHONY_BRIDGE_URL`. Task 6 reads settings, consistent with Pod URL
+   and Partner ID.
+
 ### Lessons from the rolled-back attempt
 
 Two agents ran this plan concurrently against one working tree and produced
@@ -89,7 +105,10 @@ worth keeping — each was verified against the code, not assumed:
 - Consumes: `WidgetParams` from `src/lib/types.ts`
 
 - [ ] **Step 1: Implement Iframe render logic**
-  Render `https://{pod}/embed/index.html?streamId={id}&partnerId={pid}&mode=dark&condensed=true`.
+  Render `https://{pod}/embed/index.html?streamId={id}&partnerId={partnerId}&mode={mode}&theme={theme}&condensed=true`.
+  Declare `params` as the full shape `{pod, id, partnerId, mode, theme}` and
+  destructure all five — no drift between the type and the component.
+  `partnerId` is `""` until Task 5 supplies it (see Resolved decisions).
 - [ ] **Step 2: Apply sandbox policy**
   Set `sandbox="allow-scripts allow-same-origin allow-forms allow-popups"`.
 - [ ] **Step 3: Implement lazy loading**
@@ -128,6 +147,9 @@ worth keeping — each was verified against the code, not assumed:
 **Files:**
 - Create: `src/components/dialogs/settings/SymphonyTab.tsx`
 - Modify: `src/components/dialogs/SettingsDialog.tsx`
+- Modify: `src/lib/types.ts`, `src/lib/persistence.ts` (add the three settings fields)
+- Modify: `src/components/WidgetCard.tsx` (wire the real `partnerId` into the renderer)
+- Modify: `src/components/renderers/SymphonyRenderer.test.tsx` (URL now carries a real partnerId)
 
 **Interfaces:**
 - Consumes: `SymphonySettings` state in `SettingsDialog`.
@@ -136,6 +158,15 @@ worth keeping — each was verified against the code, not assumed:
   Fields for Pod URL, Partner ID, and Bridge URL.
 - [ ] **Step 2: Integrate tab into `SettingsDialog`**
   Add the tab to the navigation and the content area.
+- [ ] **Step 2b: Wire `partnerId` into the renderer call site**
+  This is the deferred half of Task 2. In `WidgetCard.tsx` pass
+  `partnerId: settings.symphonyPartnerId` (and let `pod` fall back to
+  `settings.symphonyPodUrl` when the widget param is empty). Update the Task 2
+  URL assertions to expect the real value. `pnpm run typecheck` must be clean
+  before committing — a mismatch here is the regression that killed attempt 1.
+  Note: importing `useSettingsStore` into `WidgetCard` will break
+  `DashboardGrid.persist.test.tsx` and `DashboardGrid.realmount.test.tsx` until
+  their `vi.mock("../lib/persistence")` also exports `DEFAULT_SETTINGS`.
 - [ ] **Step 3: Commit**
   `git add src/components/dialogs/settings/SymphonyTab.tsx src/components/dialogs/SettingsDialog.tsx && git commit -m "feat: add Symphony settings tab"`
 
@@ -145,7 +176,8 @@ worth keeping — each was verified against the code, not assumed:
 - Modify: `src/components/WidgetCard.tsx` (for action button)
 
 **Interfaces:**
-- Produces: `POST` request to `VITE_SYMPHONY_BRIDGE_URL/messages`.
+- Produces: `POST` request to `${settings.symphonyBridgeUrl}/messages`.
+  There is no `VITE_SYMPHONY_BRIDGE_URL` — read the bridge URL from settings.
 
 - [ ] **Step 1: Implement "Send to Symphony" logic for Note**
   Map markdown to MessageML and send via bridge.
