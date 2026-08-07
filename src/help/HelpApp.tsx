@@ -9,8 +9,13 @@ export default function HelpApp() {
   // "home" is the actual intro page (pinned as its own nav entry by
   // convert.mjs), and is always the right default landing page -- unlike
   // the previous "first category's first page" default, which happened to
-  // land on a deep config page.
-  const [activeSlug, setActiveSlug] = useState<string | null>("home");
+  // land on a deep config page. convert.mjs only pins Home when home.md
+  // exists in the source snapshot, so fall back to the first available page
+  // for a version folder that has none, rather than defaulting to a slug
+  // that would throw in loadPage and blank the whole window.
+  const [activeSlug, setActiveSlug] = useState<string | null>(
+    nav.Home?.[0]?.slug ?? Object.values(nav)[0]?.[0]?.slug ?? null,
+  );
 
   return (
     <div className="help-app">

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import HelpApp from "./HelpApp";
+import type { NavTree } from "./loadContent";
 
 const pageTitles: Record<string, string> = {
   home: "Home",
@@ -8,14 +9,20 @@ const pageTitles: Record<string, string> = {
   "ai-chat": "AI Chat",
 };
 
+const { loadNav } = vi.hoisted(() => ({
+  loadNav: vi.fn(
+    (): NavTree => ({
+      Home: [{ slug: "home", title: "Home" }],
+      Widgets: [
+        { slug: "news-ticker", title: "News Ticker" },
+        { slug: "ai-chat", title: "AI Chat" },
+      ],
+    }),
+  ),
+}));
+
 vi.mock("./loadContent", () => ({
-  loadNav: () => ({
-    Home: [{ slug: "home", title: "Home" }],
-    Widgets: [
-      { slug: "news-ticker", title: "News Ticker" },
-      { slug: "ai-chat", title: "AI Chat" },
-    ],
-  }),
+  loadNav: () => loadNav(),
   loadPage: (slug: string) => `# ${pageTitles[slug] ?? slug}\n\nBody.`,
   loadSearchIndex: () => ({ search: () => [] }),
 }));
@@ -32,5 +39,15 @@ describe("HelpApp", () => {
     render(<HelpApp />);
     fireEvent.click(screen.getByText("AI Chat"));
     expect(screen.getByRole("heading", { name: "AI Chat" })).toBeInTheDocument();
+  });
+});
+
+describe("HelpApp with no Home category", () => {
+  it("falls back to the first available page instead of a slug that doesn't exist", () => {
+    loadNav.mockReturnValueOnce({
+      Widgets: [{ slug: "news-ticker", title: "News Ticker" }],
+    });
+    render(<HelpApp />);
+    expect(screen.getByRole("heading", { level: 1, name: "News Ticker" })).toBeInTheDocument();
   });
 });
