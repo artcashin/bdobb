@@ -1416,7 +1416,11 @@ input, select, textarea {
      visible once the other scrolls), and centering plus a fixed height means
      a card shrunk below a tile's intrinsic height would center content
      vertically with the top made unreachable by scrolling. "safe" falls back
-     to start-alignment only when there isn't room to center safely. */
+     to start-alignment only when there isn't room to center safely. Plain
+     "center" first: an older WKWebView/WebKitGTK that doesn't recognize
+     "safe center" drops the whole declaration rather than falling back, which
+     would leave align-items at its stretch default. */
+  align-items: center;
   align-items: safe center;
   gap: 28px;
   padding: 12px 16px;
