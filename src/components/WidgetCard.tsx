@@ -12,7 +12,7 @@ import { buildFigureFromRecords, canToggleChart } from "../lib/chartShapes";
 import { logError } from "../lib/logger";
 import {
   CLOCK_ZONES_PARAM, CLOCK_TZ_PARAM, CLOCK_HOUR12_PARAM, CLOCK_DEFAULT_ZONES,
-  CLOCK_CYCLE_PARAM, CLOCK_FACE_PARAM,
+  CLOCK_CYCLE_PARAM, CLOCK_FACE_PARAM, CLOCK_LAYOUT_PARAM,
   NOTE_TEXT_PARAM, WEBSITE_URL_PARAM,
   NEWS_URL_PARAM, NEWS_USER_PARAM, NEWS_TOKEN_PARAM,
   BUILTIN_CLOCK_ID, BUILTIN_NEWS_ID, BUILTIN_NOTE_ID, BUILTIN_WEBSITE_ID,
@@ -253,6 +253,7 @@ export default function WidgetCard({ card }: WidgetCardProps) {
           zones={raw.split(",").map((z) => z.trim()).filter(Boolean)}
           hour12={hour12}
           face={fetchParams[CLOCK_FACE_PARAM] === "solid" ? "solid" : "dots"}
+          layout={fetchParams[CLOCK_LAYOUT_PARAM] === "horizontal" ? "horizontal" : "vertical"}
         />
       );
     }
