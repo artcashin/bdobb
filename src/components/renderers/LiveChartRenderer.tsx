@@ -103,6 +103,7 @@ export default function LiveChartRenderer({
     [symbols]
   );
   const subscribeRef = useRef(subscribeMsg);
+  const bucketMsRef = useRef(bucketMs);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -110,6 +111,14 @@ export default function LiveChartRenderer({
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(subscribeMsg);
   }, [subscribeMsg]);
+
+  // Keep the onmessage handler's bucketing interval current without forcing
+  // the websocket-connect effect below to re-run (and tear down/reopen the
+  // live socket) on an interval-only change -- same ref pattern as
+  // subscribeRef above.
+  useEffect(() => {
+    bucketMsRef.current = bucketMs;
+  }, [bucketMs]);
 
   useEffect(() => {
     if (!wsUrl) {
@@ -154,7 +163,7 @@ export default function LiveChartRenderer({
           for (const tick of ticks) {
             const cur = next[tick.symbol];
             if (!cur) continue; // not a symbol this card is displaying
-            const bars = applyTick(cur.bars, tick, bucketMs, now);
+            const bars = applyTick(cur.bars, tick, bucketMsRef.current, now);
             if (bars !== cur.bars) {
               next[tick.symbol] = { ...cur, bars };
               changed = true;
@@ -177,7 +186,7 @@ export default function LiveChartRenderer({
       wsRef.current = null;
       sock?.close();
     };
-  }, [wsUrl, widgetDef.id, widgetDef.wsEndpoint, bucketMs]);
+  }, [wsUrl, widgetDef.id, widgetDef.wsEndpoint]);
 
   if (symbols.length === 0) {
     return <div className="renderer-empty">No symbol selected</div>;

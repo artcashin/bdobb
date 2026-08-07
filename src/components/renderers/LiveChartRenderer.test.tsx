@@ -247,6 +247,42 @@ describe("LiveChartRenderer", () => {
     expect(sent[sent.length - 1]).toBe(JSON.stringify({ params: { symbol: "MSFT" } }));
   });
 
+  it("re-seeds on an interval-only change but does not tear down the websocket", async () => {
+    const fetchImpl = fetchImplFor({ AAPL: [bar("2026-08-07T00:00:00", 100)] });
+    const { rerender } = render(
+      <LiveChartRenderer
+        widgetDef={widget()}
+        backend={backend}
+        params={{ symbol: "AAPL", interval: "1m" }}
+        theme="dark"
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(lastSocket()).toBeDefined());
+    act(() => lastSocket().serverOpen());
+    const socketCountAfterOpen = MockWebSocket.instances.length;
+
+    rerender(
+      <LiveChartRenderer
+        widgetDef={widget()}
+        backend={backend}
+        params={{ symbol: "AAPL", interval: "5m" }}
+        theme="dark"
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />
+    );
+    // Interval change still re-seeds (new /series call for the new interval)...
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+    const secondUrl = new URL(fetchImpl.mock.calls[1][0] as string);
+    expect(secondUrl.searchParams.get("symbol")).toBe("AAPL");
+    expect(secondUrl.searchParams.get("interval")).toBe("5m");
+    // ...but the live websocket, whose subscribe payload only encodes the
+    // symbol list, must not be torn down and reopened just because the
+    // interval changed. The connection was never closed server-side.
+    expect(MockWebSocket.instances.length).toBe(socketCountAfterOpen);
+  });
+
   it("shows a static seed-only chart when the widget has no wsEndpoint", async () => {
     const fetchImpl = fetchImplFor({ AAPL: [bar("2026-08-07T00:00:00", 100)] });
     render(
