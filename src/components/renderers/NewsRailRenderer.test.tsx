@@ -74,7 +74,7 @@ const SEED = [
 
 interface FeedFixture {
   id: number;
-  favicon: string | null;
+  favicon?: string | null;
 }
 
 function okFetch(articles: NewsArticle[] = SEED, feeds: FeedFixture[] = []) {
@@ -128,7 +128,10 @@ describe("NewsRailRenderer", () => {
     // Newest (higher sort_at) first.
     expect(rows[0].textContent).toContain("Second headline");
     expect(rows[1].className).toContain("highlighted");
-    const calledUrl = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const newsCall = calls.find(([u]) => String(u).includes("/api/news"));
+    expect(newsCall).toBeDefined();
+    const calledUrl = (newsCall as [string])[0];
     expect(calledUrl).toBe("https://openbb.example.ts.net:8088/api/news?user=art&limit=100");
   });
 
@@ -136,9 +139,10 @@ describe("NewsRailRenderer", () => {
     const fetchImpl = okFetch();
     renderRail({ fetchImpl, token: "tkn-0123456789abcdef0123456789abcdef" });
     await screen.findByText("Second headline");
-    const [calledUrl, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [
-      string, RequestInit,
-    ];
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const newsCall = calls.find(([u]) => String(u).includes("/api/news"));
+    expect(newsCall).toBeDefined();
+    const [calledUrl, init] = newsCall as [string, RequestInit];
     expect(calledUrl).not.toContain("token");
     expect((init.headers as Record<string, string>).Authorization).toBe(
       "Bearer tkn-0123456789abcdef0123456789abcdef"
@@ -226,6 +230,7 @@ describe("NewsRailRenderer", () => {
     const iconArticle = article({ id: 10, title: "Has an icon", feed_id: 11 });
     const unlistedArticle = article({ id: 20, title: "Unlisted feed", feed_id: 22 });
     const nullFaviconArticle = article({ id: 30, title: "Null favicon feed", feed_id: 33 });
+    const missingFaviconArticle = article({ id: 40, title: "Missing favicon field", feed_id: 44 });
 
     it("fetches /api/feeds once on mount with the same auth header as the seed call", async () => {
       const fetchImpl = okFetch(SEED, [{ id: 1, favicon: "data:image/x-icon;base64,AAA" }]);
@@ -272,6 +277,17 @@ describe("NewsRailRenderer", () => {
       );
       renderRail({ fetchImpl });
       await screen.findByText("Null favicon feed");
+      await screen.findByText("Unlisted feed");
+      expect(document.querySelectorAll(".news-favicon")).toHaveLength(0);
+    });
+
+    it("renders no icon when a feed entry omits the favicon field entirely (old backend without the column)", async () => {
+      const fetchImpl = okFetch(
+        [missingFaviconArticle, unlistedArticle],
+        [{ id: 44 }] // no `favicon` key at all — as an old rss-ticker server would send
+      );
+      renderRail({ fetchImpl });
+      await screen.findByText("Missing favicon field");
       await screen.findByText("Unlisted feed");
       expect(document.querySelectorAll(".news-favicon")).toHaveLength(0);
     });
