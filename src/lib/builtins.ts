@@ -37,6 +37,8 @@ export const CLOCK_HOUR12_PARAM = "hour12";
 export const CLOCK_CYCLE_PARAM = "hourCycle";
 /** "dots" for the matrix face, "solid" for the filled one. */
 export const CLOCK_FACE_PARAM = "face";
+/** "vertical" for the digital list, "horizontal" for a row of analog faces. */
+export const CLOCK_LAYOUT_PARAM = "layout";
 
 export const CLOCK_DEFAULT_ZONES =
   "America/New_York,America/Chicago,America/Los_Angeles,Europe/London," +
@@ -174,6 +176,18 @@ export const BUILTIN_WIDGETS: WidgetDef[] = [
         value: CLOCK_DEFAULT_ZONES,
       }),
       param({
+        paramName: CLOCK_LAYOUT_PARAM,
+        label: "Layout",
+        description:
+          "Vertical stacks a digital list; horizontal shows analog wall-clock " +
+          "faces in a row.",
+        value: "vertical",
+        options: [
+          { label: "Vertical (digital list)", value: "vertical" },
+          { label: "Horizontal (analog)", value: "horizontal" },
+        ],
+      }),
+      param({
         paramName: CLOCK_CYCLE_PARAM,
         label: "Hour format",
         description: "12-hour appends A or P.",
@@ -186,7 +200,9 @@ export const BUILTIN_WIDGETS: WidgetDef[] = [
       param({
         paramName: CLOCK_FACE_PARAM,
         label: "Typeface",
-        description: "The matrix face needs roughly 32px to read as dots on a non-HiDPI display.",
+        description:
+          "The matrix face needs roughly 32px to read as dots on a non-HiDPI " +
+          "display. Only applies to the Vertical layout.",
         value: "dots",
         options: [
           { label: "Dot matrix", value: "dots" },
