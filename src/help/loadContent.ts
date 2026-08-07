@@ -29,3 +29,16 @@ export function loadSearchIndex(): MiniSearch {
     storeFields: ["title", "slug"],
   });
 }
+
+const assets = import.meta.glob("./generated/assets/*", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>;
+
+/** Resolves a bundled asset's filename (e.g. "news-window.png") to the URL Vite actually serves it at. */
+export function loadAssetUrl(filename: string): string {
+  const entry = assets[`./generated/assets/${filename}`];
+  if (!entry) throw new Error(`No bundled help asset "${filename}"`);
+  return entry;
+}

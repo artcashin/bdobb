@@ -5,10 +5,11 @@ import HelpContent from "./HelpContent";
 vi.mock("./loadContent", () => ({
   loadPage: (slug: string) =>
     slug === "news-ticker"
-      ? "# News Ticker\n\nSee [Live Quotes](help://live-quotes) for the tape."
+      ? "# News Ticker\n\n![A screenshot](./assets/news-window.png)\n\nSee [Live Quotes](help://live-quotes) for the tape."
       : slug === "unsafe-link"
         ? "# Unsafe Link\n\n[click me](javascript:alert(1))"
         : "# Live Quotes\n\nThe tape.",
+  loadAssetUrl: (filename: string) => `/resolved/${filename}`,
 }));
 
 describe("HelpContent", () => {
@@ -29,5 +30,11 @@ describe("HelpContent", () => {
     const link = screen.getByText("click me");
     expect(link).not.toHaveAttribute("href", "javascript:alert(1)");
     expect(link.getAttribute("href")).toBe("");
+  });
+
+  it("resolves bundled image references to their real served URL", () => {
+    render(<HelpContent slug="news-ticker" onNavigate={() => {}} />);
+    const img = screen.getByRole("img", { name: "A screenshot" });
+    expect(img).toHaveAttribute("src", "/resolved/news-window.png");
   });
 });

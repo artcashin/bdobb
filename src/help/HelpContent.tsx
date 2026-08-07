@@ -1,6 +1,6 @@
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { loadPage } from "./loadContent";
+import { loadPage, loadAssetUrl } from "./loadContent";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -58,9 +58,15 @@ export default function HelpContent({ slug, onNavigate }: HelpContentProps) {
     );
   };
 
+  const HelpImage: Components["img"] = ({ src, alt, ...rest }) => {
+    const filename = src?.split("/").pop();
+    const resolvedSrc = filename ? loadAssetUrl(filename) : src;
+    return <img src={resolvedSrc} alt={alt} {...rest} />;
+  };
+
   return (
     <div className="help-content">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={urlTransform} components={{ a: HelpLink }}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={urlTransform} components={{ a: HelpLink, img: HelpImage }}>
         {markdown}
       </ReactMarkdown>
     </div>
