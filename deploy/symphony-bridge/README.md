@@ -150,7 +150,7 @@ Follow `deploy/spark/README.md`'s pattern once the bridge image exists:
 - `docker run -d --name symphony-bridge --restart unless-stopped ...`
 - Host networking (or explicit port publishing bound to the tailnet
   interface) — whichever the bridge's own repo documents.
-- Env file mode `600`, never committed, holding the four required vars above.
+- Env file mode `600`, never committed, holding the five required vars above.
 - The RSA key mounted read-only, mode `600`.
 - Record the pinned commit/image tag actually deployed, in this file, once
   there is one.
@@ -160,20 +160,29 @@ Follow `deploy/spark/README.md`'s pattern once the bridge image exists:
 Not this container's concern operationally, but an operator debugging "why
 does the Symphony card show a refusal panel instead of a chat" should know:
 BDOBB's `SymphonyRenderer` calls a Rust command, `check_frame_options`
-(`src-tauri/src/lib.rs`), before rendering the pod's ECP iframe. It does a
-HEAD-equivalent fetch of the embed URL and inspects `X-Frame-Options` (`DENY`
-or `SAMEORIGIN` both refuse) and, if present, the CSP `frame-ancestors`
-directive (anything other than a wildcard or bare scheme token counts as a
-refusal). If either header blocks framing, the card shows "This pod refuses
-to be embedded" with an *Open externally* button instead of the chat —
-**this is a pod-side header, not a bridge or BDOBB bug.** Check the pod's
-response headers directly (`curl -sI https://{pod}/embed/index.html`) if a
-card that used to work suddenly shows the refusal panel; a pod-side proxy or
-CDN change ahead of `{pod}.symphony.com` is a plausible cause. A preflight
-that errors outright (pod down, DNS failure, blocked HEAD) is treated
-differently — the iframe still renders optimistically, with a lighter "Blank?
-The pod may refuse to be embedded" footer instead of the hard refusal panel,
-since a failed check isn't proof of refusal.
+(`src-tauri/src/lib.rs`), before rendering the pod's ECP iframe. It issues a
+HEAD request against the embed URL and, if that doesn't come back with a
+success status (some servers don't implement HEAD), falls back to a full GET
+— so it is not HEAD-only. It follows up to 5 redirects, since a site's
+framing policy can differ per hop and the one that matters is wherever the
+frame finally lands, and it presents a Safari user agent, since some sites
+serve a different policy to unknown/non-browser clients. It then inspects
+`X-Frame-Options` (`DENY` or `SAMEORIGIN` both refuse) and, if present, the
+CSP `frame-ancestors` directive (anything other than a wildcard or bare
+scheme token counts as a refusal). If either header blocks framing, the card
+shows "This pod refuses to be embedded" with an *Open externally* button
+instead of the chat — **this is a pod-side header, not a bridge or BDOBB
+bug.** Check the pod's response headers directly if a card that used to work
+suddenly shows the refusal panel; a pod-side proxy or CDN change ahead of
+`{pod}.symphony.com` is a plausible cause. Note that `curl -sI
+https://{pod}/embed/index.html` only sends HEAD and doesn't follow redirects
+or spoof a Safari user agent by default, so it can disagree with what the app
+actually saw — add `-L -A "<Safari UA>"` and be ready to retry without `-I`
+if the pod doesn't implement HEAD, to reproduce the app's check more closely.
+A preflight that errors outright (pod down, DNS failure, blocked request) is
+treated differently — the iframe still renders optimistically, with a
+lighter "Blank? The pod may refuse to be embedded" footer instead of the
+hard refusal panel, since a failed check isn't proof of refusal.
 
 ## Smoke tests (once a bridge is deployed)
 

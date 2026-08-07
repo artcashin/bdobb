@@ -48,7 +48,8 @@ BDOBB's Symphony card and the "Send to Symphony" action both need a
 this integration has no in-app picker; you find the ID in a Symphony client
 you're already signed into and paste it into BDOBB. In the Symphony desktop
 or web client, open the conversation, then use its **conversation
-details / room info panel** — the stream ID is listed there (Symphony also
+details / room info panel**, where the stream ID is expected to be listed
+(Symphony also
 exposes it via the Pod API for scripting, if you'd rather query it than
 click through the UI). If you can't find it, the [Symphony REST API
 reference](https://rest-api.symphony.com/) documents the stream/room lookup
@@ -66,13 +67,13 @@ Three fields, all in Settings → Symphony:
 | Field | Setting key | What it's for |
 |---|---|---|
 | **Pod URL** | `symphonyPodUrl` | Default pod host for Symphony cards, e.g. `my-pod.symphony.com` or `develop2.symphony.com`. Used when a card doesn't set its own Pod URL parameter. You can type it with or without a scheme/trailing slash — BDOBB strips both before building the embed URL. |
-| **Partner ID** | `symphonyPartnerId` | Sent as the `partnerId` query parameter on every Symphony embed. This is the value from the licensing step above — required for the chat card to load at all; a blank value produces an embed URL Symphony will reject. |
+| **Partner ID** | `symphonyPartnerId` | Sent as the `partnerId` query parameter on every Symphony embed. This is the value from the licensing step above — required for the chat card to load at all; a blank value is still sent as an empty `partnerId` parameter, and it's reasonable to expect Symphony to reject that, though this hasn't been confirmed against a real pod. |
 | **Bridge URL** | `symphonyBridgeUrl` | The `symphony-bridge` container's HTTP base, e.g. `http://<bridge-host>:<port>`. This is **not** the same thing as the bridge's MCP endpoint (see below) — do not put `/mcp` here. |
 
 The **Bridge URL** field is separate from Rita's tools. Rita's
 `post_to_symphony` tool comes from the bridge's own MCP endpoint, added
 separately under **Settings → MCP** as an MCP server URL (typically
-`<bridge base>/mcp`). If you want the "Review and Send" confirmation gate
+`<bridge base>/mcp`). If you want the confirmation gate
 (below) to reliably catch every message the bridge tries to post — even a
 bridge tool that isn't literally named `post_to_symphony` — point the Bridge
 URL and the MCP server URL at the **same origin** (scheme, host, and port).
@@ -114,17 +115,27 @@ refuse to be embedded" hint instead of the hard refusal screen.
 ## "Send to Symphony" on Note, Table, and Chart widgets
 
 Any Note card, or any registry widget of type `markdown`, `table`, or
-`chart`, gets a "Send to Symphony" button in its header — but only once a
+`chart`, gets a 📤 icon button in its header — labeled "Send to Symphony"
+only in its tooltip/`aria-label`, not with visible text — but only once a
 Bridge URL is configured in Settings. Clicking it:
 
 1. Prompts you for the destination stream ID (there's no saved-destination
    list yet — every send asks).
 2. Converts the card's content:
    - **Note / markdown** → the markdown is converted to Symphony's MessageML
-     format (headings, bold/italic, inline code, links, and lists are
-     handled; anything else passes through as plain escaped text).
+     format. Bold/italic, inline code, links, and lists become real MessageML
+     markup; headings are not — a `#` heading becomes bold text followed by a
+     line break (`<b>…</b><br/>`), not a MessageML heading element. Anything
+     else passes through as plain escaped text.
    - **Table** → the widget's rows become a CSV attachment, honoring the
      widget's declared column order and header labels where available.
+     Hidden columns (`hide: true` in the column definition) are dropped from
+     the export — only the columns currently visible in the widget go out.
+     As a formula-injection guard, any cell whose value starts with `=`,
+     `+`, `-`, or `@` and isn't a plain numeric literal gets a leading
+     apostrophe added (e.g. `=SUM(A1:A2)` becomes `'=SUM(A1:A2)`) so
+     spreadsheet apps don't evaluate it as a formula when the recipient opens
+     the file.
    - **Chart** → the widget's chart is rendered to a PNG attachment via
      Plotly's headless image export.
 3. Posts it to the bridge, which is expected to relay it into the Symphony
@@ -149,30 +160,31 @@ body at all. A bridge that returns `200 OK` with a silently-dropped message
 would look identical, from BDOBB's side, to a successful send. Confirm in the
 actual Symphony room, not just the "Send to Symphony" status line.
 
-## Rita and "Review and Send"
+## Rita and the confirmation dialog
 
 If Rita has the bridge's MCP tools available (Settings → MCP), she can call
 `post_to_symphony` to compose and post a message on your behalf. **Every such
-call stops for your approval first** — a "Review and Send" dialog shows what
-Rita is about to send and where, and nothing goes to Symphony until you click
-Send. Declining tells Rita the message was not sent so she can react
-accordingly, rather than silently failing.
+call stops for your approval first**, and nothing goes to Symphony until you
+approve. Declining tells Rita the message was not sent so she can react
+accordingly, rather than silently failing. There are two variants of the
+dialog, depending on how confident BDOBB is about what's being sent:
 
-The dialog does its best to show the actual destination and message text by
-reading common field names out of the tool call's arguments (`streamId`,
-`destination`, `room`, etc. for the destination; `message`, `text`,
-`content`, `body` for the body) — because `post_to_symphony`'s exact argument
-shape is defined by the bridge, not by BDOBB, and isn't fixed by this repo.
-If none of those field names match what your bridge's tool actually uses,
-the dialog falls back to showing the raw JSON arguments rather than guessing.
-
-This gate also fires for **any** tool call that looks like a Symphony post
-even if it isn't named `post_to_symphony` — either its name contains
-"symphony" in any case, or it comes from an MCP server whose URL shares an
-origin with your configured Bridge URL (see the Settings section above for
-why that origin match matters). In that broader case the dialog uses neutral
-language ("Rita wants to call `<tool>` on `<server>`") instead of claiming to
-know a destination or message it couldn't confidently parse.
+- **Confirmed `post_to_symphony` call** — title "Review and Send", button
+  "Send" (or "Decline"). The dialog does its best to show the actual
+  destination and message text by reading common field names out of the tool
+  call's arguments (`streamId`, `destination`, `room`, etc. for the
+  destination; `message`, `text`, `content`, `body` for the body) — because
+  `post_to_symphony`'s exact argument shape is defined by the bridge, not by
+  BDOBB, and isn't fixed by this repo. If none of those field names match
+  what your bridge's tool actually uses, the dialog falls back to showing the
+  raw JSON arguments rather than guessing.
+- **Any other tool call that looks like a Symphony post** — either its name
+  contains "symphony" in any case, or it comes from an MCP server whose URL
+  shares an origin with your configured Bridge URL (see the Settings section
+  above for why that origin match matters). Title "Review and Confirm",
+  button "Approve" (or "Decline"). BDOBB only knows the tool name and server
+  here, so the dialog says "Rita wants to run `<tool>` on `<server>`" instead
+  of claiming to know a destination or message it couldn't confidently parse.
 
 ## Known limits, as of this writing
 

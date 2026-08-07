@@ -56,8 +56,8 @@ export default function SymphonyTab({ settings, onChange, fieldIds }: SymphonyTa
             placeholder="http://localhost:PORT"
           />
           <p className="settings-hint">
-            Symphony sharing bridge. Not used yet — reserved for sending dashboard context into
-            Symphony chat.
+            HTTP base URL of the Symphony bot bridge. "Send to Symphony" posts widget shares to
+            {"{bridgeUrl}"}/messages.
           </p>
         </div>
       </div>

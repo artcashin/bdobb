@@ -180,6 +180,6 @@ export interface Settings {
   symphonyPodUrl: string;
   /** Sent as the `partnerId` query param on every Symphony embed. */
   symphonyPartnerId: string;
-  /** Symphony sharing bridge URL (consumed by Task 6; not used yet). */
+  /** HTTP base URL of the Symphony bot bridge; widget shares are POSTed to `{symphonyBridgeUrl}/messages`. */
   symphonyBridgeUrl: string;
 }
