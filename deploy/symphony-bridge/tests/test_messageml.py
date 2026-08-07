@@ -1,3 +1,6 @@
+import random
+import re
+
 import pytest
 
 from app.messageml import MessageMLError, markdown_to_messageml, sanitize
@@ -132,28 +135,62 @@ def test_parenthesized_url_produces_complete_href():
 
 
 # --- Round-trip property: sanitize(markdown_to_messageml(s)) never raises -
+#
+# A curated string list (the previous version of this test) can't find a
+# bug class this narrow: none of a handful of hand-picked finance strings
+# combine a link with a code span, and the bold/italic-crossing repros are
+# six-character inputs like "__*__*" that nobody would think to hand-write.
+# This generates a large, fixed-seed corpus from the relevant alphabet
+# instead, so it reliably finds -- and keeps finding -- inputs like that.
 
+_SENTINEL_RANGE = re.compile("[\uE000-\uE003]")
 
-FINANCE_STRINGS = [
-    "set _limit and check `stop_loss` please",
-    "note the *spread and the `px*qty` column",
-    "buy 100 shares of *AAPL* at **$150.25**",
-    "the `bid_ask_spread` widened to _2.5bps_ today",
-    "see [10-K filing](https://sec.gov/filings/AAPL_(2023)) for details",
-    "price target: **$200** (upside of *15%*)",
-    "check `moving_average_50d` vs `moving_average_200d`",
-    "read [this note](https://en.wikipedia.org/wiki/Alpha_(finance)) today",
-    "portfolio_value = cash_balance + market_value",
-    "*bullish* on tech, _bearish_ on energy",
-    "the P/E ratio (`pe_ratio`) is 22.4x",
-    "[Mercury](https://en.wikipedia.org/wiki/Mercury_(planet)) is not a stock",
-    "run `backtest(strategy, start_date, end_date)` before trading",
-    ("raw sentinel test: " "\uE000" "0" "\uE001" " in the middle of text"),
-    "yield_curve is *inverted* -- check `10y_2y_spread` now",
+_FUZZ_SEED = 20260807
+_FUZZ_COUNT = 5000
+
+_MARKER_CHARS = list("_*()[]<>&\"/:. ") + list("0123456789")
+_WORDS = [
+    "buy", "sell", "AAPL", "stop_loss", "price", "target", "bid_ask_spread",
+    "10y_2y_spread", "the", "and", "is", "not", "moving_average_50d", "px",
 ]
+_URL_FRAGMENTS = [
+    "https://e.com/x",
+    "https://e.com/a_b",
+    "https://sec.gov/f_(2023)",
+    "javascript:alert(1)",
+]
+_SENTINELS = ["\uE000", "\uE001", "\uE002", "\uE003"]
 
 
-def test_roundtrip_never_raises_on_finance_strings():
-    for s in FINANCE_STRINGS:
+def _generate_fuzz_inputs(rng: random.Random, count: int) -> list[str]:
+    inputs = []
+    for _ in range(count):
+        num_parts = rng.randint(1, 12)
+        parts = []
+        for _ in range(num_parts):
+            bucket = rng.random()
+            if bucket < 0.4:
+                parts.append(rng.choice(_MARKER_CHARS))
+            elif bucket < 0.65:
+                parts.append(rng.choice(_WORDS))
+            elif bucket < 0.8:
+                parts.append(str(rng.randint(0, 9999)))
+            elif bucket < 0.93:
+                parts.append(rng.choice(_URL_FRAGMENTS))
+            else:
+                parts.append(rng.choice(_SENTINELS))
+            if rng.random() < 0.3:
+                parts.append(" ")
+        inputs.append("".join(parts))
+    return inputs
+
+
+def test_property_no_raise_and_no_sentinel_leak_on_generated_inputs():
+    """sanitize(markdown_to_messageml(s)) must not raise, and the output must
+    never contain a U+E000-U+E003 sentinel, for any input. Fixed seed makes
+    any failure reproducible."""
+    rng = random.Random(_FUZZ_SEED)
+    for s in _generate_fuzz_inputs(rng, _FUZZ_COUNT):
         out = markdown_to_messageml(s)
-        sanitize(out)  # must not raise for any of these
+        sanitize(out)  # must not raise
+        assert not _SENTINEL_RANGE.search(out), f"sentinel leaked for input {s!r}: {out!r}"
