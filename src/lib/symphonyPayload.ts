@@ -19,6 +19,18 @@ function escapeXml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// Private-Use-Area markers wrapping the href placeholder index below. They
+// cannot occur in real input (nothing upstream of this function produces PUA
+// codepoints), so a placeholder can never collide with ordinary text -- e.g.
+// a literal digit elsewhere on the line -- the way a plain numeric token
+// would.
+const HREF_PLACEHOLDER_OPEN = "";
+const HREF_PLACEHOLDER_CLOSE = "";
+const HREF_PLACEHOLDER = new RegExp(
+  `${HREF_PLACEHOLDER_OPEN}(\\d+)${HREF_PLACEHOLDER_CLOSE}`,
+  "g"
+);
+
 /** Applies inline formatting to one already-escaped-safe line of text. */
 function inlineToMessageML(rawLine: string): string {
   let t = escapeXml(rawLine);
@@ -26,15 +38,32 @@ function inlineToMessageML(rawLine: string): string {
   // italic passes would otherwise misinterpret.
   // `t` is already escaped, so the captured url/label are too -- do not
   // escape them again (that would double-encode "&" to "&amp;amp;").
-  t = t.replace(
-    /\[([^\]]+)\]\(([^)]+)\)/g,
-    (_m, label: string, url: string) => `<a href="${url}">${label}</a>`
-  );
+  //
+  // The emitted href is protected behind a placeholder token so the
+  // emphasis passes below never see it: `_`/`*` are completely ordinary in
+  // URLs (Wikipedia titles, S3 keys, ticker slugs) and would otherwise be
+  // read as emphasis markers, splicing <i>/<b> tags into an XML attribute
+  // value and producing a message Symphony's parser rejects outright.
+  //
+  // A non-http(s) scheme (e.g. `javascript:`) is not turned into an anchor
+  // at all -- the label is emitted as plain text instead.
+  const hrefs: string[] = [];
+  t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label: string, url: string) => {
+    if (!/^https?:/i.test(url)) return label;
+    const token = `${HREF_PLACEHOLDER_OPEN}${hrefs.push(url) - 1}${HREF_PLACEHOLDER_CLOSE}`;
+    return `<a href="${token}">${label}</a>`;
+  });
   t = t.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
   t = t.replace(/__([^_]+)__/g, "<b>$1</b>");
-  t = t.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "<i>$1</i>");
-  t = t.replace(/(?<!_)_([^_]+)_(?!_)/g, "<i>$1</i>");
+  // The opening delimiter must not be preceded by an alphanumeric (so
+  // `snake_case_id` and `a*b*c` are left alone -- CommonMark suppresses
+  // intraword emphasis for exactly this reason) and must not be followed by
+  // whitespace (so "5 * 3 and 2 * 4" isn't read as emphasis either); the
+  // closing delimiter mirrors that on the trailing side.
+  t = t.replace(/(?<![A-Za-z0-9])\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "<i>$1</i>");
+  t = t.replace(/(?<![A-Za-z0-9])_(?!\s)([^_]+?)(?<!\s)_(?!_)/g, "<i>$1</i>");
   t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
+  if (hrefs.length) t = t.replace(HREF_PLACEHOLDER, (_m, i: string) => hrefs[Number(i)]);
   return t;
 }
 
@@ -88,8 +117,17 @@ export function markdownToMessageML(markdown: string): string {
 
 // ---- table rows -> CSV ----
 
+// A cell starting with one of these opens a formula in Excel/Sheets when the
+// recipient opens the attachment -- `=1+1`, `@SUM(A1)`, `+x`, `-x`. This is
+// backend-controlled data landing in a third party's spreadsheet, so a
+// leading quote neutralizes it the same way spreadsheet apps themselves
+// recommend (RFC 4180 quoting, applied below, is unrelated and doesn't
+// prevent this -- Excel treats a quoted `"=1+1"` cell as a formula too).
+const FORMULA_TRIGGER = /^[=+\-@]/;
+
 function csvEscape(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  const safe = FORMULA_TRIGGER.test(value) ? `'${value}` : value;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 function csvCell(value: unknown): string {

@@ -262,6 +262,12 @@ describe("shareWidgetToSymphony", () => {
     ).rejects.toThrow(/no table data/i);
   });
 
+  it("rejects a table share with an empty array instead of posting a 0-byte attachment", async () => {
+    await expect(
+      shareWidgetToSymphony({ ...base, kind: "table", data: [] })
+    ).rejects.toThrow(/no table data/i);
+  });
+
   it("sends chart data as a PNG attachment via the injected renderer", async () => {
     const fetchImpl = vi.fn(async () => new Response("", { status: 200 }));
     const renderChartPng = vi.fn(async () => ({ base64: "QUJD", mimeType: "image/png" }));

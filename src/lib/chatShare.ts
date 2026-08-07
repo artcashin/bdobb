@@ -213,7 +213,8 @@ export async function shareWidgetToSymphony(
     const markdown = typeof input.data === "string" ? input.data : "";
     body = { streamId: input.streamId, messageML: markdownToMessageML(markdown) };
   } else if (input.kind === "table") {
-    if (!Array.isArray(input.data)) throw new Error("Symphony: no table data to send");
+    if (!Array.isArray(input.data) || input.data.length === 0)
+      throw new Error("Symphony: no table data to send");
     const csv = rowsToCsv(input.data as Record<string, unknown>[], input.columns ?? null);
     body = {
       streamId: input.streamId,

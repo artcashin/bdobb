@@ -31,6 +31,27 @@ describe("markdownToMessageML", () => {
     );
   });
 
+  it("preserves underscores and asterisks inside a link URL instead of letting them open emphasis tags in the href attribute", () => {
+    expect(markdownToMessageML("[docs](https://x.com/foo_bar_baz)")).toBe(
+      '<messageML><a href="https://x.com/foo_bar_baz">docs</a><br/></messageML>'
+    );
+    expect(markdownToMessageML("[docs](https://x.com/a*b*c)")).toBe(
+      '<messageML><a href="https://x.com/a*b*c">docs</a><br/></messageML>'
+    );
+  });
+
+  it("does not mangle intraword underscores in plain text as emphasis", () => {
+    expect(markdownToMessageML("snake_case_id")).toBe(
+      "<messageML>snake_case_id<br/></messageML>"
+    );
+  });
+
+  it("renders a non-http(s) link scheme as plain text instead of an anchor", () => {
+    expect(markdownToMessageML("[click](javascript:doEvil)")).toBe(
+      "<messageML>click<br/></messageML>"
+    );
+  });
+
   it("converts a heading to bold", () => {
     expect(markdownToMessageML("# Title")).toBe("<messageML><b>Title</b><br/></messageML>");
   });
@@ -86,6 +107,13 @@ describe("rowsToCsv", () => {
   it("renders null/undefined cells as empty", () => {
     const csv = rowsToCsv([{ a: null, b: undefined }], null);
     expect(csv).toBe("a,b\r\n,");
+  });
+
+  it("neutralizes a leading formula-trigger character to prevent CSV formula injection", () => {
+    expect(rowsToCsv([{ note: "=1+1" }], null)).toBe("note\r\n'=1+1");
+    expect(rowsToCsv([{ note: "@SUM(A1)" }], null)).toBe("note\r\n'@SUM(A1)");
+    expect(rowsToCsv([{ note: "+5" }], null)).toBe("note\r\n'+5");
+    expect(rowsToCsv([{ note: "-5" }], null)).toBe("note\r\n'-5");
   });
 });
 
