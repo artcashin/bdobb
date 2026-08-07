@@ -189,12 +189,16 @@ itself rather than receiving a pre-fetched seed.
 It does **not** reuse `ChartRenderer`/`chartShapes.ts`: those build a static
 Plotly figure from a single snapshot via `Plotly.newPlot`/`purge` on every
 `data` change, with no notion of appending to an already-drawn trace.
-`LiveChartRenderer` owns its own Plotly lifecycle — mount once, then extend
-the existing figure's `x`/`open`/`high`/`low`/`close`/`y` arrays in place as
-buckets update, calling `Plotly.extendTraces`/`Plotly.relayout` rather than a
-full redraw on every tick. `applyDarkLayout` from `chartShapes.ts` is reused
-for theming (it's a pure layout-merge helper, not coupled to the snapshot
-render path).
+`LiveChartRenderer` owns its own Plotly lifecycle via a small
+`LiveChartPanel` wrapper that redraws with `Plotly.react` on every bucket
+update — Plotly's own diff-and-update call, which reconciles against what's
+already on screen instead of tearing the node down. `extendTraces` was
+considered and rejected: it needs a stable trace index per symbol, which
+becomes fragile exactly where this widget varies most — trace count changes
+with chart type (candle adds a volume trace), symbol count, and layout
+(single chart vs. small multiples). `applyDarkLayout` from `chartShapes.ts`
+is reused for theming (it's a pure layout-merge helper, not coupled to the
+snapshot render path).
 
 Local component state:
 
