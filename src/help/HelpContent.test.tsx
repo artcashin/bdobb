@@ -6,7 +6,9 @@ vi.mock("./loadContent", () => ({
   loadPage: (slug: string) =>
     slug === "news-ticker"
       ? "# News Ticker\n\nSee [Live Quotes](help://live-quotes) for the tape."
-      : "# Live Quotes\n\nThe tape.",
+      : slug === "unsafe-link"
+        ? "# Unsafe Link\n\n[click me](javascript:alert(1))"
+        : "# Live Quotes\n\nThe tape.",
 }));
 
 describe("HelpContent", () => {
@@ -20,5 +22,12 @@ describe("HelpContent", () => {
     render(<HelpContent slug="news-ticker" onNavigate={onNavigate} />);
     fireEvent.click(screen.getByText("Live Quotes"));
     expect(onNavigate).toHaveBeenCalledWith("live-quotes");
+  });
+
+  it("sanitizes non-help:// links with an unsafe scheme instead of passing them through", () => {
+    render(<HelpContent slug="unsafe-link" onNavigate={() => {}} />);
+    const link = screen.getByText("click me");
+    expect(link).not.toHaveAttribute("href", "javascript:alert(1)");
+    expect(link.getAttribute("href")).toBe("");
   });
 });
