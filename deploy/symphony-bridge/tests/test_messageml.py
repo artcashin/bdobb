@@ -67,3 +67,93 @@ def test_sanitize_rejects_malformed_xml():
 def test_sanitize_requires_messageml_root():
     with pytest.raises(MessageMLError):
         sanitize("<div>hi</div>")
+
+
+# --- Fix 1: sentinels are explicit escapes, not literal PUA bytes -------
+
+
+def test_sentinel_constants_are_not_raw_bytes_in_source():
+    """The sentinel literals in app/messageml.py must be written as explicit
+    \\uXXXX escapes (six visible ASCII characters), never as the raw
+    invisible Private Use Area bytes. Guards against Fix 1 regressing."""
+    import app.messageml as messageml_module
+
+    with open(messageml_module.__file__, "r", encoding="utf-8") as f:
+        source = f.read()
+    assert "\\uE000" in source
+    assert "\\uE001" in source
+    # The raw PUA characters themselves should not appear in the source text.
+    assert "\uE000" not in source
+    assert "\uE001" not in source
+
+
+# --- Fix 2: emphasis must not cross code-span boundaries -----------------
+
+
+def test_emphasis_marker_outside_code_does_not_pair_with_one_inside():
+    out = markdown_to_messageml("set _limit and check `stop_loss` please")
+    sanitize(out)  # must not raise
+    assert "<code>stop_loss</code>" in out
+
+
+def test_star_outside_code_does_not_pair_with_star_inside():
+    out = markdown_to_messageml("note the *spread and the `px*qty` column")
+    sanitize(out)  # must not raise
+    assert "<code>px*qty</code>" in out
+
+
+def test_code_spans_still_work():
+    out = markdown_to_messageml("`code`")
+    assert "<code>code</code>" in out
+    sanitize(out)
+
+
+# --- Fix 3: a raw sentinel in user input must not crash the converter ----
+
+
+def test_raw_sentinel_in_input_does_not_raise():
+    out = markdown_to_messageml("\uE000" "0" "\uE001")
+    sanitize(out)  # must not raise
+
+
+# --- Fix 4: parenthesized URLs keep a complete href -----------------------
+
+
+def test_parenthesized_url_produces_complete_href():
+    out = markdown_to_messageml(
+        "[Mercury](https://en.wikipedia.org/wiki/Mercury_(planet))"
+    )
+    assert (
+        '<a href="https://en.wikipedia.org/wiki/Mercury_(planet)">Mercury</a>'
+        in out
+    )
+    assert ")</messageML>" not in out
+    sanitize(out)
+
+
+# --- Round-trip property: sanitize(markdown_to_messageml(s)) never raises -
+
+
+FINANCE_STRINGS = [
+    "set _limit and check `stop_loss` please",
+    "note the *spread and the `px*qty` column",
+    "buy 100 shares of *AAPL* at **$150.25**",
+    "the `bid_ask_spread` widened to _2.5bps_ today",
+    "see [10-K filing](https://sec.gov/filings/AAPL_(2023)) for details",
+    "price target: **$200** (upside of *15%*)",
+    "check `moving_average_50d` vs `moving_average_200d`",
+    "read [this note](https://en.wikipedia.org/wiki/Alpha_(finance)) today",
+    "portfolio_value = cash_balance + market_value",
+    "*bullish* on tech, _bearish_ on energy",
+    "the P/E ratio (`pe_ratio`) is 22.4x",
+    "[Mercury](https://en.wikipedia.org/wiki/Mercury_(planet)) is not a stock",
+    "run `backtest(strategy, start_date, end_date)` before trading",
+    ("raw sentinel test: " "\uE000" "0" "\uE001" " in the middle of text"),
+    "yield_curve is *inverted* -- check `10y_2y_spread` now",
+]
+
+
+def test_roundtrip_never_raises_on_finance_strings():
+    for s in FINANCE_STRINGS:
+        out = markdown_to_messageml(s)
+        sanitize(out)  # must not raise for any of these
