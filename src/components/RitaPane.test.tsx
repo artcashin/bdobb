@@ -37,6 +37,32 @@ describe("RitaPane", () => {
     expect(onTogglePin).toHaveBeenCalledTimes(1);
   });
 
+  // Fix 4 (Task 7 review): a pending confirmation (post_to_symphony's gate)
+  // raised while the pane is collapsed used to be completely invisible --
+  // hasUnread is only set by chat activity, never by a confirmation being
+  // registered -- leaving a plain "Rita" tab and a disabled input with no
+  // clue why. needsDecision gets its own indicator so the user knows to open
+  // the pane, distinct from (and shown in preference to) a plain unread reply.
+  it("shows a needs-decision indicator, not a plain unread dot, when a confirmation is pending", () => {
+    render(
+      <RitaPane pinned={false} sticky={false} unread={true} needsDecision={true} onTogglePin={() => {}}>
+        <div>chat content</div>
+      </RitaPane>
+    );
+    expect(screen.getByLabelText(/needs your decision/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^new response from rita$/i)).not.toBeInTheDocument();
+  });
+
+  it("falls back to the plain unread dot when nothing needs a decision", () => {
+    render(
+      <RitaPane pinned={false} sticky={false} unread={true} needsDecision={false} onTogglePin={() => {}}>
+        <div>chat content</div>
+      </RitaPane>
+    );
+    expect(screen.getByLabelText(/new response from rita/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/needs your decision/i)).not.toBeInTheDocument();
+  });
+
   it("applies the pinned class only when pinned", () => {
     const { rerender } = render(
       <RitaPane pinned={false} sticky={false} onTogglePin={() => {}}>

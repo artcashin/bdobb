@@ -377,6 +377,11 @@ input, select, textarea {
 }
 
 /* ---- Symphony post confirmation dialog (Task 7) ---- */
+.symphony-confirm-warning {
+  margin: 8px 0; padding: 8px 10px;
+  background: rgba(217, 105, 95, 0.12); border: 1px solid var(--error);
+  border-radius: 6px; color: var(--error); font-size: 13px;
+}
 .symphony-confirm-message {
   white-space: pre-wrap; word-break: break-word;
   margin: 8px 0; padding: 10px 12px;
@@ -1120,6 +1125,19 @@ input, select, textarea {
   background: var(--accent);
   margin: 0 auto 6px;
   flex: none;
+}
+
+/* A pending confirmation (e.g. post_to_symphony's gate) is stronger than a
+   plain unread reply: nothing proceeds until the user opens the pane and
+   decides, so it gets the error color and a pulse instead of a static dot. */
+.rita-needs-decision-dot {
+  background: var(--error);
+  animation: rita-needs-decision-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes rita-needs-decision-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 /* Per-card parameter editor, between the header and the body. */

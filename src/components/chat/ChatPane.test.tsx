@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as agentClientModule from "../../lib/agent/agentClient";
 import * as mcpModule from "../../lib/agent/mcp";
 import type { AgentTool } from "../../lib/agent/types";
 import { useChatStore } from "../../stores/chatStore";
+import { LOCAL_TOOL_SERVER_ID } from "../../lib/agent/localTools";
 import ChatPane from "./ChatPane";
+import RitaPane from "../RitaPane";
 
 vi.mock("plotly.js-dist-min", () => ({
   default: {
@@ -464,11 +467,72 @@ describe("ChatPane", () => {
       });
 
       expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
-      // The destination and raw JSON both mention "trading-desk" (the human
-      // summary line, and the always-visible raw-parameters fallback) --
-      // any match confirms it made it into the dialog.
-      expect(screen.getAllByText(/trading-desk/).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/Markets are closed for the holiday\./).length).toBeGreaterThan(0);
+      // Pinned to the specific elements the user actually reads, not "does
+      // this text appear anywhere in the DOM". jsdom does not implement
+      // <details> collapsing, and getAllByText does not filter on
+      // visibility, so an assertion against "anywhere" would still pass even
+      // if the human-readable summary line were deleted and only the raw
+      // JSON fallback (which is also always in the DOM) carried the text.
+      const summary = document.querySelector(".symphony-confirm-summary");
+      expect(summary).toBeTruthy();
+      expect(summary!.textContent).toContain("trading-desk");
+      const messageEl = document.querySelector(".symphony-confirm-message");
+      expect(messageEl!.textContent).toBe("Markets are closed for the holiday.");
+    });
+
+    // Fix 2 (Task 7 review): when none of the known parameter names match,
+    // the old dialog silently dropped the parenthetical -- "Rita wants to
+    // post this message to Symphony:" read as complete and confident with no
+    // hint the destination was actually unknown. Both halves of the fix are
+    // pinned here: an explicit callout, and the raw-parameters fallback
+    // defaulting open instead of staying an opt-in collapsed <details>.
+    it("says so explicitly when the destination can't be determined, and opens the raw parameters", async () => {
+      vi.spyOn(mcpModule, "callMcpTool").mockResolvedValue({ content: [] });
+      const runAgentTool = await getRunAgentTool();
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          channel: "trading-desk", // not one of the recognized destination keys
+          message: "Markets are closed for the holiday.",
+        });
+      });
+
+      expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
+      const summary = document.querySelector(".symphony-confirm-summary");
+      // No parenthetical destination guessed onto the confident sentence.
+      expect(summary!.textContent).toBe("Rita wants to post this message to Symphony:");
+      expect(
+        screen.getByText(/destination could not be determined/i)
+      ).toBeInTheDocument();
+      const details = document.querySelector("details");
+      expect(details).toHaveAttribute("open");
+    });
+
+    // Fix 2's second half: a payload carrying both a human name and a
+    // resolved id is ambiguous about which one the bridge actually routes
+    // by. Silently picking the first match (old precedence-order behavior)
+    // could show the user a destination that isn't where the message goes.
+    it("shows every known destination candidate, not just the first, when more than one is present", async () => {
+      vi.spyOn(mcpModule, "callMcpTool").mockResolvedValue({ content: [] });
+      const runAgentTool = await getRunAgentTool();
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "stream-42",
+          room: "trading-desk",
+          message: "Markets are closed for the holiday.",
+        });
+      });
+
+      expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
+      const summary = document.querySelector(".symphony-confirm-summary");
+      // Ambiguous, so the summary line does not pick a winner between them.
+      expect(summary!.textContent).toBe("Rita wants to post this message to Symphony:");
+      const warning = screen.getByText(/multiple possible destinations/i);
+      expect(warning.textContent).toContain("streamId: stream-42");
+      expect(warning.textContent).toContain("room: trading-desk");
+      const details = document.querySelector("details");
+      expect(details).toHaveAttribute("open");
     });
 
     it("declining via the dialog's Decline button resolves the gate", async () => {
@@ -542,6 +606,265 @@ describe("ChatPane", () => {
       expect(callToolSpy).not.toHaveBeenCalled();
       expect(outcome!.isError).toBe(true);
       expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+    });
+
+    // The stated reason the confirmation lives in chatStore rather than
+    // ChatPane's own local state: RitaPane unmounts its children when it
+    // collapses (hover-away, or -- before Fix 1 -- the outside-tap bug this
+    // dialog itself could trigger). If the pending confirmation lived in a
+    // useState here, unmounting ChatPane would discard it and leave
+    // runAgentTool's promise permanently unsettled. This was previously
+    // asserted only by the design comment in chatStore.ts, not by a test.
+    it("keeps a pending confirmation alive in the store when ChatPane unmounts", async () => {
+      vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+        tools: [SYMPHONY_TOOL],
+        budgetExceeded: [],
+        unreachable: [],
+      });
+      const callToolSpy = vi
+        .spyOn(mcpModule, "callMcpTool")
+        .mockResolvedValue({ content: [{ type: "text", text: "sent" }] });
+      const runQuerySpy = vi.spyOn(agentClientModule, "runAgentQuery").mockResolvedValue([]);
+
+      const { unmount } = render(<ChatPane />);
+      const input = screen.getByPlaceholderText("Message Rita...");
+      fireEvent.change(input, { target: { value: "post to symphony" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+      const runAgentTool = runQuerySpy.mock.calls[0][0].runAgentTool!;
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "hello room",
+        }).then((r) => {
+          outcome = r;
+        });
+      });
+
+      const id = useChatStore.getState().pendingToolConfirmation!.id;
+      expect(id).toBeTruthy();
+
+      unmount();
+
+      // Still resolvable after the component that rendered the dialog is
+      // gone -- the confirmation belongs to the store, not the component.
+      expect(useChatStore.getState().pendingToolConfirmation?.id).toBe(id);
+      await act(async () => {
+        useChatStore.getState().resolveToolConfirmation(id, "approved");
+      });
+
+      await waitFor(() => expect(outcome).toBeDefined());
+      expect(callToolSpy).toHaveBeenCalled();
+      expect(outcome).toEqual({ content: "sent" });
+    });
+
+    // The gate is store-level plumbing (one `pendingToolConfirmation` slot),
+    // but the agent can make two separate post_to_symphony calls across a
+    // turn (e.g. two different rooms). Each must get its own id and settle
+    // independently -- resolving the second must not affect the outcome
+    // already recorded for the first.
+    it("gives two post_to_symphony calls in the same turn their own confirmation", async () => {
+      const callToolSpy = vi
+        .spyOn(mcpModule, "callMcpTool")
+        .mockResolvedValue({ content: [{ type: "text", text: "sent" }] });
+      const runAgentTool = await getRunAgentTool();
+
+      let outcome1: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "first",
+        }).then((r) => {
+          outcome1 = r;
+        });
+      });
+      const id1 = useChatStore.getState().pendingToolConfirmation!.id;
+      await act(async () => {
+        useChatStore.getState().resolveToolConfirmation(id1, "approved");
+      });
+      await waitFor(() => expect(outcome1).toBeDefined());
+
+      let outcome2: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room2",
+          message: "second",
+        }).then((r) => {
+          outcome2 = r;
+        });
+      });
+      const id2 = useChatStore.getState().pendingToolConfirmation!.id;
+      expect(id2).not.toBe(id1);
+      await act(async () => {
+        useChatStore.getState().resolveToolConfirmation(id2, "declined");
+      });
+      await waitFor(() => expect(outcome2).toBeDefined());
+
+      expect(outcome1).toEqual({ content: "sent" });
+      expect(outcome2!.isError).toBe(true);
+      expect(callToolSpy).toHaveBeenCalledTimes(1);
+      expect(callToolSpy).toHaveBeenCalledWith(
+        "https://bridge.test/mcp",
+        "post_to_symphony",
+        { streamId: "room1", message: "first" }
+      );
+    });
+
+    // The gate sits above the server_id branch in runAgentTool -- above both
+    // the MCP dispatch (tested elsewhere in this file) and the local-tool
+    // dispatch. Routing a post_to_symphony call through
+    // LOCAL_TOOL_SERVER_ID pins that placement against a refactor that might
+    // otherwise only re-check the gate on the MCP path.
+    it("gates a post_to_symphony call routed through the local-tool server_id too", async () => {
+      const runAgentTool = await getRunAgentTool();
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool(LOCAL_TOOL_SERVER_ID, "post_to_symphony", {
+          streamId: "room1",
+          message: "hello room",
+        }).then((r) => {
+          outcome = r;
+        });
+      });
+
+      expect(outcome).toBeUndefined();
+      const pending = useChatStore.getState().pendingToolConfirmation;
+      expect(pending).toMatchObject({
+        serverId: LOCAL_TOOL_SERVER_ID,
+        toolName: "post_to_symphony",
+      });
+
+      await act(async () => {
+        useChatStore.getState().resolveToolConfirmation(pending!.id, "approved");
+      });
+
+      // Falls through to executeLocalTool, which doesn't recognize
+      // post_to_symphony -- proof the gate ran above that dispatch rather
+      // than the call being (wrongly) treated as an MCP call regardless of
+      // server_id.
+      await waitFor(() => expect(outcome).toBeDefined());
+      expect(outcome).toEqual({ content: "Unknown tool: post_to_symphony", isError: true });
+    });
+  });
+
+  // Fix 1 (Task 7 review, CRITICAL): on a coarse pointer, Modal portals the
+  // confirmation dialog to document.body, outside the `.rita-pane` aside
+  // useHoverPanel's outside-tap detector treats as "inside". Before the fix,
+  // any tap on the dialog (Send, Decline, the close X, the backdrop) was
+  // read as an outside tap and collapsed+unmounted the pane -- taking the
+  // dialog with it -- before the tap's click could ever reach the button,
+  // deadlocking the turn. This renders the real RitaPane+ChatPane pairing
+  // (not ChatPane alone) so the actual sticky wiring between them is what's
+  // under test, not a mocked stand-in for it.
+  describe("Fix 1: coarse-pointer dialog taps must not collapse the pane", () => {
+    const SYMPHONY_TOOL: AgentTool = {
+      server_id: "symphony-bridge",
+      name: "post_to_symphony",
+      url: "https://bridge.test/mcp",
+      endpoint: "",
+      description: "Post a message to a Symphony room",
+      input_schema: {},
+    };
+
+    /** A pointerdown as useHoverPanel's document-level capture listener sees
+     * it. jsdom has no real PointerEvent constructor, so this hand-builds
+     * the one property the listener reads, the same way
+     * useHoverPanel.touch.test.ts does for the hook in isolation. */
+    function coarseTap(el: Element) {
+      const e = new Event("pointerdown", { bubbles: true }) as PointerEvent & {
+        pointerType: string;
+      };
+      Object.defineProperty(e, "pointerType", { value: "touch" });
+      el.dispatchEvent(e);
+    }
+
+    /** Mirrors AppShell's RitaPane/ChatPane wiring: ChatPane reports its
+     * desired stickiness (focus, or now, a pending Symphony confirmation)
+     * back up, and that becomes RitaPane's `sticky` prop. */
+    function Harness() {
+      const [sticky, setSticky] = useState(false);
+      return (
+        <RitaPane pinned={false} sticky={sticky} onTogglePin={() => {}}>
+          <ChatPane onStickyChange={setSticky} />
+        </RitaPane>
+      );
+    }
+
+    beforeEach(() => {
+      useChatStore.getState().clear();
+      // Coarse pointer (touch) is what arms useHoverPanel's outside-tap
+      // capture listener in the first place -- see usePointerKind.ts.
+      const mq = {
+        matches: false, // "(pointer: fine)" does not match under touch
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      };
+      vi.stubGlobal("matchMedia", vi.fn().mockReturnValue(mq));
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("does not collapse the pane on a coarse-pointer tap on the dialog's Decline button, and Decline still works", async () => {
+      const callToolSpy = vi.spyOn(mcpModule, "callMcpTool");
+      vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+        tools: [SYMPHONY_TOOL],
+        budgetExceeded: [],
+        unreachable: [],
+      });
+      const runQuerySpy = vi.spyOn(agentClientModule, "runAgentQuery").mockResolvedValue([]);
+
+      render(<Harness />);
+      // Open the pane so ChatPane mounts (RitaPane renders no children at
+      // all while collapsed).
+      fireEvent.mouseEnter(screen.getByLabelText("Rita AI pane"));
+
+      const input = screen.getByPlaceholderText("Message Rita...");
+      fireEvent.change(input, { target: { value: "post to symphony" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+      const runAgentTool = runQuerySpy.mock.calls[0][0].runAgentTool!;
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "hello room",
+        }).then((r) => {
+          outcome = r;
+        });
+      });
+
+      const declineBtn = await screen.findByRole("button", { name: /decline/i });
+
+      // The hazard: a bare pointerdown on the (portalled-outside-the-pane)
+      // dialog must not be read as "tapped outside" and collapse the pane.
+      await act(async () => {
+        coarseTap(declineBtn);
+      });
+      expect(screen.getByPlaceholderText("Message Rita...")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /decline/i })).toBeInTheDocument();
+
+      // The tap's click must still reach the button and actually decline.
+      await act(async () => {
+        fireEvent.click(declineBtn);
+      });
+
+      await waitFor(() => expect(outcome).toBeDefined());
+      expect(callToolSpy).not.toHaveBeenCalled();
+      expect(outcome!.isError).toBe(true);
+      expect(outcome!.content).toMatch(/declined/i);
+      expect(screen.queryByText(/review and send/i)).not.toBeInTheDocument();
+      // The pane itself is still open and usable afterward, not collapsed.
+      expect(screen.getByPlaceholderText("Message Rita...")).toBeInTheDocument();
     });
   });
 });

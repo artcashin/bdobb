@@ -1,8 +1,10 @@
 /** @jsxImportSource react */
 
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import AppShell from "./AppShell";
 import * as agentClient from "../lib/agent/agentClient";
+import * as mcpModule from "../lib/agent/mcp";
+import type { AgentTool } from "../lib/agent/types";
 import { useChatStore } from "../stores/chatStore";
 import { useDashboardStore } from "../stores/dashboardStore";
 
@@ -197,5 +199,108 @@ describe("Rita pane stickiness", () => {
     await act(async () => { fireEvent.mouseEnter(pane()); });
     expect(screen.getByText("the answer")).toBeInTheDocument();
     expect(screen.queryByRole("status", { name: /new response/i })).not.toBeInTheDocument();
+  });
+
+  // Fix 1 + Fix 4 (Task 7 review): a pending post_to_symphony confirmation
+  // must hold the pane open (Fix 1's fix, wired through AppShell exactly as
+  // production does -- ChatPane.onStickyChange -> RitaPane's sticky prop),
+  // and must surface a needs-decision indicator on the collapsed tab (Fix
+  // 4) so a confirmation raised while nobody is looking isn't invisible.
+  it("stays open despite the pointer leaving once a Symphony confirmation is pending, and flags it distinctly", async () => {
+    const SYMPHONY_TOOL: AgentTool = {
+      server_id: "symphony-bridge",
+      name: "post_to_symphony",
+      url: "https://bridge.test/mcp",
+      endpoint: "",
+      description: "Post a message to a Symphony room",
+      input_schema: {},
+    };
+    vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+      tools: [SYMPHONY_TOOL],
+      budgetExceeded: [],
+      unreachable: [],
+    });
+    const runQuerySpy = vi
+      .spyOn(agentClient, "runAgentQuery")
+      .mockResolvedValue([]);
+
+    render(<AppShell />);
+    await act(async () => { fireEvent.mouseEnter(pane()); });
+
+    const input = screen.getByPlaceholderText("Message Rita...");
+    await act(async () => { fireEvent.change(input, { target: { value: "post to symphony" } }); });
+    await act(async () => { fireEvent.keyDown(input, { key: "Enter" }); });
+    await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+    const runAgentTool = runQuerySpy.mock.calls[0][0].runAgentTool!;
+
+    act(() => {
+      void runAgentTool("symphony-bridge", "post_to_symphony", {
+        streamId: "room1",
+        message: "hello room",
+      });
+    });
+    expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
+
+    // Walk away while the decision is still pending: without Fix 1 this
+    // both collapses the pane and, because the dialog only renders inside
+    // ChatPane, unmounts the dialog with it.
+    await act(async () => { fireEvent.blur(input); });
+    await act(async () => { fireEvent.mouseLeave(pane()); });
+    await act(async () => { vi.advanceTimersByTime(1000); });
+
+    expect(pane().className).toContain("expanded");
+    expect(screen.getByText(/review and send/i)).toBeInTheDocument();
+  });
+
+  // Fix 4's specific "invisible" scenario: hasUnread is only ever set by
+  // chatStore's noteActivity() on stream events, never by a confirmation
+  // being registered. Before the fix, a tool call arriving after the pane
+  // had already folded (e.g. the turn took a while, the user stopped
+  // watching) left a plain "Rita" tab and a permanently disabled input, with
+  // no dot and no dialog to explain why -- runAgentTool's promise, and the
+  // agent's turn with it, just sat there forever with no visible cause.
+  it("shows a needs-decision indicator on the collapsed tab when a confirmation arrives after the pane has already folded", async () => {
+    const SYMPHONY_TOOL: AgentTool = {
+      server_id: "symphony-bridge",
+      name: "post_to_symphony",
+      url: "https://bridge.test/mcp",
+      endpoint: "",
+      description: "Post a message to a Symphony room",
+      input_schema: {},
+    };
+    vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+      tools: [SYMPHONY_TOOL],
+      budgetExceeded: [],
+      unreachable: [],
+    });
+    let capturedRunAgentTool: agentClient.AgentToolRunner | undefined;
+    vi.spyOn(agentClient, "runAgentQuery").mockImplementation(async (o) => {
+      capturedRunAgentTool = o.runAgentTool;
+      return new Promise(() => {}); // the turn stays in flight for this test
+    });
+
+    render(<AppShell />);
+    await act(async () => { fireEvent.mouseEnter(pane()); });
+    const input = screen.getByPlaceholderText("Message Rita...");
+    await act(async () => { fireEvent.change(input, { target: { value: "post to symphony" } }); });
+    await act(async () => { fireEvent.keyDown(input, { key: "Enter" }); });
+    await waitFor(() => expect(capturedRunAgentTool).toBeDefined());
+
+    // Nobody has invoked the Symphony tool yet -- the pane folds normally.
+    await act(async () => { fireEvent.blur(input); });
+    await act(async () => { fireEvent.mouseLeave(pane()); });
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(pane().className).not.toContain("expanded");
+    expect(screen.queryByLabelText(/needs your decision/i)).not.toBeInTheDocument();
+
+    // The agent's tool call arrives later, with nobody looking at the pane.
+    act(() => {
+      void capturedRunAgentTool!("symphony-bridge", "post_to_symphony", {
+        streamId: "room1",
+        message: "hello room",
+      });
+    });
+
+    expect(screen.getByLabelText(/needs your decision/i)).toBeInTheDocument();
   });
 });

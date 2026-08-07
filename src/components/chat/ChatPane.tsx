@@ -34,31 +34,54 @@ import StatusTrail from "./StatusTrail";
 const SYMPHONY_POST_TOOL = "post_to_symphony";
 
 /**
+ * Anything that plausibly IS post_to_symphony, not just an exact string match.
+ * A bridge advertising different casing (`postToSymphony`) or some other
+ * `*symphony*` variant this app has never seen must still hit the gate --
+ * silently executing an unrecognized variant would be a fail-OPEN bug, and
+ * over-prompting (gating something that turns out to be harmless) is the safe
+ * direction to err in here, under-prompting is not.
+ */
+const SYMPHONY_TOOL_PATTERN = /symphony/i;
+
+function isSymphonyPostTool(toolName: string): boolean {
+  return toolName.toLowerCase() === SYMPHONY_POST_TOOL || SYMPHONY_TOOL_PATTERN.test(toolName);
+}
+
+/** The parameter names that might carry the post's destination, in the order
+ * the plan documents them ("streamId or saved-destination name", spec F2-8)
+ * plus a couple of obvious synonyms. Order here is display order only now --
+ * see `destinationCandidates` below for why picking just the first is wrong. */
+const DESTINATION_KEYS = ["streamId", "destination", "stream_id", "room", "roomId"] as const;
+
+/**
  * Best-effort read of a post_to_symphony call's destination/message for the
  * confirmation dialog. The tool is defined by the symphony-bridge service,
- * not by this app, so its exact argument names aren't a contract we own --
- * this tries the field names the plan documents ("streamId or saved-
- * destination name + message", spec F2-8) plus a couple of obvious synonyms,
- * and falls back to the raw JSON so the review is honest even if a name
- * guess misses.
+ * not by this app, so its exact argument names aren't a contract we own.
+ *
+ * `destinationCandidates` deliberately does not collapse to a single value:
+ * a payload carrying both a human-readable name (e.g. `room`) and a resolved
+ * id (e.g. `streamId`) is ambiguous about which one the bridge actually
+ * routes by, and silently showing just the first match (old behavior) could
+ * show the user a room that isn't where the message goes. Every known key
+ * that is present gets surfaced so the dialog can show all of them; an empty
+ * array means none of the known keys matched at all, which the dialog must
+ * call out explicitly rather than just... not mentioning a destination.
  */
 function symphonyConfirmationText(parameters: Record<string, unknown>): {
-  destination: string | null;
+  destinationCandidates: { key: string; value: string }[];
   message: string | null;
 } {
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
-  const destination =
-    str(parameters.streamId) ??
-    str(parameters.destination) ??
-    str(parameters.stream_id) ??
-    str(parameters.room) ??
-    str(parameters.roomId);
+  const destinationCandidates = DESTINATION_KEYS.flatMap((key) => {
+    const value = str(parameters[key]);
+    return value ? [{ key, value }] : [];
+  });
   const message =
     str(parameters.message) ??
     str(parameters.text) ??
     str(parameters.content) ??
     str(parameters.body);
-  return { destination, message };
+  return { destinationCandidates, message };
 }
 
 /** Picks the `{type:"select",...}` feature out of `AgentInfo.features` (desk
@@ -119,9 +142,25 @@ function SymphonyConfirmDialog({
 }: {
   confirmation: { id: string; parameters: Record<string, unknown> };
 }) {
-  const { destination, message } = symphonyConfirmationText(confirmation.parameters);
+  const { destinationCandidates, message } = symphonyConfirmationText(confirmation.parameters);
   const decide = (decision: "approved" | "declined") =>
     useChatStore.getState().resolveToolConfirmation(confirmation.id, decision);
+
+  // Exactly one known destination key matched -- the unambiguous, common
+  // case -- shows its value inline. Zero or multiple matches are both cases
+  // where a single parenthetical would either be missing (silently) or
+  // arbitrarily pick one of several candidates that may not agree on where
+  // the bridge actually routes the post, so both get their own explicit,
+  // non-collapsed callout instead.
+  const destinationUnresolved = destinationCandidates.length === 0;
+  const destinationAmbiguous = destinationCandidates.length > 1;
+  const destinationInline = destinationCandidates.length === 1 ? destinationCandidates[0].value : null;
+  const messageUnresolved = message === null;
+  // The raw-parameters fallback is the only place an unresolved destination
+  // or message can actually be reviewed -- defaulting it open whenever
+  // either is unresolved turns that fallback from an opt-in mitigation into
+  // one the user actually sees.
+  const rawParamsOpenByDefault = destinationUnresolved || destinationAmbiguous || messageUnresolved;
 
   return (
     <Modal isOpen onClose={() => decide("declined")} title="Review and Send"
@@ -145,11 +184,25 @@ function SymphonyConfirmDialog({
         </>
       }
     >
-      <p>Rita wants to post this message to Symphony{destination ? ` (${destination})` : ""}:</p>
+      <p className="symphony-confirm-summary">
+        Rita wants to post this message to Symphony{destinationInline ? ` (${destinationInline})` : ""}:
+      </p>
+      {destinationUnresolved && (
+        <p className="symphony-confirm-warning" role="alert">
+          Destination could not be determined from these parameters — review the raw parameters below.
+        </p>
+      )}
+      {destinationAmbiguous && (
+        <p className="symphony-confirm-warning" role="alert">
+          Multiple possible destinations were found ({destinationCandidates
+            .map((c) => `${c.key}: ${c.value}`)
+            .join(", ")}) and it is not known which one the bridge will use — review the raw parameters below.
+        </p>
+      )}
       <pre className="symphony-confirm-message">
         {message ?? "(no message text found -- see raw parameters below)"}
       </pre>
-      <details>
+      <details open={rawParamsOpenByDefault}>
         <summary>Raw parameters</summary>
         <pre className="symphony-confirm-raw">{JSON.stringify(confirmation.parameters, null, 2)}</pre>
       </details>
@@ -242,12 +295,29 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Only focus holds the pane open now. Deliberately no autofocus on mount:
+  // The dialog below is what actually renders for a pending confirmation --
+  // this mirrors that same gate so "is the confirmation dialog showing"
+  // and "should the pane refuse to auto-collapse" never disagree.
+  const pendingSymphonyConfirmation =
+    pendingToolConfirmation !== null && isSymphonyPostTool(pendingToolConfirmation.toolName);
+
+  // Focus holds the pane open, and so does an unresolved Symphony
+  // confirmation. Without the latter, the confirmation dialog -- portalled to
+  // document.body by Modal, so it sits outside the pane's own DOM subtree --
+  // gets misread as "tapped outside" by the pane's coarse-pointer outside-tap
+  // detector (useHoverPanel.ts): a tap on Send/Decline/the close X/the
+  // backdrop would collapse the pane (unmounting ChatPane, and the dialog
+  // with it) before the tap's click ever reaches the button, deadlocking the
+  // turn with no way to resolve or even see the pending confirmation again
+  // except by reopening the pane into the same trap. Keeping `sticky` true
+  // for the duration makes useHoverPanel's outside-tap listener a no-op
+  // (it already special-cases sticky), so the tap lands on the dialog instead
+  // of collapsing out from under it. Deliberately no autofocus on mount:
   // the pane mounts on hover, so grabbing focus would steal the keyboard from
   // wherever the user was working and pin the pane open indefinitely.
   useEffect(() => {
-    onStickyChange?.(inputFocused);
-  }, [inputFocused, onStickyChange]);
+    onStickyChange?.(inputFocused || pendingSymphonyConfirmation);
+  }, [inputFocused, pendingSymphonyConfirmation, onStickyChange]);
 
   useEffect(() => () => onStickyChange?.(false), [onStickyChange]);
 
@@ -334,7 +404,7 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
       // suspends here until resolveToolConfirmation is called (ChatPane's
       // dialog below, or chatStore's cancel()/clear() declining it), so
       // nothing past this point runs until then.
-      if (toolName === SYMPHONY_POST_TOOL) {
+      if (isSymphonyPostTool(toolName)) {
         const decision = await useChatStore
           .getState()
           .requestToolConfirmation(serverId, toolName, parameters);
@@ -554,8 +624,8 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
         </div>
       )}
 
-      {pendingToolConfirmation && pendingToolConfirmation.toolName === SYMPHONY_POST_TOOL && (
-        <SymphonyConfirmDialog confirmation={pendingToolConfirmation} />
+      {pendingSymphonyConfirmation && (
+        <SymphonyConfirmDialog confirmation={pendingToolConfirmation!} />
       )}
 
       <div className="chat-input-area">
