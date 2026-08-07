@@ -14,7 +14,7 @@ import {
   CLOCK_CYCLE_PARAM, CLOCK_FACE_PARAM,
   NOTE_TEXT_PARAM, WEBSITE_URL_PARAM,
   NEWS_URL_PARAM, NEWS_USER_PARAM, NEWS_TOKEN_PARAM,
-  SYMPHONY_POD_URL_PARAM, SYMPHONY_STREAM_ID_PARAM, SYMPHONY_MODE_PARAM,
+  SYMPHONY_POD_URL_PARAM, SYMPHONY_STREAM_ID_PARAM, SYMPHONY_MODE_PARAM, SYMPHONY_THEME_PARAM,
   BUILTIN_CLOCK_ID, BUILTIN_NEWS_ID, BUILTIN_NOTE_ID, BUILTIN_WEBSITE_ID, BUILTIN_SYMPHONY_ID,
   findBuiltin, isBuiltinBackend,
 } from "../lib/builtins";
@@ -262,7 +262,12 @@ export default function WidgetCard({ card }: WidgetCardProps) {
           params={{
             pod: String(fetchParams[SYMPHONY_POD_URL_PARAM] ?? ""),
             id: String(fetchParams[SYMPHONY_STREAM_ID_PARAM] ?? ""),
-            pid: String(fetchParams[SYMPHONY_MODE_PARAM] ?? ""),
+            // Not a per-card param: Symphony issues one partner ID per licensed
+            // app, so it belongs in the (not yet built) Symphony settings tab,
+            // not the widget's own params. Empty until that lands.
+            partnerId: "",
+            mode: String(fetchParams[SYMPHONY_MODE_PARAM] ?? ""),
+            theme: String(fetchParams[SYMPHONY_THEME_PARAM] ?? ""),
           }}
         />
       );

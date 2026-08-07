@@ -28,7 +28,9 @@ describe("SymphonyRenderer", () => {
     const props = {
       pod: "example.pod.symphony.com",
       id: "stream123",
-      pid: "partner456",
+      partnerId: "partner456",
+      mode: "dark",
+      theme: "dark",
     };
 
     const { container } = render(
@@ -55,7 +57,7 @@ describe("SymphonyRenderer", () => {
         data={null}
         widgetDef={widgetDef}
         theme="dark"
-        params={{ pod: "test.pod.com", id: "stream1", pid: "pid1" }}
+        params={{ pod: "test.pod.com", id: "stream1", partnerId: "pid1", mode: "dark", theme: "dark" }}
       />
     );
 
@@ -73,7 +75,7 @@ describe("SymphonyRenderer", () => {
         data={null}
         widgetDef={widgetDef}
         theme="dark"
-        params={{ pod: "", id: "", pid: "" }}
+        params={{ pod: "", id: "", partnerId: "", mode: "", theme: "" }}
       />
     );
 
