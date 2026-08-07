@@ -123,10 +123,23 @@ export function markdownToMessageML(markdown: string): string {
 // leading quote neutralizes it the same way spreadsheet apps themselves
 // recommend (RFC 4180 quoting, applied below, is unrelated and doesn't
 // prevent this -- Excel treats a quoted `"=1+1"` cell as a formula too).
+//
+// Sheets trims leading whitespace on import before evaluating a cell, so the
+// decision below is made against the trimmed value -- `"  =1+1"` is just as
+// dangerous as `"=1+1"` once imported.
 const FORMULA_TRIGGER = /^[=+\-@]/;
 
+// A bare numeric literal (`-5`, `+5`, `-1.25`, `1e-3`) is not a
+// formula-injection vector -- spreadsheets parse it as a number, not a
+// formula -- so a leading `+`/`-` on one of these is left unprefixed. `=` and
+// `@` are always prefixed since they only ever introduce a formula.
+const NUMERIC_LITERAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
 function csvEscape(value: string): string {
-  const safe = FORMULA_TRIGGER.test(value) ? `'${value}` : value;
+  const trimmed = value.trim();
+  const needsPrefix =
+    FORMULA_TRIGGER.test(trimmed) && !NUMERIC_LITERAL.test(trimmed);
+  const safe = needsPrefix ? `'${value}` : value;
   return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 

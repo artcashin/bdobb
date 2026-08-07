@@ -40,9 +40,26 @@ describe("markdownToMessageML", () => {
     );
   });
 
+  it("preserves an underscore in a URL even when preceded by a slash, proving the href placeholder actually shields the emphasis passes", () => {
+    // Without the href-placeholder mechanism, the emphasis regexes' "not
+    // preceded by alphanumeric" guard would NOT suppress this: `/` is not
+    // alphanumeric, so `_b_` here would be free to be read as emphasis. The
+    // other link tests above pass with or without the placeholder mechanism
+    // in place, so only this case actually detects its removal.
+    expect(markdownToMessageML("[docs](https://x.com/a/_b_/c)")).toBe(
+      '<messageML><a href="https://x.com/a/_b_/c">docs</a><br/></messageML>'
+    );
+  });
+
   it("does not mangle intraword underscores in plain text as emphasis", () => {
     expect(markdownToMessageML("snake_case_id")).toBe(
       "<messageML>snake_case_id<br/></messageML>"
+    );
+  });
+
+  it("does not treat whitespace-flanked asterisks as emphasis", () => {
+    expect(markdownToMessageML("5 * 3 and 2 * 4")).toBe(
+      "<messageML>5 * 3 and 2 * 4<br/></messageML>"
     );
   });
 
@@ -112,8 +129,31 @@ describe("rowsToCsv", () => {
   it("neutralizes a leading formula-trigger character to prevent CSV formula injection", () => {
     expect(rowsToCsv([{ note: "=1+1" }], null)).toBe("note\r\n'=1+1");
     expect(rowsToCsv([{ note: "@SUM(A1)" }], null)).toBe("note\r\n'@SUM(A1)");
-    expect(rowsToCsv([{ note: "+5" }], null)).toBe("note\r\n'+5");
-    expect(rowsToCsv([{ note: "-5" }], null)).toBe("note\r\n'-5");
+  });
+
+  it("does not prefix a bare numeric literal even when it starts with + or -", () => {
+    // Market data is full of negative change/return/P&L cells; `-5` parses
+    // as a number in a spreadsheet, not a formula, so it must pass through
+    // untouched rather than being coerced to text with a literal apostrophe.
+    expect(rowsToCsv([{ note: "-5" }], null)).toBe("note\r\n-5");
+    expect(rowsToCsv([{ note: "+5" }], null)).toBe("note\r\n+5");
+    expect(rowsToCsv([{ note: "-1.25" }], null)).toBe("note\r\n-1.25");
+    expect(rowsToCsv([{ note: "1e-3" }], null)).toBe("note\r\n1e-3");
+  });
+
+  it("still neutralizes a leading -/+ when the rest of the cell isn't a numeric literal", () => {
+    expect(rowsToCsv([{ note: "-cmd|'/c calc'!A1" }], null)).toBe(
+      "note\r\n'-cmd|'/c calc'!A1"
+    );
+  });
+
+  it("neutralizes a formula trigger hidden behind leading whitespace, since Sheets trims on import before evaluating", () => {
+    expect(rowsToCsv([{ note: "  =1+1" }], null)).toBe("note\r\n'  =1+1");
+    expect(rowsToCsv([{ note: "\t=1+1" }], null)).toBe("note\r\n'\t=1+1");
+  });
+
+  it("applies the quote prefix inside RFC 4180 quoting, not outside it", () => {
+    expect(rowsToCsv([{ note: "=1+1,x" }], null)).toBe('note\r\n"\'=1+1,x"');
   });
 });
 
