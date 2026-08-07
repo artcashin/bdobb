@@ -50,9 +50,15 @@ const NO_GROUPS: ParamGroup[] = [];
  * SymphonyRenderer interpolates `pod` raw into `https://${pod}/embed/...`. A
  * pod URL typed with its scheme already on it, or with a trailing slash,
  * would otherwise double up ("https://https://…") or double-slash the path.
+ *
+ * Trimmed first, and the scheme match is case-insensitive: under the plan's
+ * "origin-pinned URLs" constraint, an untrimmed leading space or an
+ * uppercase `HTTPS://` defeats the strip entirely and produces a request to
+ * the wrong host (e.g. `https://https//host/embed/...`), which is a
+ * misdirected request, not cosmetics (final review, Fix 4).
  */
 function normalizeSymphonyPod(raw: string): string {
-  return raw.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  return raw.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
 }
 
 /**

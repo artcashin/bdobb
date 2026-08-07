@@ -57,7 +57,10 @@ export default function SymphonyTab({ settings, onChange, fieldIds }: SymphonyTa
           />
           <p className="settings-hint">
             HTTP base URL of the Symphony bot bridge. "Send to Symphony" posts widget shares to
-            {"{bridgeUrl}"}/messages.
+            {"{bridgeUrl}"}/messages. Also strengthens Rita's post confirmation gate: with this
+            set, any tool call from an MCP server at the same origin is confirmed even if its name
+            doesn't contain "symphony". Leave it blank and the gate falls back to name-matching
+            only, which a bridge tool named something else (e.g. send_message) can slip past.
           </p>
         </div>
       </div>

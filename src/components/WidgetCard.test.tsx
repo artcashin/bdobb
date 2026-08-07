@@ -702,6 +702,57 @@ describe("WidgetCard built-in widgets", () => {
     );
   });
 
+  // Fix 4 (final review): an uppercase scheme defeated the case-sensitive
+  // strip and produced "https://https//host/embed/..." -- a misdirected
+  // request under the plan's origin-pinned-URLs constraint, not cosmetics.
+  it("strips an uppercase scheme from the pod URL before framing it", () => {
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { podUrl: "HTTPS://my-pod.symphony.com", streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      expect.stringMatching(/^https:\/\/my-pod\.symphony\.com\/embed\//)
+    );
+  });
+
+  it("strips leading/trailing whitespace from the pod URL before framing it", () => {
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { podUrl: "  my-pod.symphony.com  ", streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      expect.stringMatching(/^https:\/\/my-pod\.symphony\.com\/embed\//)
+    );
+  });
+
+  it("strips whitespace, an uppercase scheme, and a trailing slash together", () => {
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { podUrl: "  HTTPS://my-pod.symphony.com/  ", streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      expect.stringMatching(/^https:\/\/my-pod\.symphony\.com\/embed\//)
+    );
+  });
+
   it("passes an empty partnerId when settings.symphonyPartnerId is unset", () => {
     render(
       <WidgetCard

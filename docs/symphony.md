@@ -66,7 +66,7 @@ Three fields, all in Settings → Symphony:
 
 | Field | Setting key | What it's for |
 |---|---|---|
-| **Pod URL** | `symphonyPodUrl` | Default pod host for Symphony cards, e.g. `my-pod.symphony.com` or `develop2.symphony.com`. Used when a card doesn't set its own Pod URL parameter. You can type it with or without a scheme/trailing slash — BDOBB strips both before building the embed URL. |
+| **Pod URL** | `symphonyPodUrl` | Default pod host for Symphony cards, e.g. `https://my-pod.symphony.com` or `https://develop2.symphony.com`. Used when a card doesn't set its own Pod URL parameter. Unlike a card's own Pod URL parameter (below), **this Settings field requires a scheme**: Settings validates it with the same http(s)-URL check as the Rita/Bridge fields, so a bare host is rejected on Save with "Please enter a valid HTTP/HTTPS URL for the Symphony pod." A trailing slash is fine either way — BDOBB strips that (and, for a card's own parameter, the scheme too) before building the embed URL. |
 | **Partner ID** | `symphonyPartnerId` | Sent as the `partnerId` query parameter on every Symphony embed. This is the value from the licensing step above — required for the chat card to load at all; a blank value is still sent as an empty `partnerId` parameter, and it's reasonable to expect Symphony to reject that, though this hasn't been confirmed against a real pod. |
 | **Bridge URL** | `symphonyBridgeUrl` | The `symphony-bridge` container's HTTP base, e.g. `http://<bridge-host>:<port>`. This is **not** the same thing as the bridge's MCP endpoint (see below) — do not put `/mcp` here. |
 

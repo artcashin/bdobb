@@ -9,9 +9,9 @@ import { logError } from "../../lib/logger";
  * between the type, this component, and its call site, and was rolled back
  * for it.
  *
- * `partnerId` is sent verbatim. It is an app-level setting that does not
- * exist yet (Task 5 adds it and wires the real value into the call site);
- * until then callers pass "" and this component does not second-guess that.
+ * `partnerId` is sent verbatim. WidgetCard passes it from
+ * `settings.symphonyPartnerId` (empty string when unset); this component
+ * does not second-guess that value.
  */
 export interface SymphonyParams {
   pod: string;

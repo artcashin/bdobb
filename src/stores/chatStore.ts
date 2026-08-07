@@ -18,12 +18,14 @@ import { loadChat, saveChat, clearChat } from "../lib/persistence";
  * A tool call awaiting the user's yes/no before it is allowed to execute.
  *
  * Generic on `toolName` rather than hardcoded to "post_to_symphony" -- the
- * gate mechanism is store-level plumbing, not Symphony-specific -- but Task 7
- * is the only caller today (ChatPane.tsx's `runAgentTool`, gated on that one
- * tool name). Lives in chatStore rather than ChatPane's local state for the
- * same reason the rest of the turn does: the store owns the turn so it
- * survives ChatPane unmounting on hover-collapse, and a pending confirmation
- * must keep blocking execution even if nobody is looking at the pane.
+ * gate mechanism is store-level plumbing, not Symphony-specific -- but
+ * ChatPane.tsx's `runAgentTool` is the only caller today, gated on two OR'd
+ * triggers: a `/symphony/i` name match, or the call's resolved MCP server
+ * sharing an origin with the configured Symphony bridge. Lives in chatStore
+ * rather than ChatPane's local state for the same reason the rest of the
+ * turn does: the store owns the turn so it survives ChatPane unmounting on
+ * hover-collapse, and a pending confirmation must keep blocking execution
+ * even if nobody is looking at the pane.
  */
 export interface PendingToolConfirmation {
   id: string;

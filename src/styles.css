@@ -377,6 +377,12 @@ input, select, textarea {
 }
 
 /* ---- Symphony post confirmation dialog (Task 7) ---- */
+.symphony-confirm-source {
+  margin: 0 0 8px; font-size: 12px; color: var(--text-dim);
+}
+.symphony-confirm-summary {
+  margin: 0 0 8px; font-size: 14px; color: var(--text);
+}
 .symphony-confirm-warning {
   margin: 8px 0; padding: 8px 10px;
   background: rgba(217, 105, 95, 0.12); border: 1px solid var(--error);
