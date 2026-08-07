@@ -249,23 +249,30 @@ describe("SymphonyRenderer", () => {
       expect(mockInvoke).toHaveBeenCalledTimes(1);
     });
 
-    it("offers an unconditional escape hatch alongside the iframe, so a could-not-determine result is still recoverable", () => {
-      // `refusal` stays null both while the check is pending and when it
-      // never resolves at all (blocked HEAD, VPN-gated pod, unreachable
-      // server) — there is no cross-origin signal to distinguish those from
-      // "confirmed frameable". The hint and the way out must be present in
-      // all of them, not just after a confirmed refusal.
+    it("shows no footer once the preflight positively confirms the pod is frameable", async () => {
+      // The default mock resolves { frameable: true }. A healthy pod's card
+      // is a fixed-layout chat client where the bottom strip is the primary
+      // interaction target (the compose box), so once framing is confirmed
+      // the footer must not sit over it.
       render(<SymphonyRenderer params={baseParams} />);
       act(() => FakeIntersectionObserver.instances[0].fire(true));
+      await act(async () => {
+        await Promise.resolve();
+      });
 
       expect(screen.getByTitle("Symphony")).toBeInTheDocument();
-      expect(screen.getByText(/may refuse to be embedded/i)).toBeInTheDocument();
+      expect(screen.queryByText(/may refuse to be embedded/i)).not.toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: /Open externally/ })
-      ).toBeInTheDocument();
+        screen.queryByRole("button", { name: /Open externally/ })
+      ).not.toBeInTheDocument();
     });
 
     it("keeps the escape hatch usable when the preflight cannot determine an answer", async () => {
+      // `refusal` and `frameable` both stay at their not-yet-confirmed
+      // defaults when the check errors (blocked HEAD, VPN-gated pod,
+      // unreachable server) — there is no cross-origin signal to distinguish
+      // that from "confirmed frameable" other than the preflight's own
+      // answer, so the footer must stay present until that answer is positive.
       mockInvoke.mockImplementation(async () => {
         throw new Error("timed out");
       });
@@ -275,6 +282,8 @@ describe("SymphonyRenderer", () => {
         await Promise.resolve();
       });
 
+      expect(screen.getByTitle("Symphony")).toBeInTheDocument();
+      expect(screen.getByText(/may refuse to be embedded/i)).toBeInTheDocument();
       screen.getByRole("button", { name: /Open externally/ }).click();
       expect(mockOpenUrl).toHaveBeenCalledWith(
         "https://my-pod.symphony.com/embed/index.html?streamId=stream-123&partnerId=&mode=focus&theme=dark&condensed=true"

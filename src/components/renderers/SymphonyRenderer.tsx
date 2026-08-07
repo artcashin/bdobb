@@ -56,6 +56,11 @@ export default function SymphonyRenderer({ params }: SymphonyRendererProps) {
   // while unknown or not yet checked; the iframe renders optimistically in
   // that state and this swaps it out only if the check comes back negative.
   const [refusal, setRefusal] = useState<string | null>(null);
+  // Whether the preflight positively confirmed the pod is frameable. Starts
+  // false (and is reset to false whenever the check re-runs) so the escape
+  // hatch below defaults to showing — it is only hidden once we have an
+  // actual positive answer, not merely the absence of a refusal.
+  const [frameable, setFrameable] = useState(false);
 
   useEffect(() => {
     // Unconfigured cards render the hint below instead of the container div,
@@ -84,13 +89,16 @@ export default function SymphonyRenderer({ params }: SymphonyRendererProps) {
     // checking earlier would fire a network request for cards never scrolled
     // into view, which is exactly what the lazy-loading above exists to avoid.
     setRefusal(null);
+    setFrameable(false);
     if (!visible || !embedUrl) return;
     let cancelled = false;
     invoke<{ frameable: boolean; reason: string }>("check_frame_options", {
       url: embedUrl,
     })
       .then((r) => {
-        if (!cancelled && !r.frameable) setRefusal(r.reason);
+        if (cancelled) return;
+        if (!r.frameable) setRefusal(r.reason);
+        else setFrameable(true);
       })
       // A failed preflight is not evidence of refusal — the pod may be down,
       // or blocking HEAD. Fall through and let the frame try, but the error
@@ -150,28 +158,35 @@ export default function SymphonyRenderer({ params }: SymphonyRendererProps) {
             className="symphony-widget"
             title="Symphony"
           />
-          {/* Unconditional, like IframeRenderer's: a refusal we could not
-              confirm (preflight blocked, pod unreachable, VPN-gated) leaves
-              `refusal` null and the frame simply blank, with no cross-origin
-              signal to detect it. The explanation and the way out have to be
-              present regardless of whether the check ever resolved. */}
-          <div className="iframe-footer">
-            <span className="iframe-hint">
-              Blank? The pod may refuse to be embedded.
-            </span>
-            <button
-              type="button"
-              className="iframe-external"
-              title="Open in your browser"
-              onClick={() => {
-                openUrl(embedUrl).catch((e) =>
-                  logError(`openUrl failed for ${embedUrl}: ${String(e)}`)
-                );
-              }}
-            >
-              Open externally ↗
-            </button>
-          </div>
+          {/* Unlike IframeRenderer's, this footer is conditional: unlike an
+              arbitrary scrollable website, this card is a fixed-layout chat
+              client where the bottom strip is the primary interaction
+              target (the compose box), so it must not sit over a healthy
+              pod. It only appears while the preflight has not positively
+              confirmed the pod is frameable — i.e. still pending, errored,
+              or blocked (preflight blocked, pod unreachable, VPN-gated)
+              leave `refusal` null and the frame simply blank, with no
+              cross-origin signal to detect it, so the explanation and the
+              way out still need to be present in those cases. */}
+          {!frameable && (
+            <div className="iframe-footer">
+              <span className="iframe-hint">
+                Blank? The pod may refuse to be embedded.
+              </span>
+              <button
+                type="button"
+                className="iframe-external"
+                title="Open in your browser"
+                onClick={() => {
+                  openUrl(embedUrl).catch((e) =>
+                    logError(`openUrl failed for ${embedUrl}: ${String(e)}`)
+                  );
+                }}
+              >
+                Open externally ↗
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
