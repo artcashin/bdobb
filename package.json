@@ -8,8 +8,8 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "node scripts/generate-capabilities.mjs && vite",
-    "build": "node scripts/generate-capabilities.mjs && tsc && vite build",
+    "dev": "node scripts/generate-capabilities.mjs && node scripts/fetch-help-content.mjs && vite",
+    "build": "node scripts/generate-capabilities.mjs && node scripts/fetch-help-content.mjs && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest",
@@ -21,6 +21,7 @@
     "test:reference": "OPENBB_REFERENCE=1 vitest run src/test/integration/reference-backend.test.ts",
     "typecheck": "tsc --noEmit",
     "capabilities": "node scripts/generate-capabilities.mjs",
+    "help:fetch": "node scripts/fetch-help-content.mjs",
     "ios:check": "bash scripts/ios.sh check",
     "ios:team": "bash scripts/ios.sh team",
     "ios:init": "bash scripts/ios.sh init",
