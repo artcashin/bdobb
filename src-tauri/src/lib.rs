@@ -1,6 +1,6 @@
 use serde::Serialize;
-use tauri::menu::{Menu, MenuItem, Submenu};
-use tauri::Manager;
+use tauri::menu::{Menu, MenuItem, Submenu, HELP_SUBMENU_ID};
+use tauri::{Manager, WindowEvent};
 
 #[derive(Serialize)]
 pub struct FrameCheck {
@@ -112,9 +112,42 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![check_frameable])
         .setup(|app| {
             let help_item = MenuItem::with_id(app, "help_open", "BDOBB Help", true, None::<&str>)?;
-            let help_menu = Submenu::with_items(app, "Help", true, &[&help_item])?;
-            let menu = Menu::with_items(app, &[&help_menu])?;
+
+            // Build on top of Tauri's auto-installed default menu (Quit, Edit,
+            // Window, View/Fullscreen, Help, etc.) instead of replacing it —
+            // `app.set_menu` with a from-scratch `Menu` would otherwise wipe
+            // out all of those out of the box. `Menu::default()` already
+            // includes a "Help" submenu (empty on macOS, identified by
+            // `HELP_SUBMENU_ID`), so append our item into it rather than
+            // creating a second, duplicate top-level "Help" menu.
+            let menu = Menu::default(app.handle())?;
+            if let Some(help_submenu) = menu
+                .get(HELP_SUBMENU_ID)
+                .and_then(|item| item.as_submenu().cloned())
+            {
+                help_submenu.append(&help_item)?;
+            } else {
+                let help_menu = Submenu::with_items(app, "Help", true, &[&help_item])?;
+                menu.append(&help_menu)?;
+            }
             app.set_menu(menu)?;
+
+            // The "help" window is declared statically (and hidden) in
+            // tauri.conf.json, so it already exists here. Without this
+            // interceptor, Tauri destroys the window on close and
+            // `get_webview_window("help")` would return `None` on every
+            // subsequent menu click, permanently disabling the menu item
+            // until the app restarts. Hide instead of destroy so the same
+            // window instance can always be re-shown.
+            if let Some(help_window) = app.get_webview_window("help") {
+                let help_window_for_close = help_window.clone();
+                help_window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = help_window_for_close.hide();
+                    }
+                });
+            }
 
             let handle = app.handle().clone();
             app.on_menu_event(move |_app, event| {
