@@ -598,6 +598,37 @@ describe("WidgetCard built-in widgets", () => {
     expect(screen.queryByText("New York")).not.toBeInTheDocument();
   });
 
+  it("still renders the vertical digital list for a card saved with no layout param", () => {
+    // Every card saved before this feature has no `layout` key at all; it
+    // must keep rendering the original digital list rather than switching to
+    // the new horizontal analog tiles.
+    const { container } = render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:clock",
+          backendId: "builtin",
+          params: { zones: "America/New_York,Asia/Tokyo" },
+        })}
+      />
+    );
+    expect(container.querySelector(".clock-list")).not.toBeNull();
+    expect(container.querySelector(".clock-gallery")).toBeNull();
+  });
+
+  it("renders horizontal analog tiles when the card requests layout: horizontal", () => {
+    const { container } = render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:clock",
+          backendId: "builtin",
+          params: { zones: "America/New_York,Asia/Tokyo", layout: "horizontal" },
+        })}
+      />
+    );
+    expect(container.querySelector(".clock-gallery")).not.toBeNull();
+    expect(container.querySelectorAll(".clock-tile").length).toBeGreaterThan(0);
+  });
+
   it("frames a website from a card parameter without fetching", () => {
     backendsList = [];
     render(
