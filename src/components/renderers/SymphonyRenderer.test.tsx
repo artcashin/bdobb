@@ -70,6 +70,9 @@ describe("SymphonyRenderer", () => {
     act(() => observer.fire(true));
     expect(observer.disconnected).toBe(true);
     expect(screen.getByTitle("Symphony")).toBeInTheDocument();
+
+    act(() => observer.fire(false));
+    expect(screen.getByTitle("Symphony")).toBeInTheDocument();
   });
 
   it("builds the embed URL from all five params, in the documented order", () => {
@@ -116,11 +119,10 @@ describe("SymphonyRenderer", () => {
   it("applies the Symphony sandbox policy, including allow-same-origin", () => {
     render(<SymphonyRenderer params={baseParams} />);
     act(() => FakeIntersectionObserver.instances[0].fire(true));
-    const sandbox = screen.getByTitle("Symphony").getAttribute("sandbox") ?? "";
-    expect(sandbox).toContain("allow-scripts");
-    expect(sandbox).toContain("allow-same-origin");
-    expect(sandbox).toContain("allow-forms");
-    expect(sandbox).toContain("allow-popups");
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "sandbox",
+      "allow-scripts allow-same-origin allow-forms allow-popups"
+    );
   });
 
   it("shows a hint instead of a broken iframe when pod or id is unset", () => {
