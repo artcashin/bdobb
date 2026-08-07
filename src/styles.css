@@ -1684,6 +1684,15 @@ input, select, textarea {
 .news-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .news-row.highlighted .news-title { color: #d9a75f; }
 .news-time { color: var(--text-dim); font-variant-numeric: tabular-nums; flex: none; }
+.news-favicon {
+  width: 14px; height: 14px; flex: none;
+  border-radius: 2px; /* tidies up unusual/non-square favicons */
+  object-fit: contain;
+  /* .news-row aligns its children on the text baseline, which an <img> has
+     none of (browsers fall back to its own bottom edge) — centering reads
+     better next to the source text's x-height. */
+  align-self: center;
+}
 .news-source { color: var(--accent); flex: none; max-width: 11em; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .news-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

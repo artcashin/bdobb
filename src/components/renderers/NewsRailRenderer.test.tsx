@@ -5,6 +5,12 @@ const openUrl = vi.fn().mockResolvedValue(undefined);
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (...a: unknown[]) => openUrl(...a),
 }));
+
+const logError = vi.fn();
+vi.mock("../../lib/logger", () => ({
+  logError: (...a: unknown[]) => logError(...a),
+}));
+
 // The renderer defaults fetchImpl to the plugin; tests always inject their own.
 vi.mock("@tauri-apps/plugin-http", () => ({
   fetch: vi.fn(() => {
@@ -66,13 +72,21 @@ const SEED = [
   article({ id: 1, title: "First headline", highlighted: true }),
 ];
 
-function okFetch(articles: NewsArticle[] = SEED) {
-  return vi.fn(async () =>
-    new Response(JSON.stringify({ articles, next_cursor: null }), {
+interface FeedFixture {
+  id: number;
+  favicon: string | null;
+}
+
+function okFetch(articles: NewsArticle[] = SEED, feeds: FeedFixture[] = []) {
+  return vi.fn(async (url: string | URL) => {
+    const body = String(url).includes("/api/feeds")
+      ? { feeds }
+      : { articles, next_cursor: null };
+    return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "Content-Type": "application/json" },
-    })
-  ) as unknown as typeof fetch;
+    });
+  }) as unknown as typeof fetch;
 }
 
 function renderRail(over: Partial<Parameters<typeof NewsRailRenderer>[0]> = {}) {
@@ -96,6 +110,7 @@ describe("NewsRailRenderer", () => {
   beforeEach(() => {
     MockWebSocket.instances = [];
     openUrl.mockClear();
+    logError.mockClear();
     vi.stubGlobal("WebSocket", MockWebSocket);
   });
   afterEach(() => {
@@ -200,5 +215,77 @@ describe("NewsRailRenderer", () => {
     expect(screen.getByText(/Set the ticker URL/)).toBeInTheDocument();
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  describe("favicons", () => {
+    it("fetches /api/feeds once on mount with the same auth header as the seed call", async () => {
+      const fetchImpl = okFetch(SEED, [{ id: 1, favicon: "data:image/x-icon;base64,AAA" }]);
+      renderRail({ fetchImpl, token: "tkn-0123456789abcdef0123456789abcdef" });
+      await screen.findByText("Second headline");
+
+      const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      const feedsCall = calls.find(([u]) => String(u).includes("/api/feeds"));
+      expect(feedsCall).toBeDefined();
+      const [calledUrl, init] = feedsCall as [string, RequestInit];
+      expect(calledUrl).toBe("https://openbb.example.ts.net:8088/api/feeds?user=art");
+      expect((init.headers as Record<string, string>).Authorization).toBe(
+        "Bearer tkn-0123456789abcdef0123456789abcdef"
+      );
+      // Called exactly once, matching the seed call's own single-call shape.
+      expect(calls.filter(([u]) => String(u).includes("/api/feeds"))).toHaveLength(1);
+    });
+
+    it("renders the favicon next to the source for a feed that has one", async () => {
+      const fetchImpl = okFetch(SEED, [{ id: 1, favicon: "data:image/x-icon;base64,AAA" }]);
+      renderRail({ fetchImpl });
+      await screen.findByText("Second headline");
+      // SEED's second article (id 1, "First headline") has feed_id: 1 (the
+      // article() factory's default) and should get the icon.
+      const row = screen.getByText("First headline").closest(".news-row")!;
+      const img = row.querySelector(".news-favicon") as HTMLImageElement | null;
+      expect(img).not.toBeNull();
+      expect(img!.src).toBe("data:image/x-icon;base64,AAA");
+      expect(img!.alt).toBe("");
+    });
+
+    it("renders no icon for a feed with a null favicon or an unlisted feed_id", async () => {
+      const fetchImpl = okFetch(SEED, [{ id: 1, favicon: null }]); // feed_id 2 (SEED's other article) is absent entirely
+      renderRail({ fetchImpl });
+      await screen.findByText("Second headline");
+      expect(document.querySelectorAll(".news-favicon")).toHaveLength(0);
+    });
+
+    it("stays fully functional when the feeds fetch fails, logging once and not throwing", async () => {
+      const fetchImpl = vi.fn(async (url: string | URL) => {
+        if (String(url).includes("/api/feeds")) throw new Error("network down");
+        return new Response(JSON.stringify({ articles: SEED, next_cursor: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as unknown as typeof fetch;
+      renderRail({ fetchImpl });
+      // Headlines still work.
+      expect(await screen.findByText("Second headline")).toBeInTheDocument();
+      expect(document.querySelectorAll(".news-favicon")).toHaveLength(0);
+      await waitFor(() => expect(logError).toHaveBeenCalledTimes(1));
+      expect(logError.mock.calls[0][0]).toContain("favicon");
+    });
+
+    it("also logs once (and renders no icon) when the feeds endpoint returns a non-OK status", async () => {
+      const fetchImpl = vi.fn(async (url: string | URL) => {
+        if (String(url).includes("/api/feeds")) {
+          return new Response("", { status: 500 });
+        }
+        return new Response(JSON.stringify({ articles: SEED, next_cursor: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as unknown as typeof fetch;
+      renderRail({ fetchImpl });
+      expect(await screen.findByText("Second headline")).toBeInTheDocument();
+      expect(document.querySelectorAll(".news-favicon")).toHaveLength(0);
+      await waitFor(() => expect(logError).toHaveBeenCalledTimes(1));
+      expect(logError.mock.calls[0][0]).toContain("500");
+    });
   });
 });
