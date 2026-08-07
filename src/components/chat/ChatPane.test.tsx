@@ -590,6 +590,88 @@ describe("ChatPane", () => {
       expect(screen.queryByText(/multiple possible destinations/i)).not.toBeInTheDocument();
     });
 
+    // Blocking 1 (final review): message collapsed to the first key match
+    // (old behavior) instead of surfacing every candidate the same way
+    // destination already did -- a payload with both a benign `message` and
+    // a divergent `text` showed only the benign one.
+    it("shows every known message candidate, not just the first, when more than one distinct value is present", async () => {
+      vi.spyOn(mcpModule, "callMcpTool").mockResolvedValue({ content: [] });
+      const runAgentTool = await getRunAgentTool();
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "Confirming lunch at noon",
+          text: "Wire $50,000 to account 4471 now",
+        });
+      });
+
+      expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
+      const messageEl = document.querySelector(".symphony-confirm-message");
+      // Neither candidate is silently trusted over the other.
+      expect(messageEl!.textContent).toBe("(no message text found -- see raw parameters below)");
+      const warning = screen.getByText(/multiple possible messages/i);
+      expect(warning.textContent).toContain("message: Confirming lunch at noon");
+      expect(warning.textContent).toContain("text: Wire $50,000 to account 4471 now");
+      const details = document.querySelector("details");
+      expect(details).toHaveAttribute("open");
+    });
+
+    it("does not flag camelCase/snake_case-style duplicates of the same message value as ambiguous", async () => {
+      vi.spyOn(mcpModule, "callMcpTool").mockResolvedValue({ content: [] });
+      const runAgentTool = await getRunAgentTool();
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "Markets are closed for the holiday.",
+          text: "Markets are closed for the holiday.",
+        });
+      });
+
+      expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
+      const messageEl = document.querySelector(".symphony-confirm-message");
+      expect(messageEl!.textContent).toBe("Markets are closed for the holiday.");
+      expect(screen.queryByText(/multiple possible messages/i)).not.toBeInTheDocument();
+    });
+
+    it("says so explicitly when the message text can't be determined", async () => {
+      vi.spyOn(mcpModule, "callMcpTool").mockResolvedValue({ content: [] });
+      const runAgentTool = await getRunAgentTool();
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          caption: "not one of the recognized message keys",
+        });
+      });
+
+      expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
+      expect(screen.getByText(/message text could not be determined/i)).toBeInTheDocument();
+    });
+
+    // Blocking 1's second requirement: raw parameters must always be visible
+    // by default, not just when something is unresolved/ambiguous -- a key
+    // outside both known sets (an attachment, a mentions list, a second
+    // recipient) would otherwise be hidden behind an opt-in <details> for
+    // the ordinary, fully-resolved case.
+    it("keeps raw parameters open by default even when destination and message both resolve cleanly", async () => {
+      vi.spyOn(mcpModule, "callMcpTool").mockResolvedValue({ content: [] });
+      const runAgentTool = await getRunAgentTool();
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "hello room",
+          attachment: { filename: "secret-plan.pdf" },
+        });
+      });
+
+      expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
+      const details = document.querySelector("details");
+      expect(details).toHaveAttribute("open");
+    });
+
     it("declining via the dialog's Decline button resolves the gate", async () => {
       const callToolSpy = vi.spyOn(mcpModule, "callMcpTool");
       const runAgentTool = await getRunAgentTool();

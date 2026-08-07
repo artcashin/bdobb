@@ -228,6 +228,31 @@ describe("shareWidgetToSymphony", () => {
     expect(res).toEqual({ target: "Symphony", detail: "HTTP 200" });
   });
 
+  // Blocking 2 (final review): the table/chart branches already throw when
+  // there's nothing to send; note silently degraded to "", producing
+  // <messageML><br/></messageML> -- a real POST to a live room reported as a
+  // green "Symphony: HTTP 200" success. Two ordinary paths reach this: a
+  // registry `markdown` widget in raw view (data is a parsed object, not a
+  // string) and a built-in Note with empty text.
+  it("rejects a note share with non-string data instead of posting an empty message", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 200 }));
+    await expect(
+      shareWidgetToSymphony(
+        { ...base, kind: "note", data: { markdown: "**hi**" } },
+        { fetchImpl: fetchImpl as never }
+      )
+    ).rejects.toThrow(/note data is not text/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects a note share with empty string data instead of posting an empty message", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 200 }));
+    await expect(
+      shareWidgetToSymphony({ ...base, kind: "note", data: "   " }, { fetchImpl: fetchImpl as never })
+    ).rejects.toThrow(/no note text/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("strips a trailing slash on the bridge URL", async () => {
     const fetchImpl = vi.fn(async () => new Response("", { status: 200 }));
     await shareWidgetToSymphony(

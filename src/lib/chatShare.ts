@@ -210,8 +210,16 @@ export async function shareWidgetToSymphony(
   let body: Record<string, unknown>;
 
   if (input.kind === "note") {
-    const markdown = typeof input.data === "string" ? input.data : "";
-    body = { streamId: input.streamId, messageML: markdownToMessageML(markdown) };
+    // Guarded the same way `table`/`chart` are below: silently coercing a
+    // non-string or empty `data` to "" produced `<messageML><br/></messageML>`
+    // -- a real POST to a live room that still reports `Symphony: HTTP 200`
+    // as if it succeeded. Two ordinary paths reach this with non-string or
+    // empty data: a registry `markdown` widget in raw view (WidgetCard.tsx
+    // switches to fetchWidgetData there, so `data` is a parsed object, not a
+    // string) and a built-in Note with empty text.
+    if (typeof input.data !== "string") throw new Error("Symphony: note data is not text");
+    if (!input.data.trim()) throw new Error("Symphony: no note text to send");
+    body = { streamId: input.streamId, messageML: markdownToMessageML(input.data) };
   } else if (input.kind === "table") {
     if (!Array.isArray(input.data) || input.data.length === 0)
       throw new Error("Symphony: no table data to send");

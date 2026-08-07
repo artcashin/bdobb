@@ -27,10 +27,14 @@ import StatusTrail from "./StatusTrail";
  * Rita's Symphony-posting tool, arriving as an ordinary MCP call. It is not
  * declared or discovered here (it comes from whatever MCP server exposes it
  * -- see mcp.ts's assembleTools), so this is the one place BDOBB knows its
- * name: `runAgentTool` below gates any call with this name on user approval
- * before it may run, matching the plan's F2-10 requirement (BDOBB-side gate,
- * not trust in the model) regardless of which server_id it was declared
- * under.
+ * exact name. `runAgentTool` below does NOT gate on this constant alone --
+ * the gate is `isSymphonyPostTool` (a `/symphony/i` name match) OR'd with
+ * `isFromSymphonyBridge` (origin provenance), either of which is enough on
+ * its own. This constant's remaining job is narrower: `SymphonyConfirmDialog`
+ * compares a pending call's tool name against it to decide which of the two
+ * dialog phrasings to show -- the confident "Review and Send" for a genuine
+ * `post_to_symphony` call, or the neutral "Review and Confirm" for anything
+ * else the broader gate also caught.
  */
 const SYMPHONY_POST_TOOL = "post_to_symphony";
 
@@ -99,35 +103,44 @@ function isFromSymphonyBridge(toolUrl: string | undefined, symphonyBridgeUrl: st
  * see `destinationCandidates` below for why picking just the first is wrong. */
 const DESTINATION_KEYS = ["streamId", "destination", "stream_id", "room", "roomId"] as const;
 
+/** The parameter names that might carry the post's message body, in the
+ * order the plan documents them plus a couple of obvious synonyms. Same
+ * multi-candidate treatment as `DESTINATION_KEYS` and for the same reason:
+ * collapsing to the first match (old behavior) could show a benign
+ * `message` while a divergent `text`/`content`/`body` -- the value the
+ * bridge might actually send -- went unreviewed. */
+const MESSAGE_KEYS = ["message", "text", "content", "body"] as const;
+
 /**
- * Best-effort read of a post_to_symphony call's destination/message for the
- * confirmation dialog. The tool is defined by the symphony-bridge service,
- * not by this app, so its exact argument names aren't a contract we own.
+ * Best-effort read of a post_to_symphony call's destination/message
+ * candidates for the confirmation dialog. The tool is defined by the
+ * symphony-bridge service, not by this app, so its exact argument names
+ * aren't a contract we own.
  *
- * `destinationCandidates` deliberately does not collapse to a single value:
- * a payload carrying both a human-readable name (e.g. `room`) and a resolved
- * id (e.g. `streamId`) is ambiguous about which one the bridge actually
- * routes by, and silently showing just the first match (old behavior) could
- * show the user a room that isn't where the message goes. Every known key
- * that is present gets surfaced so the dialog can show all of them; an empty
- * array means none of the known keys matched at all, which the dialog must
- * call out explicitly rather than just... not mentioning a destination.
+ * Neither list deliberately collapses to a single value: a payload carrying
+ * both a human-readable name (e.g. `room`) and a resolved id (e.g.
+ * `streamId`), or both a benign `message` and a divergent `text`, is
+ * ambiguous about which one the bridge actually uses, and silently showing
+ * just the first match (old behavior) could show the user something that
+ * isn't what's actually sent. Every known key that is present gets
+ * surfaced so the dialog can show all of them; an empty array means none of
+ * the known keys matched at all, which the dialog must call out explicitly
+ * rather than just... not mentioning a destination or message.
  */
 function symphonyConfirmationText(parameters: Record<string, unknown>): {
   destinationCandidates: { key: string; value: string }[];
-  message: string | null;
+  messageCandidates: { key: string; value: string }[];
 } {
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
-  const destinationCandidates = DESTINATION_KEYS.flatMap((key) => {
-    const value = str(parameters[key]);
-    return value ? [{ key, value }] : [];
-  });
-  const message =
-    str(parameters.message) ??
-    str(parameters.text) ??
-    str(parameters.content) ??
-    str(parameters.body);
-  return { destinationCandidates, message };
+  const candidatesFor = (keys: readonly string[]) =>
+    keys.flatMap((key) => {
+      const value = str(parameters[key]);
+      return value ? [{ key, value }] : [];
+    });
+  return {
+    destinationCandidates: candidatesFor(DESTINATION_KEYS),
+    messageCandidates: candidatesFor(MESSAGE_KEYS),
+  };
 }
 
 /** Picks the `{type:"select",...}` feature out of `AgentInfo.features` (desk
@@ -212,11 +225,16 @@ function SymphonyConfirmDialog({
       >
         Decline
       </button>
+      {/* No autoFocus (final review, Fix 10): it is inert today only because
+          Modal's own focus effect runs afterward and moves focus to its
+          Close button, which declines. For a gate on a destructive,
+          outward-facing action, focusing the confirm button is the wrong
+          expressed intent regardless -- if Modal's focus management ever
+          changes, Enter would become Send. */}
       <button
         onClick={() => decide("approved")}
         className="backend-btn"
         style={{ padding: "8px 16px", background: "var(--accent)", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
-        autoFocus
       >
         {isConfirmedPost ? "Send" : "Approve"}
       </button>
@@ -242,7 +260,7 @@ function SymphonyConfirmDialog({
     );
   }
 
-  const { destinationCandidates, message } = symphonyConfirmationText(confirmation.parameters);
+  const { destinationCandidates, messageCandidates } = symphonyConfirmationText(confirmation.parameters);
 
   // Exactly one DISTINCT destination value matched -- the unambiguous,
   // common case -- shows it inline. Zero matches, or more than one distinct
@@ -260,12 +278,15 @@ function SymphonyConfirmDialog({
   const destinationUnresolved = destinationCandidates.length === 0;
   const destinationAmbiguous = distinctDestinationValues.length > 1;
   const destinationInline = distinctDestinationValues.length === 1 ? distinctDestinationValues[0] : null;
-  const messageUnresolved = message === null;
-  // The raw-parameters fallback is the only place an unresolved destination
-  // or message can actually be reviewed -- defaulting it open whenever
-  // either is unresolved turns that fallback from an opt-in mitigation into
-  // one the user actually sees.
-  const rawParamsOpenByDefault = destinationUnresolved || destinationAmbiguous || messageUnresolved;
+
+  // Same collapse-by-value treatment for the message body (final review,
+  // Blocking 1): a payload carrying both a benign `message` and a divergent
+  // `text` must not let the benign one win silently -- that was exactly the
+  // gap the destination side was already fixed for, left open here.
+  const distinctMessageValues = [...new Set(messageCandidates.map((c) => c.value))];
+  const messageUnresolved = messageCandidates.length === 0;
+  const messageAmbiguous = distinctMessageValues.length > 1;
+  const messageInline = distinctMessageValues.length === 1 ? distinctMessageValues[0] : null;
 
   return (
     <Modal isOpen onClose={() => decide("declined")} title="Review and Send" footer={footer}>
@@ -288,9 +309,27 @@ function SymphonyConfirmDialog({
         </p>
       )}
       <pre className="symphony-confirm-message">
-        {message ?? "(no message text found -- see raw parameters below)"}
+        {messageInline ?? "(no message text found -- see raw parameters below)"}
       </pre>
-      <details open={rawParamsOpenByDefault}>
+      {messageUnresolved && (
+        <p className="symphony-confirm-warning" role="alert">
+          Message text could not be determined from these parameters — review the raw parameters below.
+        </p>
+      )}
+      {messageAmbiguous && (
+        <p className="symphony-confirm-warning" role="alert">
+          Multiple possible messages were found ({messageCandidates
+            .map((c) => `${c.key}: ${c.value}`)
+            .join(", ")}) and it is not known which one will actually be sent — review the raw parameters below.
+        </p>
+      )}
+      {/* Always open, not just when something is unresolved/ambiguous
+          (Blocking 1, final review): the two known key sets above cover
+          only streamId/destination/... and message/text/..., so any other
+          parameter -- an attachment, a mentions list, a second recipient --
+          would otherwise be hidden behind an opt-in <details> that most
+          users approving a send would never expand. */}
+      <details open>
         <summary>Raw parameters</summary>
         <pre className="symphony-confirm-raw">{JSON.stringify(confirmation.parameters, null, 2)}</pre>
       </details>
