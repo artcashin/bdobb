@@ -1373,6 +1373,47 @@ html, body, #root {
 
 .clock-invalid { padding: 8px 12px; font-size: 11px; color: var(--error); }
 
+/* Horizontal layout: a scrolling row of analog clock tiles. */
+.clock-gallery {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+
+.clock-tile {
+  flex: 0 0 auto;
+  width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.analog-face { width: 80px; height: 80px; flex: none; }
+
+.clock-tile-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  line-height: 1.3;
+  max-width: 96px;
+}
+
+.clock-tile-city {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+.clock-tile-region { font-size: 11px; color: var(--text-dim); opacity: 0.85; }
+.clock-tile-offset {
+  font-size: 9px; color: var(--text-dim); opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
 .note-view {
   /* A flex column, not display:block: a <button> centres its content
      vertically whatever its display is, which left a written note floating in
