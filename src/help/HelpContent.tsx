@@ -58,9 +58,14 @@ export default function HelpContent({ slug, onNavigate }: HelpContentProps) {
     );
   };
 
+  // rewriteImagePaths only rewrites attachment-sourced images to
+  // "./assets/<filename>"; anything else (e.g. an external https:// URL) is
+  // deliberately left untouched. Only resolve through loadAssetUrl for that
+  // exact bundled-asset prefix -- calling it on an arbitrary src throws for
+  // any filename it didn't bundle, which would crash the whole render.
   const HelpImage: Components["img"] = ({ src, alt, ...rest }) => {
-    const filename = src?.split("/").pop();
-    const resolvedSrc = filename ? loadAssetUrl(filename) : src;
+    const resolvedSrc =
+      src?.startsWith("./assets/") ? loadAssetUrl(src.slice("./assets/".length)) : src;
     return <img src={resolvedSrc} alt={alt} {...rest} />;
   };
 

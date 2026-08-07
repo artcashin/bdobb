@@ -8,8 +8,19 @@ vi.mock("./loadContent", () => ({
       ? "# News Ticker\n\n![A screenshot](./assets/news-window.png)\n\nSee [Live Quotes](help://live-quotes) for the tape."
       : slug === "unsafe-link"
         ? "# Unsafe Link\n\n[click me](javascript:alert(1))"
-        : "# Live Quotes\n\nThe tape.",
-  loadAssetUrl: (filename: string) => `/resolved/${filename}`,
+        : slug === "external-image"
+          ? "# External Image\n\n![An external image](https://example.com/pic.png)"
+          : "# Live Quotes\n\nThe tape.",
+  // Mirrors the real loadAssetUrl's behavior: it only knows about bundled
+  // filenames and throws for anything else, so a test that let it resolve
+  // any src unconditionally wouldn't catch HelpImage calling it on a
+  // non-bundled source.
+  loadAssetUrl: (filename: string) => {
+    if (filename !== "news-window.png") {
+      throw new Error(`No bundled help asset "${filename}"`);
+    }
+    return `/resolved/${filename}`;
+  },
 }));
 
 describe("HelpContent", () => {
@@ -36,5 +47,11 @@ describe("HelpContent", () => {
     render(<HelpContent slug="news-ticker" onNavigate={() => {}} />);
     const img = screen.getByRole("img", { name: "A screenshot" });
     expect(img).toHaveAttribute("src", "/resolved/news-window.png");
+  });
+
+  it("passes through a non-bundled image source unchanged instead of crashing", () => {
+    render(<HelpContent slug="external-image" onNavigate={() => {}} />);
+    const img = screen.getByRole("img", { name: "An external image" });
+    expect(img).toHaveAttribute("src", "https://example.com/pic.png");
   });
 });
