@@ -3,12 +3,14 @@ import ErrorBoundary from "./ErrorBoundary";
 import type { CardView, DashboardCard, ParamGroup, ParamValues, WidgetDef } from "../lib/types";
 import { effectiveParams, groupedParamNames, splitParamEdit } from "../lib/paramGroups";
 import { useDashboardStore } from "../stores/dashboardStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import ParamControls from "./ParamControls";
 import { useRegistryStore } from "../stores/registryStore";
 import { useBackendsStore } from "../stores/backendsStore";
 import { fetchWidgetData, fetchWidgetHtml } from "../lib/dataClient";
 import { buildFigureFromRecords, canToggleChart } from "../lib/chartShapes";
 import { logError } from "../lib/logger";
+import { shareWidgetToSymphony, type SymphonyShareKind } from "../lib/chatShare";
 import {
   CLOCK_ZONES_PARAM, CLOCK_TZ_PARAM, CLOCK_HOUR12_PARAM, CLOCK_DEFAULT_ZONES,
   CLOCK_CYCLE_PARAM, CLOCK_FACE_PARAM, CLOCK_LAYOUT_PARAM,
@@ -21,6 +23,7 @@ import {
 import NewsRailRenderer from "./renderers/NewsRailRenderer";
 import ClockRenderer from "./renderers/ClockRenderer";
 import NoteRenderer from "./renderers/NoteRenderer";
+import SymphonyRenderer from "./renderers/SymphonyRenderer";
 import ChartRenderer from "./renderers/ChartRenderer";
 import HtmlRenderer from "./renderers/HtmlRenderer";
 import IframeRenderer from "./renderers/IframeRenderer";
@@ -31,7 +34,6 @@ import LiveGridRenderer from "./renderers/LiveGridRenderer";
 import MetricRenderer from "./renderers/MetricRenderer";
 import RawJsonView from "./renderers/RawJsonView";
 import UnsupportedRenderer from "./renderers/UnsupportedRenderer";
-import SymphonyRenderer from "./renderers/SymphonyRenderer";
 
 export interface WidgetCardProps {
   card: DashboardCard;
@@ -44,7 +46,44 @@ export interface WidgetCardProps {
  */
 const NO_GROUPS: ParamGroup[] = [];
 
+/**
+ * SymphonyRenderer interpolates `pod` raw into `https://${pod}/embed/...`. A
+ * pod URL typed with its scheme already on it, or with a trailing slash,
+ * would otherwise double up ("https://https://…") or double-slash the path.
+ *
+ * Trimmed first, and the scheme match is case-insensitive: under the plan's
+ * "origin-pinned URLs" constraint, an untrimmed leading space or an
+ * uppercase `HTTPS://` defeats the strip entirely and produces a request to
+ * the wrong host (e.g. `https://https//host/embed/...`), which is a
+ * misdirected request, not cosmetics (final review, Fix 4).
+ */
+function normalizeSymphonyPod(raw: string): string {
+  return raw.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+}
+
+/**
+ * Which "Send to Symphony" payload shape (if any) applies to this card.
+ * Only widget types with a defined shape get one: the built-in Note and any
+ * "markdown" widget become a MessageML note, "table" becomes a CSV
+ * attachment, "chart" becomes a PNG attachment. Everything else (html,
+ * iframe, metric, live_grid, pdf, …) has no shape, so the button must not
+ * appear for it.
+ */
+function symphonyShareKind(
+  card: DashboardCard,
+  builtin: boolean,
+  widget: WidgetDef | undefined
+): SymphonyShareKind | null {
+  if (builtin) return card.widgetId === BUILTIN_NOTE_ID ? "note" : null;
+  if (!widget) return null;
+  if (widget.type === "markdown") return "note";
+  if (widget.type === "table") return "table";
+  if (widget.type === "chart") return "chart";
+  return null;
+}
+
 export default function WidgetCard({ card }: WidgetCardProps) {
+  const settings = useSettingsStore((s) => s.settings);
   const removeCard = useDashboardStore((s) => s.removeCard);
   const updateCardView = useDashboardStore((s) => s.updateCardView);
   const updateCardParams = useDashboardStore((s) => s.updateCardParams);
@@ -66,6 +105,8 @@ export default function WidgetCard({ card }: WidgetCardProps) {
   // Edited locally and applied on demand: committing on every keystroke would
   // refetch per character.
   const [draftParams, setDraftParams] = useState<ParamValues>(card.params);
+  const [sendingToSymphony, setSendingToSymphony] = useState(false);
+  const [symphonyStatus, setSymphonyStatus] = useState<string | null>(null);
 
   // A grouped parameter comes from the shared group value, not from the card.
   const fetchParams = useMemo(
@@ -170,6 +211,44 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     loadWidgetData();
   }, [loadWidgetData]);
 
+  const shareKind = symphonyShareKind(card, builtin, widget);
+  const canSendToSymphony = Boolean(settings.symphonyBridgeUrl) && shareKind !== null;
+
+  const handleSendToSymphony = useCallback(() => {
+    if (!shareKind) return;
+    // Asked at send time rather than stored on the card: a generic widget
+    // card (unlike the built-in Symphony card) has no stream/room of its
+    // own, and the target conversation reasonably varies per send. A
+    // cancelled or blank prompt aborts quietly -- same as DashboardTabs'
+    // rename/create prompts -- rather than firing a request that would just
+    // come back as "no stream ID given".
+    const streamId = window.prompt("Symphony stream ID to send to")?.trim();
+    if (!streamId) return;
+
+    const shareData =
+      shareKind === "note" && card.widgetId === BUILTIN_NOTE_ID
+        ? String(card.params[NOTE_TEXT_PARAM] ?? "")
+        : data;
+
+    setSendingToSymphony(true);
+    setSymphonyStatus(null);
+    shareWidgetToSymphony({
+      kind: shareKind,
+      bridgeUrl: settings.symphonyBridgeUrl,
+      streamId,
+      title: widget?.name ?? card.widgetId,
+      data: shareData,
+      columns: widget?.columnsDefs ?? null,
+    })
+      .then((res) => setSymphonyStatus(`${res.target}: ${res.detail}`))
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        logError(`send to symphony failed: ${msg}`);
+        setSymphonyStatus(`Failed: ${msg}`);
+      })
+      .finally(() => setSendingToSymphony(false));
+  }, [shareKind, settings.symphonyBridgeUrl, card, widget, data]);
+
   const applyParams = useCallback(() => {
     // Grouped values belong to the dashboard, not the card. Writing them onto
     // the card would persist a value the group immediately masks, so the
@@ -255,18 +334,19 @@ export default function WidgetCard({ card }: WidgetCardProps) {
       );
     }
     if (card.widgetId === BUILTIN_SYMPHONY_ID) {
+      // The card's own podUrl param wins when set; an app-level default
+      // (settings.symphonyPodUrl) covers the common case of one pod shared
+      // across every Symphony card. Normalization applies to whichever value
+      // wins, so a scheme or trailing slash typed into either source is
+      // stripped the same way.
+      const cardPod = String(fetchParams[SYMPHONY_POD_URL_PARAM] ?? "");
+      const pod = cardPod || settings.symphonyPodUrl;
       return (
         <SymphonyRenderer
-          data={null}
-          widgetDef={widgetDef}
-          theme={theme}
           params={{
-            pod: String(fetchParams[SYMPHONY_POD_URL_PARAM] ?? ""),
+            pod: normalizeSymphonyPod(pod),
             id: String(fetchParams[SYMPHONY_STREAM_ID_PARAM] ?? ""),
-            // Not a per-card param: Symphony issues one partner ID per licensed
-            // app, so it belongs in the (not yet built) Symphony settings tab,
-            // not the widget's own params. Empty until that lands.
-            partnerId: "",
+            partnerId: settings.symphonyPartnerId,
             mode: String(fetchParams[SYMPHONY_MODE_PARAM] ?? ""),
             theme: String(fetchParams[SYMPHONY_THEME_PARAM] ?? ""),
           }}
@@ -414,6 +494,16 @@ export default function WidgetCard({ card }: WidgetCardProps) {
               ↻
             </button>
           )}
+          {canSendToSymphony && (
+            <button
+              title="Send to Symphony"
+              aria-label="Send to Symphony"
+              disabled={sendingToSymphony}
+              onClick={handleSendToSymphony}
+            >
+              📤
+            </button>
+          )}
           <button
             title="Remove widget"
             aria-label="Remove widget"
@@ -429,6 +519,7 @@ export default function WidgetCard({ card }: WidgetCardProps) {
           </button>
         </span>
       </div>
+      {symphonyStatus && <div className="card-symphony-status">{symphonyStatus}</div>}
       {paramsOpen && editableParams.length > 0 && (
         <div className="card-params">
           <ParamControls

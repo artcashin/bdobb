@@ -310,6 +310,11 @@ input, select, textarea {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .card-actions { display: flex; gap: 4px; }
+.card-symphony-status {
+  font-size: 11px; color: var(--text-dim);
+  padding: 2px 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .card-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
 
 /* ---- renderer containers ---- */
@@ -360,6 +365,31 @@ input, select, textarea {
   gap: 12px; padding: 16px 24px;
   border-top: 1px solid var(--border);
   background: rgba(21, 26, 33, 0.5);
+}
+
+/* ---- Symphony post confirmation dialog (Task 7) ---- */
+.symphony-confirm-source {
+  margin: 0 0 8px; font-size: 12px; color: var(--text-dim);
+}
+.symphony-confirm-summary {
+  margin: 0 0 8px; font-size: 14px; color: var(--text);
+}
+.symphony-confirm-warning {
+  margin: 8px 0; padding: 8px 10px;
+  background: rgba(217, 105, 95, 0.12); border: 1px solid var(--error);
+  border-radius: 6px; color: var(--error); font-size: 13px;
+}
+.symphony-confirm-message {
+  white-space: pre-wrap; word-break: break-word;
+  margin: 8px 0; padding: 10px 12px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  font-family: inherit; font-size: 14px;
+}
+.symphony-confirm-raw {
+  white-space: pre-wrap; word-break: break-word;
+  margin: 8px 0 0; padding: 8px 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  font-size: 12px; color: var(--text-dim);
 }
 
 /* ---- param controls ---- */
@@ -1194,6 +1224,19 @@ input, select, textarea {
   flex: none;
 }
 
+/* A pending confirmation (e.g. post_to_symphony's gate) is stronger than a
+   plain unread reply: nothing proceeds until the user opens the pane and
+   decides, so it gets the error color and a pulse instead of a static dot. */
+.rita-needs-decision-dot {
+  background: var(--error);
+  animation: rita-needs-decision-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes rita-needs-decision-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* Per-card parameter editor, between the header and the body. */
 .card-params {
   flex: none;
@@ -1516,6 +1559,9 @@ input, select, textarea {
   max-width: 90%; word-break: break-word;
 }
 .iframe-refused .iframe-external { margin-top: 8px; }
+
+.symphony-container { position: relative; height: 100%; }
+.symphony-widget { width: 100%; height: 100%; border: none; display: block; }
 
 .note-editor {
   width: 100%; height: 100%; resize: none;

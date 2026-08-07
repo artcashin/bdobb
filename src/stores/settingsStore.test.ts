@@ -14,13 +14,8 @@ const saveSettings = vi.fn(async (_s: Settings) => {});
 
 vi.mock("../lib/persistence", () => ({
   DEFAULT_SETTINGS: {
-    ritaUrl: "",
-    theme: "dark",
-    contextSharing: false,
-    mcpServers: [],
-    symphonyPodUrl: "",
-    symphonyPartnerId: "",
-    symphonyBridgeUrl: "",
+    ritaUrl: "", theme: "dark", contextSharing: false, mcpServers: [],
+    symphonyPodUrl: "", symphonyPartnerId: "", symphonyBridgeUrl: "",
   },
   loadSettings: (...a: []) => loadSettings(...a),
   saveSettings: (s: Settings) => saveSettings(s),

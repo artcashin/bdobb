@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildPayload, shareChat, defaultTemplate, type ShareTarget } from "./chatShare";
+import {
+  buildPayload,
+  shareChat,
+  defaultTemplate,
+  shareWidgetToSymphony,
+  type ShareTarget,
+  type SymphonyShareInput,
+} from "./chatShare";
 
 const VARS = {
   markdown: "# Chat\n\nHe said \"hi\" — 50% off\\done",
@@ -197,5 +204,137 @@ describe("shareChat to a folder", () => {
     await expect(
       shareChat({ ...target, url: "" }, VARS, { writeFile: vi.fn() })
     ).rejects.toThrow(/no destination folder/i);
+  });
+});
+
+describe("shareWidgetToSymphony", () => {
+  const base: SymphonyShareInput = {
+    kind: "note",
+    bridgeUrl: "http://localhost:9911",
+    streamId: "stream-1",
+    title: "My note",
+    data: "**hi**",
+  };
+
+  it("posts a note as MessageML to <bridgeUrl>/messages", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 200 }));
+    const res = await shareWidgetToSymphony(base, { fetchImpl: fetchImpl as never });
+
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://localhost:9911/messages");
+    const body = JSON.parse(String(init.body));
+    expect(body.streamId).toBe("stream-1");
+    expect(body.messageML).toBe("<messageML><b>hi</b><br/></messageML>");
+    expect(res).toEqual({ target: "Symphony", detail: "HTTP 200" });
+  });
+
+  // Blocking 2 (final review): the table/chart branches already throw when
+  // there's nothing to send; note silently degraded to "", producing
+  // <messageML><br/></messageML> -- a real POST to a live room reported as a
+  // green "Symphony: HTTP 200" success. Two ordinary paths reach this: a
+  // registry `markdown` widget in raw view (data is a parsed object, not a
+  // string) and a built-in Note with empty text.
+  it("rejects a note share with non-string data instead of posting an empty message", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 200 }));
+    await expect(
+      shareWidgetToSymphony(
+        { ...base, kind: "note", data: { markdown: "**hi**" } },
+        { fetchImpl: fetchImpl as never }
+      )
+    ).rejects.toThrow(/note data is not text/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects a note share with empty string data instead of posting an empty message", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 200 }));
+    await expect(
+      shareWidgetToSymphony({ ...base, kind: "note", data: "   " }, { fetchImpl: fetchImpl as never })
+    ).rejects.toThrow(/no note text/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("strips a trailing slash on the bridge URL", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 200 }));
+    await shareWidgetToSymphony(
+      { ...base, bridgeUrl: "http://localhost:9911/" },
+      { fetchImpl: fetchImpl as never }
+    );
+    const [url] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://localhost:9911/messages");
+  });
+
+  it("sends table rows as a base64 CSV attachment", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 200 }));
+    await shareWidgetToSymphony(
+      {
+        ...base,
+        kind: "table",
+        title: "AAPL quotes",
+        data: [{ symbol: "AAPL", price: 250 }],
+      },
+      { fetchImpl: fetchImpl as never }
+    );
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body.attachment.contentType).toBe("text/csv");
+    expect(body.attachment.filename).toMatch(/\.csv$/);
+    expect(atob(body.attachment.data)).toBe("symbol,price\r\nAAPL,250");
+  });
+
+  it("rejects a table share with non-array data", async () => {
+    await expect(
+      shareWidgetToSymphony({ ...base, kind: "table", data: { not: "an array" } })
+    ).rejects.toThrow(/no table data/i);
+  });
+
+  it("rejects a table share with an empty array instead of posting a 0-byte attachment", async () => {
+    await expect(
+      shareWidgetToSymphony({ ...base, kind: "table", data: [] })
+    ).rejects.toThrow(/no table data/i);
+  });
+
+  it("sends chart data as a PNG attachment via the injected renderer", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 200 }));
+    const renderChartPng = vi.fn(async () => ({ base64: "QUJD", mimeType: "image/png" }));
+    await shareWidgetToSymphony(
+      { ...base, kind: "chart", title: "Price chart", data: { data: [], layout: {} } },
+      { fetchImpl: fetchImpl as never, renderChartPng }
+    );
+    expect(renderChartPng).toHaveBeenCalledWith({ data: [], layout: {} });
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body.attachment).toEqual({
+      filename: "price-chart.png",
+      contentType: "image/png",
+      data: "QUJD",
+    });
+  });
+
+  it("falls back to the default Plotly-based chart renderer when none is injected", async () => {
+    // No renderChartPng dep given, and the data has no recognizable chart
+    // shape -- proves the default renderer actually ran rather than being
+    // silently skipped.
+    await expect(
+      shareWidgetToSymphony({ ...base, kind: "chart", data: { nonsense: true } })
+    ).rejects.toThrow(/no chart data/i);
+  });
+
+  it("rejects when no bridge URL is configured", async () => {
+    await expect(
+      shareWidgetToSymphony({ ...base, bridgeUrl: "" })
+    ).rejects.toThrow(/bridge url/i);
+  });
+
+  it("rejects when no stream ID is given", async () => {
+    await expect(
+      shareWidgetToSymphony({ ...base, streamId: "" })
+    ).rejects.toThrow(/stream id/i);
+  });
+
+  it("surfaces the response body on a failed post", async () => {
+    const fetchImpl = vi.fn(async () => new Response("bot not in room", { status: 403 }));
+    await expect(
+      shareWidgetToSymphony(base, { fetchImpl: fetchImpl as never })
+    ).rejects.toThrow(/403.*bot not in room/s);
   });
 });

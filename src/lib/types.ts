@@ -180,9 +180,12 @@ export interface Settings {
   theme: "dark";
   contextSharing: boolean;
   mcpServers: McpServerConfig[];
-  symphonyPodUrl: string;
-  symphonyPartnerId: string;
-  symphonyBridgeUrl: string;
   /** Places a conversation can be sent (Tolaria, Notion, a webhook…). */
   shareTargets?: ShareTarget[];
+  /** Default Symphony pod base URL, used when a card's own `podUrl` param is empty. */
+  symphonyPodUrl: string;
+  /** Sent as the `partnerId` query param on every Symphony embed. */
+  symphonyPartnerId: string;
+  /** HTTP base URL of the Symphony bot bridge; widget shares are POSTed to `{symphonyBridgeUrl}/messages`. */
+  symphonyBridgeUrl: string;
 }

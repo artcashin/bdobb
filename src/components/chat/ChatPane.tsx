@@ -6,6 +6,7 @@ import { useDashboardStore } from "../../stores/dashboardStore";
 import { useBackendsStore } from "../../stores/backendsStore";
 import { useRegistryStore } from "../../stores/registryStore";
 import { useChatStore } from "../../stores/chatStore";
+import type { PendingToolConfirmation } from "../../stores/chatStore";
 import { buildWidgetRefs, fetchAgentsJson, makeWidgetDataFetcher } from "../../lib/agent/agentClient";
 import { assembleTools, callMcpTool } from "../../lib/agent/mcp";
 import { LOCAL_TOOLS, LOCAL_TOOL_SERVER_ID, executeLocalTool } from "../../lib/agent/localTools";
@@ -17,10 +18,130 @@ import { shareChat } from "../../lib/chatShare";
 import { writeTextFile, mkdir } from "@tauri-apps/plugin-fs";
 import { logError } from "../../lib/logger";
 import { safeUrl } from "../../lib/safeUrl";
+import Modal from "../Modal";
 
 import ChatMessages from "./ChatMessages";
 import StatusTrail from "./StatusTrail";
-import Modal from "../Modal";
+
+/**
+ * Rita's Symphony-posting tool, arriving as an ordinary MCP call. It is not
+ * declared or discovered here (it comes from whatever MCP server exposes it
+ * -- see mcp.ts's assembleTools), so this is the one place BDOBB knows its
+ * exact name. `runAgentTool` below does NOT gate on this constant alone --
+ * the gate is `isSymphonyPostTool` (a `/symphony/i` name match) OR'd with
+ * `isFromSymphonyBridge` (origin provenance), either of which is enough on
+ * its own. This constant's remaining job is narrower: `SymphonyConfirmDialog`
+ * compares a pending call's tool name against it to decide which of the two
+ * dialog phrasings to show -- the confident "Review and Send" for a genuine
+ * `post_to_symphony` call, or the neutral "Review and Confirm" for anything
+ * else the broader gate also caught.
+ */
+const SYMPHONY_POST_TOOL = "post_to_symphony";
+
+/**
+ * Anything that plausibly IS post_to_symphony, not just an exact string match.
+ * A bridge advertising different casing (`postToSymphony`) or some other
+ * `*symphony*` variant this app has never seen must still hit the gate --
+ * silently executing an unrecognized variant would be a fail-OPEN bug, and
+ * over-prompting (gating something that turns out to be harmless) is the safe
+ * direction to err in here, under-prompting is not.
+ *
+ * This is a NAME heuristic, and a pure name heuristic cannot close the gate
+ * against a tool that simply isn't named anything like "symphony" --
+ * `send_message`, `post_message`, whatever the bridge's author happened to
+ * call it. `isFromSymphonyBridge` below is a second, independent trigger
+ * (OR'd against this one at the `runAgentTool` call site) for exactly that
+ * gap: provenance, not name.
+ */
+const SYMPHONY_TOOL_PATTERN = /symphony/i;
+
+/** Name-only half of the gate: true for anything that plausibly IS
+ * post_to_symphony by name. `SYMPHONY_TOOL_PATTERN` already matches
+ * `post_to_symphony` itself (and every case variant of it), so a separate
+ * `=== SYMPHONY_POST_TOOL` branch here would be dead code -- wholly
+ * subsumed by the regex, not an independent check -- hence just the one. */
+function isSymphonyPostTool(toolName: string): boolean {
+  return SYMPHONY_TOOL_PATTERN.test(toolName);
+}
+
+/**
+ * Provenance half of the gate: true when `toolUrl` -- the resolved MCP
+ * server URL a call actually arrived from -- shares an origin with the
+ * configured Symphony bridge (`settings.symphonyBridgeUrl`). Closes the gap
+ * `isSymphonyPostTool` cannot: a bridge tool named `send_message` never
+ * matches `/symphony/i`, but if it is served by the bridge itself it is
+ * still a Symphony post and must still be gated.
+ *
+ * Compared by origin, not full-string equality: `symphonyBridgeUrl` is the
+ * bridge's HTTP base (chatShare.ts posts to `${bridgeUrl}/messages`,
+ * SymphonyTab.tsx hints `http://localhost:PORT`), while an MCP tool's `url`
+ * is that same bridge's `/mcp` endpoint, configured separately in the MCP
+ * settings tab -- the two are never string-equal in a real install even
+ * though they name the same server. `URL.origin` also normalizes host/scheme
+ * casing, so this subsumes what would otherwise be a separate
+ * case-sensitivity bug. Wrapped in try/catch so an unparseable or empty
+ * value yields `false` rather than throwing.
+ *
+ * OR'd with the name check at the call site, never AND'd and never a
+ * replacement for it, so this can only ADD gating, never remove it -- a
+ * false-positive match here costs one extra confirmation prompt, not a
+ * missed gate. That is also why it is fine for this signal to be softer
+ * than an exact name match: an unset or empty bridge URL matches nothing.
+ */
+function isFromSymphonyBridge(toolUrl: string | undefined, symphonyBridgeUrl: string): boolean {
+  if (!toolUrl || !symphonyBridgeUrl.trim()) return false;
+  try {
+    return new URL(toolUrl).origin === new URL(symphonyBridgeUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+/** The parameter names that might carry the post's destination, in the order
+ * the plan documents them ("streamId or saved-destination name", spec F2-8)
+ * plus a couple of obvious synonyms. Order here is display order only now --
+ * see `destinationCandidates` below for why picking just the first is wrong. */
+const DESTINATION_KEYS = ["streamId", "destination", "stream_id", "room", "roomId"] as const;
+
+/** The parameter names that might carry the post's message body, in the
+ * order the plan documents them plus a couple of obvious synonyms. Same
+ * multi-candidate treatment as `DESTINATION_KEYS` and for the same reason:
+ * collapsing to the first match (old behavior) could show a benign
+ * `message` while a divergent `text`/`content`/`body` -- the value the
+ * bridge might actually send -- went unreviewed. */
+const MESSAGE_KEYS = ["message", "text", "content", "body"] as const;
+
+/**
+ * Best-effort read of a post_to_symphony call's destination/message
+ * candidates for the confirmation dialog. The tool is defined by the
+ * symphony-bridge service, not by this app, so its exact argument names
+ * aren't a contract we own.
+ *
+ * Neither list deliberately collapses to a single value: a payload carrying
+ * both a human-readable name (e.g. `room`) and a resolved id (e.g.
+ * `streamId`), or both a benign `message` and a divergent `text`, is
+ * ambiguous about which one the bridge actually uses, and silently showing
+ * just the first match (old behavior) could show the user something that
+ * isn't what's actually sent. Every known key that is present gets
+ * surfaced so the dialog can show all of them; an empty array means none of
+ * the known keys matched at all, which the dialog must call out explicitly
+ * rather than just... not mentioning a destination or message.
+ */
+function symphonyConfirmationText(parameters: Record<string, unknown>): {
+  destinationCandidates: { key: string; value: string }[];
+  messageCandidates: { key: string; value: string }[];
+} {
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
+  const candidatesFor = (keys: readonly string[]) =>
+    keys.flatMap((key) => {
+      const value = str(parameters[key]);
+      return value ? [{ key, value }] : [];
+    });
+  return {
+    destinationCandidates: candidatesFor(DESTINATION_KEYS),
+    messageCandidates: candidatesFor(MESSAGE_KEYS),
+  };
+}
 
 /** Picks the `{type:"select",...}` feature out of `AgentInfo.features` (desk
  * ChatPane.tsx), e.g. agents.json's "model" picker. */
@@ -71,6 +192,151 @@ export interface ChatPaneProps {
 const NO_TARGETS: NonNullable<Settings["shareTargets"]> = [];
 const NO_MCP: Settings["mcpServers"] = [];
 
+/**
+ * The human confirmation gate's UI: shows what Rita is about to post to
+ * Symphony and lets the user approve or decline before it is sent.
+ */
+function SymphonyConfirmDialog({
+  confirmation,
+}: {
+  confirmation: PendingToolConfirmation;
+}) {
+  const decide = (decision: "approved" | "declined") =>
+    useChatStore.getState().resolveToolConfirmation(confirmation.id, decision);
+
+  // The gate that opened this dialog fires on two independent OR'd triggers
+  // (isSymphonyPostTool / isFromSymphonyBridge, both above runAgentTool): a
+  // name match, or the call simply arriving from the configured Symphony
+  // bridge server regardless of name. Only the exact, known tool name is
+  // confident enough to support the "wants to post this message" phrasing
+  // and the destination/message parsing that goes with it -- everything
+  // else the broadened matcher now also catches (symphony_list_rooms,
+  // get_symphony_presence, a bridge tool actually named send_message, ...)
+  // gets neutral phrasing naming the real tool and server instead, so the
+  // dialog never claims to know a destination or message it never parsed.
+  const isConfirmedPost = confirmation.toolName.toLowerCase() === SYMPHONY_POST_TOOL;
+
+  const footer = (
+    <>
+      <button
+        onClick={() => decide("declined")}
+        className="backend-btn"
+        style={{ color: "var(--text)", padding: "8px 16px" }}
+      >
+        Decline
+      </button>
+      {/* No autoFocus (final review, Fix 10): it is inert today only because
+          Modal's own focus effect runs afterward and moves focus to its
+          Close button, which declines. For a gate on a destructive,
+          outward-facing action, focusing the confirm button is the wrong
+          expressed intent regardless -- if Modal's focus management ever
+          changes, Enter would become Send. */}
+      <button
+        onClick={() => decide("approved")}
+        className="backend-btn"
+        style={{ padding: "8px 16px", background: "var(--accent)", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
+      >
+        {isConfirmedPost ? "Send" : "Approve"}
+      </button>
+    </>
+  );
+
+  if (!isConfirmedPost) {
+    // Neutral case: the tool name/server are all this dialog actually knows,
+    // so that's all it claims. No destination, no message, and critically no
+    // "Destination could not be determined" alert -- that alert asserts a
+    // destination was expected in the first place, which is only true for
+    // the genuine post_to_symphony case handled below.
+    return (
+      <Modal isOpen onClose={() => decide("declined")} title="Review and Confirm" footer={footer}>
+        <p className="symphony-confirm-summary">
+          Rita wants to run <code>{confirmation.toolName}</code> on <code>{confirmation.serverId}</code>.
+        </p>
+        <details open>
+          <summary>Raw parameters</summary>
+          <pre className="symphony-confirm-raw">{JSON.stringify(confirmation.parameters, null, 2)}</pre>
+        </details>
+      </Modal>
+    );
+  }
+
+  const { destinationCandidates, messageCandidates } = symphonyConfirmationText(confirmation.parameters);
+
+  // Exactly one DISTINCT destination value matched -- the unambiguous,
+  // common case -- shows it inline. Zero matches, or more than one distinct
+  // value, are both cases where a single parenthetical would either be
+  // missing (silently) or arbitrarily pick one of several candidates that
+  // may not agree on where the bridge actually routes the post, so both get
+  // their own explicit, non-collapsed callout instead.
+  //
+  // Collapsed by VALUE, not by candidate: a payload carrying both `streamId`
+  // and `stream_id` set to the same value is one destination named twice (a
+  // camelCase/snake_case duplicate), not two candidate destinations -- Fix 3
+  // (Task 7 review). Deciding ambiguity on the raw candidate count would
+  // raise a false "multiple possible destinations" alarm for that case.
+  const distinctDestinationValues = [...new Set(destinationCandidates.map((c) => c.value))];
+  const destinationUnresolved = destinationCandidates.length === 0;
+  const destinationAmbiguous = distinctDestinationValues.length > 1;
+  const destinationInline = distinctDestinationValues.length === 1 ? distinctDestinationValues[0] : null;
+
+  // Same collapse-by-value treatment for the message body (final review,
+  // Blocking 1): a payload carrying both a benign `message` and a divergent
+  // `text` must not let the benign one win silently -- that was exactly the
+  // gap the destination side was already fixed for, left open here.
+  const distinctMessageValues = [...new Set(messageCandidates.map((c) => c.value))];
+  const messageUnresolved = messageCandidates.length === 0;
+  const messageAmbiguous = distinctMessageValues.length > 1;
+  const messageInline = distinctMessageValues.length === 1 ? distinctMessageValues[0] : null;
+
+  return (
+    <Modal isOpen onClose={() => decide("declined")} title="Review and Send" footer={footer}>
+      <p className="symphony-confirm-source">
+        <code>{confirmation.toolName}</code> on <code>{confirmation.serverId}</code>
+      </p>
+      <p className="symphony-confirm-summary">
+        Rita wants to post this message to Symphony{destinationInline ? ` (${destinationInline})` : ""}:
+      </p>
+      {destinationUnresolved && (
+        <p className="symphony-confirm-warning" role="alert">
+          Destination could not be determined from these parameters — review the raw parameters below.
+        </p>
+      )}
+      {destinationAmbiguous && (
+        <p className="symphony-confirm-warning" role="alert">
+          Multiple possible destinations were found ({destinationCandidates
+            .map((c) => `${c.key}: ${c.value}`)
+            .join(", ")}) and it is not known which one the bridge will use — review the raw parameters below.
+        </p>
+      )}
+      <pre className="symphony-confirm-message">
+        {messageInline ?? "(no message text found -- see raw parameters below)"}
+      </pre>
+      {messageUnresolved && (
+        <p className="symphony-confirm-warning" role="alert">
+          Message text could not be determined from these parameters — review the raw parameters below.
+        </p>
+      )}
+      {messageAmbiguous && (
+        <p className="symphony-confirm-warning" role="alert">
+          Multiple possible messages were found ({messageCandidates
+            .map((c) => `${c.key}: ${c.value}`)
+            .join(", ")}) and it is not known which one will actually be sent — review the raw parameters below.
+        </p>
+      )}
+      {/* Always open, not just when something is unresolved/ambiguous
+          (Blocking 1, final review): the two known key sets above cover
+          only streamId/destination/... and message/text/..., so any other
+          parameter -- an attachment, a mentions list, a second recipient --
+          would otherwise be hidden behind an opt-in <details> that most
+          users approving a send would never expand. */}
+      <details open>
+        <summary>Raw parameters</summary>
+        <pre className="symphony-confirm-raw">{JSON.stringify(confirmation.parameters, null, 2)}</pre>
+      </details>
+    </Modal>
+  );
+}
+
 /** The opening question, used as a title when sending to another app. */
 function firstPrompt(messages: ChatMessage[]): string | null {
   const first = messages.find((m) => m.role === "human");
@@ -94,7 +360,7 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
   const error = useChatStore((s) => s.error);
   const agentOffline = useChatStore((s) => s.agentOffline);
   const calls = useChatStore((s) => s.calls);
-  const symphonyConfirmation = useChatStore((s) => s.symphonyConfirmation);
+  const pendingToolConfirmation = useChatStore((s) => s.pendingToolConfirmation);
   const [exported, setExported] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const shareTargets = useSettingsStore((s) => s.settings?.shareTargets ?? NO_TARGETS);
@@ -111,6 +377,10 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
   const ritaUrl = useSettingsStore((s) => s.settings?.ritaUrl || DEFAULT_RITA_URL);
   const contextSharing = useSettingsStore((s) => s.settings?.contextSharing ?? false);
   const mcpServers = useSettingsStore((s) => s.settings?.mcpServers ?? NO_MCP);
+  // Fix 1's provenance trigger: the bridge's own URL, compared against a
+  // call's resolved server URL in runAgentTool below. Empty when unset, in
+  // which case isFromSymphonyBridge never matches anything.
+  const symphonyBridgeUrl = useSettingsStore((s) => s.settings?.symphonyBridgeUrl || "");
   const dashboards = useDashboardStore((s) => s.dashboards);
   const activeId = useDashboardStore((s) => s.activeId);
   const currentDashboard = dashboards.find((d) => d.id === activeId) ?? null;
@@ -156,12 +426,38 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Only focus holds the pane open now. Deliberately no autofocus on mount:
+  // The dialog below is what actually renders for a pending confirmation --
+  // this mirrors that same gate so "is the confirmation dialog showing" and
+  // "should the pane refuse to auto-collapse" never disagree.
+  //
+  // A plain non-null check, not a re-derivation of the gate's own name/
+  // provenance conditions: `pendingToolConfirmation` is only ever set by
+  // `requestToolConfirmation`, and the only caller of that is the gate in
+  // `runAgentTool` below. Its mere presence already means a call was gated
+  // by one of the gate's two OR'd triggers. Re-checking `isSymphonyPostTool`
+  // here (the old code did) would silently miss a call gated on provenance
+  // alone (Fix 1: a bridge tool not named anything like "symphony"),
+  // leaving `runAgentTool` suspended on a confirmation the dialog never
+  // renders and the pane never holds open for -- a stuck, invisible gate.
+  const pendingSymphonyConfirmation = pendingToolConfirmation !== null;
+
+  // Focus holds the pane open, and so does an unresolved Symphony
+  // confirmation. Without the latter, the confirmation dialog -- portalled to
+  // document.body by Modal, so it sits outside the pane's own DOM subtree --
+  // gets misread as "tapped outside" by the pane's coarse-pointer outside-tap
+  // detector (useHoverPanel.ts): a tap on Send/Decline/the close X/the
+  // backdrop would collapse the pane (unmounting ChatPane, and the dialog
+  // with it) before the tap's click ever reaches the button, deadlocking the
+  // turn with no way to resolve or even see the pending confirmation again
+  // except by reopening the pane into the same trap. Keeping `sticky` true
+  // for the duration makes useHoverPanel's outside-tap listener a no-op
+  // (it already special-cases sticky), so the tap lands on the dialog instead
+  // of collapsing out from under it. Deliberately no autofocus on mount:
   // the pane mounts on hover, so grabbing focus would steal the keyboard from
   // wherever the user was working and pin the pane open indefinitely.
   useEffect(() => {
-    onStickyChange?.(inputFocused);
-  }, [inputFocused, onStickyChange]);
+    onStickyChange?.(inputFocused || pendingSymphonyConfirmation);
+  }, [inputFocused, pendingSymphonyConfirmation, onStickyChange]);
 
   useEffect(() => () => onStickyChange?.(false), [onStickyChange]);
 
@@ -229,6 +525,14 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
     // dropped if a fat MCP server eats the budget.
     const tools = [...LOCAL_TOOLS, ...(mcpTools ?? [])];
 
+    // Resolves a server_id to the MCP server URL it was actually discovered
+    // under this turn (undefined for LOCAL_TOOL_SERVER_ID and any other id
+    // assembleTools didn't produce). Shared by the gate's provenance check
+    // below and the real MCP dispatch further down, so there is exactly one
+    // place that decides what URL a server_id maps to.
+    const findMcpServerUrl = (id: string): string | undefined =>
+      (mcpTools ?? []).find((t) => t.server_id === id)?.url;
+
     /**
      * Runs whatever the agent invoked. Rita wraps every declared tool in
      * execute_agent_tool and names the server it was declared under, so the
@@ -240,10 +544,32 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
       toolName: string,
       parameters: Record<string, unknown>
     ) => {
-      if (toolName === "post_to_symphony") {
-        const confirmation = useChatStore.getState().symphonyConfirmation;
-        if (confirmation && !confirmation.confirmed) {
-          return null;
+      // Human confirmation gate (plan F2-10): a Symphony post must never
+      // execute before the user approves it, regardless of which server_id
+      // it arrived under. Two independent triggers are OR'd together: a name
+      // match (isSymphonyPostTool) and a provenance match
+      // (isFromSymphonyBridge, catching a bridge tool named something that
+      // doesn't mention "symphony" at all, e.g. `send_message`) -- a name
+      // heuristic alone fails OPEN for exactly that case. Checked before any
+      // dispatch below -- including the local-tool branch -- so there is no
+      // path from a discovered Symphony call to execution that skips this.
+      // The await suspends here until resolveToolConfirmation is called
+      // (ChatPane's dialog below, or chatStore's cancel()/clear() declining
+      // it), so nothing past this point runs until then.
+      if (
+        isSymphonyPostTool(toolName) ||
+        isFromSymphonyBridge(findMcpServerUrl(serverId), symphonyBridgeUrl)
+      ) {
+        const decision = await useChatStore
+          .getState()
+          .requestToolConfirmation(serverId, toolName, parameters);
+        if (decision === "declined") {
+          return {
+            content:
+              "The user declined to approve this Symphony message; it was not sent. " +
+              "Do not send it again unless the user explicitly asks.",
+            isError: true,
+          };
         }
       }
 
@@ -261,7 +587,7 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
         });
       }
 
-      const url = (mcpTools ?? []).find((t) => t.server_id === serverId)?.url;
+      const url = findMcpServerUrl(serverId);
       if (!url) return null;
       try {
         const res = await callMcpTool(url, toolName, parameters);
@@ -453,40 +779,8 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
         </div>
       )}
 
-      {symphonyConfirmation && (
-        <Modal
-          isOpen={true}
-          onClose={() => {
-            useChatStore.getState().setSymphonyConfirmation(undefined);
-          }}
-          title="Confirm Symphony Message"
-        >
-          <p>Send the following message to Symphony?</p>
-          <pre>{JSON.stringify(symphonyConfirmation.input, null, 2)}</pre>
-          <div className="modal-footer">
-            <button
-              type="button"
-              className="chat-send-btn"
-              onClick={() => {
-                useChatStore.getState().setSymphonyConfirmation({
-                  toolName: symphonyConfirmation.toolName,
-                  input: symphonyConfirmation.input,
-                  confirmed: true,
-                });
-              }}
-            >
-              Confirm
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                useChatStore.getState().setSymphonyConfirmation(undefined);
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </Modal>
+      {pendingSymphonyConfirmation && (
+        <SymphonyConfirmDialog confirmation={pendingToolConfirmation!} />
       )}
 
       <div className="chat-input-area">

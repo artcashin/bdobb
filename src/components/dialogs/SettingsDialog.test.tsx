@@ -22,6 +22,9 @@ const baseSettings = {
   contextSharing: true,
   mcpServers: [{ id: "mcp-1", url: "http://localhost:7769/mcp", enabled: true }],
   shareTargets: [],
+  symphonyPodUrl: "https://my-pod.symphony.com",
+  symphonyPartnerId: "partner-9",
+  symphonyBridgeUrl: "http://localhost:9100",
 };
 
 const update = vi.fn(async () => {});
@@ -116,10 +119,12 @@ describe("SettingsDialog", () => {
   });
 
   describe("tabs", () => {
-    it("shows four tabs and opens on Rita", async () => {
+    it("shows five tabs and opens on Rita", async () => {
       await renderOpen();
       const tabs = screen.getAllByRole("tab");
-      expect(tabs.map((t) => t.textContent)).toEqual(["Rita", "MCP", "Appearance", "Logs", "Symphony"]);
+      expect(tabs.map((t) => t.textContent)).toEqual([
+        "Rita", "MCP", "Appearance", "Symphony", "Logs",
+      ]);
       expect(screen.getByRole("tab", { name: "Rita" })).toHaveAttribute("aria-selected", "true");
     });
 
@@ -167,9 +172,9 @@ describe("SettingsDialog", () => {
       fireEvent.keyDown(rita, { key: "ArrowRight" });
       expect(screen.getByRole("tab", { name: "MCP" })).toHaveAttribute("aria-selected", "true");
       fireEvent.keyDown(screen.getByRole("tab", { name: "MCP" }), { key: "End" });
-      expect(screen.getByRole("tab", { name: "Symphony" })).toHaveAttribute("aria-selected", "true");
-      fireEvent.keyDown(screen.getByRole("tab", { name: "Symphony" }), { key: "ArrowLeft" });
       expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true");
+      fireEvent.keyDown(screen.getByRole("tab", { name: "Logs" }), { key: "ArrowLeft" });
+      expect(screen.getByRole("tab", { name: "Symphony" })).toHaveAttribute("aria-selected", "true");
       // Landing on Logs mounts its async load effect; let it settle so the
       // test doesn't finish with a state update outside of act().
       await waitFor(() => expect(readLogTail).toHaveBeenCalled());
@@ -181,6 +186,79 @@ describe("SettingsDialog", () => {
       expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument();
       fireEvent.click(screen.getByRole("tab", { name: "MCP" }));
       expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument();
+    });
+  });
+
+  describe("Symphony tab", () => {
+    it("shows the three Symphony fields with their current values", async () => {
+      await renderOpen();
+      fireEvent.click(screen.getByRole("tab", { name: "Symphony" }));
+      expect(screen.getByLabelText("Pod URL")).toHaveValue("https://my-pod.symphony.com");
+      expect(screen.getByLabelText("Partner ID")).toHaveValue("partner-9");
+      expect(screen.getByLabelText("Bridge URL")).toHaveValue("http://localhost:9100");
+    });
+
+    it("saves edits made on the Symphony tab", async () => {
+      await renderOpen();
+      fireEvent.click(screen.getByRole("tab", { name: "Symphony" }));
+      fireEvent.change(screen.getByLabelText("Pod URL"), {
+        target: { value: "https://new-pod.symphony.com" },
+      });
+      fireEvent.change(screen.getByLabelText("Partner ID"), {
+        target: { value: "partner-42" },
+      });
+      fireEvent.change(screen.getByLabelText("Bridge URL"), {
+        target: { value: "http://localhost:9200" },
+      });
+      fireEvent.click(screen.getByText("Save Settings"));
+      await waitFor(() =>
+        expect(update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            symphonyPodUrl: "https://new-pod.symphony.com",
+            symphonyPartnerId: "partner-42",
+            symphonyBridgeUrl: "http://localhost:9200",
+          })
+        )
+      );
+    });
+
+    it("rejects an invalid Symphony pod URL on save", async () => {
+      const alertMock = vi.spyOn(window, "alert").mockImplementation(() => {});
+      await renderOpen();
+      fireEvent.click(screen.getByRole("tab", { name: "Symphony" }));
+      fireEvent.change(screen.getByLabelText("Pod URL"), { target: { value: "not a url" } });
+      fireEvent.click(screen.getByText("Save Settings"));
+      await waitFor(() =>
+        expect(alertMock).toHaveBeenCalledWith(expect.stringContaining("Symphony pod"))
+      );
+      expect(update).not.toHaveBeenCalled();
+      alertMock.mockRestore();
+    });
+
+    it("rejects an invalid Symphony bridge URL on save", async () => {
+      const alertMock = vi.spyOn(window, "alert").mockImplementation(() => {});
+      await renderOpen();
+      fireEvent.click(screen.getByRole("tab", { name: "Symphony" }));
+      fireEvent.change(screen.getByLabelText("Bridge URL"), { target: { value: "not a url" } });
+      fireEvent.click(screen.getByText("Save Settings"));
+      await waitFor(() =>
+        expect(alertMock).toHaveBeenCalledWith(expect.stringContaining("Symphony bridge"))
+      );
+      expect(update).not.toHaveBeenCalled();
+      alertMock.mockRestore();
+    });
+
+    it("allows saving with the pod and bridge URLs left empty (both optional)", async () => {
+      setStoreState({
+        settings: { ...baseSettings, symphonyPodUrl: "", symphonyBridgeUrl: "" },
+      });
+      await renderOpen();
+      fireEvent.click(screen.getByText("Save Settings"));
+      await waitFor(() =>
+        expect(update).toHaveBeenCalledWith(
+          expect.objectContaining({ symphonyPodUrl: "", symphonyBridgeUrl: "" })
+        )
+      );
     });
   });
 });

@@ -6,8 +6,8 @@ import { isHttpUrl } from "../../lib/safeUrl";
 import RitaTab from "./settings/RitaTab";
 import McpTab from "./settings/McpTab";
 import AppearanceTab from "./settings/AppearanceTab";
-import LogsTab from "./settings/LogsTab";
 import SymphonyTab from "./settings/SymphonyTab";
+import LogsTab from "./settings/LogsTab";
 
 export interface SettingsDialogProps {
   isOpen: boolean;
@@ -18,8 +18,8 @@ const TABS = [
   { id: "rita", label: "Rita" },
   { id: "mcp", label: "MCP" },
   { id: "appearance", label: "Appearance" },
-  { id: "logs", label: "Logs" },
   { id: "symphony", label: "Symphony" },
+  { id: "logs", label: "Logs" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -47,14 +47,12 @@ export default function SettingsDialog({ isOpen, onClose }: SettingsDialogProps)
       alert("Please enter a valid HTTP/HTTPS URL for Rita");
       return;
     }
-
     if (localSettings.symphonyPodUrl && !isHttpUrl(localSettings.symphonyPodUrl)) {
-      alert("Please enter a valid HTTP/HTTPS URL for Symphony Pod");
+      alert("Please enter a valid HTTP/HTTPS URL for the Symphony pod");
       return;
     }
-
     if (localSettings.symphonyBridgeUrl && !isHttpUrl(localSettings.symphonyBridgeUrl)) {
-      alert("Please enter a valid HTTP/HTTPS URL for Symphony Bridge");
+      alert("Please enter a valid HTTP/HTTPS URL for the Symphony bridge");
       return;
     }
 
@@ -154,10 +152,10 @@ export default function SettingsDialog({ isOpen, onClose }: SettingsDialogProps)
             <McpTab settings={localSettings} onChange={onChange} fieldIds={fieldIds} />
           )}
           {activeTab === "appearance" && <AppearanceTab settings={localSettings} />}
-          {activeTab === "logs" && <LogsTab />}
           {activeTab === "symphony" && (
             <SymphonyTab settings={localSettings} onChange={onChange} fieldIds={fieldIds} />
           )}
+          {activeTab === "logs" && <LogsTab />}
         </div>
       </div>
     </Modal>

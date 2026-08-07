@@ -58,9 +58,13 @@ export const NEWS_USER_PARAM = "user";
  */
 export const NEWS_TOKEN_PARAM = "token";
 
+/** Symphony pod base URL, e.g. https://my-pod.symphony.com. */
 export const SYMPHONY_POD_URL_PARAM = "podUrl";
+/** Symphony stream (room/IM) id to open. */
 export const SYMPHONY_STREAM_ID_PARAM = "streamId";
+/** Symphony embed layout: "focus" or "split". */
 export const SYMPHONY_MODE_PARAM = "mode";
+/** Symphony embed color theme: "dark" or "light". */
 export const SYMPHONY_THEME_PARAM = "theme";
 
 function param(over: Partial<ParamDef> & { paramName: string; label: string }): ParamDef {
@@ -162,6 +166,37 @@ export const BUILTIN_WIDGETS: WidgetDef[] = [
     ],
   }),
   def({
+    id: BUILTIN_SYMPHONY_ID,
+    name: "Symphony",
+    type: "iframe",
+    description: "A Symphony chat stream, embedded in a card.",
+    gridData: { w: 24, h: 16 },
+    params: [
+      param({
+        paramName: SYMPHONY_POD_URL_PARAM,
+        label: "Pod URL",
+        description: "Symphony pod base URL, e.g. https://my-pod.symphony.com.",
+      }),
+      param({
+        paramName: SYMPHONY_STREAM_ID_PARAM,
+        label: "Stream ID",
+        description: "The Symphony stream (room or IM) id to open.",
+      }),
+      param({
+        paramName: SYMPHONY_MODE_PARAM,
+        label: "Mode",
+        description: "Embed layout.",
+        value: "focus",
+      }),
+      param({
+        paramName: SYMPHONY_THEME_PARAM,
+        label: "Theme",
+        description: "Embed color theme.",
+        value: "dark",
+      }),
+    ],
+  }),
+  def({
     id: BUILTIN_CLOCK_ID,
     name: "Clock",
     type: "clock",
@@ -207,47 +242,6 @@ export const BUILTIN_WIDGETS: WidgetDef[] = [
         options: [
           { label: "Dot matrix", value: "dots" },
           { label: "Solid", value: "solid" },
-        ],
-      }),
-    ],
-  }),
-  def({
-    id: BUILTIN_SYMPHONY_ID,
-    name: "Symphony",
-    type: "iframe",
-    description: "Symphony workspace widget.",
-    gridData: { w: 24, h: 16 },
-    params: [
-      param({
-        paramName: SYMPHONY_POD_URL_PARAM,
-        label: "Pod URL",
-        description: "Symphony pod URL (default from config)",
-        value: "",
-      }),
-      param({
-        paramName: SYMPHONY_STREAM_ID_PARAM,
-        label: "Stream ID",
-        description: "Symphony stream ID",
-        value: "",
-      }),
-      param({
-        paramName: SYMPHONY_MODE_PARAM,
-        label: "Mode",
-        description: "Display mode (focus or split)",
-        value: "focus",
-        options: [
-          { label: "Focus", value: "focus" },
-          { label: "Split", value: "split" },
-        ],
-      }),
-      param({
-        paramName: SYMPHONY_THEME_PARAM,
-        label: "Theme",
-        description: "Color theme (dark or light)",
-        value: "dark",
-        options: [
-          { label: "Dark", value: "dark" },
-          { label: "Light", value: "light" },
         ],
       }),
     ],

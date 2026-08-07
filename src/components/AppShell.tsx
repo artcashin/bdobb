@@ -30,6 +30,11 @@ export default function AppShell({ startupErrors = [] }: AppShellProps) {
     const [pinned, setPinned] = useState(false);
   const [chatSticky, setChatSticky] = useState(false);
   const hasUnread = useChatStore((s) => s.hasUnread);
+  // A pending confirmation (post_to_symphony's gate) needs the user's
+  // decision regardless of whether the pane is open -- unlike hasUnread,
+  // this isn't cleared by opening the pane, only by resolving the
+  // confirmation, since the chat input stays disabled until then.
+  const needsDecision = useChatStore((s) => s.pendingToolConfirmation !== null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [widgetToSelect, setWidgetToSelect] = useState<WidgetDef | null>(null);
   const [paramValues, setParamValues] = useState<Record<string, string | number | boolean | string[] | null>>({});
@@ -142,6 +147,7 @@ export default function AppShell({ startupErrors = [] }: AppShellProps) {
         pinned={pinned}
         sticky={chatSticky}
         unread={hasUnread}
+        needsDecision={needsDecision}
         onTogglePin={() => setPinned((p) => !p)}
       >
         <ErrorBoundary label="the Rita chat pane">
