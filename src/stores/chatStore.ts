@@ -14,6 +14,24 @@ import { loadChat, saveChat, clearChat } from "../lib/persistence";
  * Owning it here lets the pane collapse freely: the turn continues, and an
  * unread dot tells the user an answer arrived.
  */
+/**
+ * A tool call awaiting the user's yes/no before it is allowed to execute.
+ *
+ * Generic on `toolName` rather than hardcoded to "post_to_symphony" -- the
+ * gate mechanism is store-level plumbing, not Symphony-specific -- but Task 7
+ * is the only caller today (ChatPane.tsx's `runAgentTool`, gated on that one
+ * tool name). Lives in chatStore rather than ChatPane's local state for the
+ * same reason the rest of the turn does: the store owns the turn so it
+ * survives ChatPane unmounting on hover-collapse, and a pending confirmation
+ * must keep blocking execution even if nobody is looking at the pane.
+ */
+export interface PendingToolConfirmation {
+  id: string;
+  serverId: string;
+  toolName: string;
+  parameters: Record<string, unknown>;
+}
+
 export interface SendDeps {
   queryUrl: string;
   widgets: WidgetRef[];
@@ -50,6 +68,8 @@ interface ChatState {
   hasUnread: boolean;
   /** Whether the pane is currently showing the transcript. */
   paneOpen: boolean;
+  /** A tool call (e.g. Rita's post_to_symphony) waiting on user approval. */
+  pendingToolConfirmation: PendingToolConfirmation | null;
 
   setPaneOpen(open: boolean): void;
   recordCall(call: AgentCall): void;
@@ -57,9 +77,45 @@ interface ChatState {
   send(text: string, deps: SendDeps): Promise<void>;
   cancel(): void;
   clear(): void;
+  /**
+   * Registers a tool call as pending and returns a promise that settles once
+   * `resolveToolConfirmation` is called for its id. The caller (ChatPane's
+   * runAgentTool) must not execute the tool until this resolves "approved".
+   */
+  requestToolConfirmation(
+    serverId: string,
+    toolName: string,
+    parameters: Record<string, unknown>
+  ): Promise<"approved" | "declined">;
+  /** Settles the confirmation with the given id. A stale/unknown id (already
+   * resolved, or from a confirmation cancel() already flushed) is a no-op --
+   * it must never resolve or clear whatever is pending now. */
+  resolveToolConfirmation(id: string, decision: "approved" | "declined"): void;
 }
 
 let controller: AbortController | null = null;
+
+/**
+ * Resolvers for tool confirmations awaiting a decision, keyed by id. Module
+ * state rather than store state for the same reason `controller` above is:
+ * a function isn't serializable store data, and this belongs to the
+ * in-flight turn's tool loop, not to any component.
+ */
+const confirmationResolvers = new Map<string, (decision: "approved" | "declined") => void>();
+let confirmationSeq = 0;
+
+/**
+ * Declines every confirmation still awaiting a decision. Called from
+ * cancel()/clear() so a confirmation the user never acted on -- because they
+ * started clearing the chat, or the turn was aborted -- can never be left
+ * hanging forever, and can never be silently treated as approved either;
+ * declining is the only safe default when the UI asking for a decision is
+ * going away.
+ */
+function declineAllPendingConfirmations(): void {
+  for (const resolve of confirmationResolvers.values()) resolve("declined");
+  confirmationResolvers.clear();
+}
 
 export const useChatStore = create<ChatState>()((set, get) => ({
   messages: [],
@@ -72,6 +128,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   agentOffline: false,
   hasUnread: false,
   paneOpen: false,
+  pendingToolConfirmation: null,
 
   recordCall(call) {
     set((s) => ({ calls: [...s.calls, call] }));
@@ -85,7 +142,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   cancel() {
     controller?.abort();
     controller = null;
-    set({ isSending: false });
+    // A pending confirmation belongs to this turn -- aborting the turn must
+    // abort the wait on it too, rather than leaving runAgentTool awaiting a
+    // decision that will now never come from the UI.
+    declineAllPendingConfirmations();
+    set({ isSending: false, pendingToolConfirmation: null });
   },
 
   async load() {
@@ -97,6 +158,26 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     get().cancel();
     void clearChat();
     set({ messages: [], statuses: [], citations: [], suggestions: [], calls: [], error: null, agentOffline: false, hasUnread: false });
+  },
+
+  requestToolConfirmation(serverId, toolName, parameters) {
+    const id = `confirm-${++confirmationSeq}`;
+    return new Promise((resolve) => {
+      confirmationResolvers.set(id, resolve);
+      set({ pendingToolConfirmation: { id, serverId, toolName, parameters } });
+    });
+  },
+
+  resolveToolConfirmation(id, decision) {
+    const resolve = confirmationResolvers.get(id);
+    if (!resolve) return; // Stale id: already settled (or flushed by cancel()).
+    confirmationResolvers.delete(id);
+    resolve(decision);
+    // Only clear the visible pending confirmation if it's still this one --
+    // in practice at most one is pending at a time (the agent protocol is one
+    // function call per round), but a stale resolve must never clear a
+    // newer, still-pending confirmation out from under the UI.
+    set((s) => (s.pendingToolConfirmation?.id === id ? { pendingToolConfirmation: null } : {}));
   },
 
   async send(text, deps) {

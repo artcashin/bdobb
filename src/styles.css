@@ -376,6 +376,20 @@ input, select, textarea {
   background: rgba(21, 26, 33, 0.5);
 }
 
+/* ---- Symphony post confirmation dialog (Task 7) ---- */
+.symphony-confirm-message {
+  white-space: pre-wrap; word-break: break-word;
+  margin: 8px 0; padding: 10px 12px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  font-family: inherit; font-size: 14px;
+}
+.symphony-confirm-raw {
+  white-space: pre-wrap; word-break: break-word;
+  margin: 8px 0 0; padding: 8px 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  font-size: 12px; color: var(--text-dim);
+}
+
 /* ---- param controls ---- */
 .param-controls {
   padding: 16px;

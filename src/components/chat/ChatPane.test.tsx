@@ -2,6 +2,8 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as agentClientModule from "../../lib/agent/agentClient";
 import * as mcpModule from "../../lib/agent/mcp";
+import type { AgentTool } from "../../lib/agent/types";
+import { useChatStore } from "../../stores/chatStore";
 import ChatPane from "./ChatPane";
 
 vi.mock("plotly.js-dist-min", () => ({
@@ -337,6 +339,209 @@ describe("ChatPane", () => {
     act(() => {
       useDashboardStore.setState({ dashboards: [], activeId: null });
       useRegistryStore.setState({ widgets: [], loading: false });
+    });
+  });
+
+  // Task 7: Rita's post_to_symphony arrives as an MCP tool call routed
+  // through ChatPane's runAgentTool (assembled and handed to
+  // agentClient.runAgentQuery, mocked below so this closure can be grabbed
+  // and invoked directly, the same way other tests here inspect
+  // opts.fetchWidgetData). A message must never reach the bridge without the
+  // user explicitly approving it first.
+  describe("post_to_symphony confirmation gate", () => {
+    const SYMPHONY_TOOL: AgentTool = {
+      server_id: "symphony-bridge",
+      name: "post_to_symphony",
+      url: "https://bridge.test/mcp",
+      endpoint: "",
+      description: "Post a message to a Symphony room",
+      input_schema: {},
+    };
+
+    beforeEach(() => {
+      useChatStore.getState().clear();
+    });
+
+    async function getRunAgentTool() {
+      vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+        tools: [SYMPHONY_TOOL],
+        budgetExceeded: [],
+        unreachable: [],
+      });
+      const runQuerySpy = vi.spyOn(agentClientModule, "runAgentQuery").mockResolvedValue([]);
+
+      render(<ChatPane />);
+      const input = screen.getByPlaceholderText("Message Rita...");
+      fireEvent.change(input, { target: { value: "post to symphony" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+
+      await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+      const opts = runQuerySpy.mock.calls[0][0];
+      return opts.runAgentTool!;
+    }
+
+    it("does not call the MCP tool until the user approves", async () => {
+      const callToolSpy = vi
+        .spyOn(mcpModule, "callMcpTool")
+        .mockResolvedValue({ content: [{ type: "text", text: "sent" }] });
+      const runAgentTool = await getRunAgentTool();
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "hello room",
+        }).then((r) => {
+          outcome = r;
+        });
+      });
+
+      // Synchronous up to the first await: the confirmation is already
+      // registered, and the tool has not run.
+      expect(callToolSpy).not.toHaveBeenCalled();
+      expect(outcome).toBeUndefined();
+      expect(useChatStore.getState().pendingToolConfirmation).toMatchObject({
+        serverId: "symphony-bridge",
+        toolName: "post_to_symphony",
+        parameters: { streamId: "room1", message: "hello room" },
+      });
+
+      const id = useChatStore.getState().pendingToolConfirmation!.id;
+      await act(async () => {
+        useChatStore.getState().resolveToolConfirmation(id, "approved");
+      });
+
+      await waitFor(() =>
+        expect(callToolSpy).toHaveBeenCalledWith(
+          "https://bridge.test/mcp",
+          "post_to_symphony",
+          { streamId: "room1", message: "hello room" }
+        )
+      );
+      expect(outcome).toEqual({ content: "sent" });
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+    });
+
+    it("never calls the MCP tool when the user declines, and reports the decline to the agent", async () => {
+      const callToolSpy = vi.spyOn(mcpModule, "callMcpTool");
+      const runAgentTool = await getRunAgentTool();
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "hello room",
+        }).then((r) => {
+          outcome = r;
+        });
+      });
+
+      const id = useChatStore.getState().pendingToolConfirmation!.id;
+      await act(async () => {
+        useChatStore.getState().resolveToolConfirmation(id, "declined");
+      });
+
+      await waitFor(() => expect(outcome).toBeDefined());
+      expect(callToolSpy).not.toHaveBeenCalled();
+      // The result must read as a refusal, not a silent success, so the
+      // model doesn't tell the user the message went out.
+      expect(outcome!.isError).toBe(true);
+      expect(outcome!.content).toMatch(/declined/i);
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+    });
+
+    it("shows the destination and message content in a Review and Send dialog", async () => {
+      vi.spyOn(mcpModule, "callMcpTool").mockResolvedValue({ content: [] });
+      const runAgentTool = await getRunAgentTool();
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "trading-desk",
+          message: "Markets are closed for the holiday.",
+        });
+      });
+
+      expect(await screen.findByText(/review and send/i)).toBeInTheDocument();
+      // The destination and raw JSON both mention "trading-desk" (the human
+      // summary line, and the always-visible raw-parameters fallback) --
+      // any match confirms it made it into the dialog.
+      expect(screen.getAllByText(/trading-desk/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Markets are closed for the holiday\./).length).toBeGreaterThan(0);
+    });
+
+    it("declining via the dialog's Decline button resolves the gate", async () => {
+      const callToolSpy = vi.spyOn(mcpModule, "callMcpTool");
+      const runAgentTool = await getRunAgentTool();
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "hello room",
+        }).then((r) => {
+          outcome = r;
+        });
+      });
+
+      const declineBtn = await screen.findByRole("button", { name: /decline/i });
+      await act(async () => {
+        fireEvent.click(declineBtn);
+      });
+
+      await waitFor(() => expect(outcome).toBeDefined());
+      expect(callToolSpy).not.toHaveBeenCalled();
+      expect(outcome!.isError).toBe(true);
+      expect(screen.queryByText(/review and send/i)).not.toBeInTheDocument();
+    });
+
+    it("approving via the dialog's Send button runs the tool", async () => {
+      const callToolSpy = vi
+        .spyOn(mcpModule, "callMcpTool")
+        .mockResolvedValue({ content: [{ type: "text", text: "sent" }] });
+      const runAgentTool = await getRunAgentTool();
+
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "hello room",
+        });
+      });
+
+      const sendBtn = await screen.findByRole("button", { name: /^send$/i });
+      await act(async () => {
+        fireEvent.click(sendBtn);
+      });
+
+      await waitFor(() => expect(callToolSpy).toHaveBeenCalled());
+      expect(screen.queryByText(/review and send/i)).not.toBeInTheDocument();
+    });
+
+    it("clearing the chat mid-confirmation declines it instead of leaving it stuck", async () => {
+      const callToolSpy = vi.spyOn(mcpModule, "callMcpTool");
+      const runAgentTool = await getRunAgentTool();
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "hello room",
+        }).then((r) => {
+          outcome = r;
+        });
+      });
+
+      expect(useChatStore.getState().pendingToolConfirmation).not.toBeNull();
+
+      act(() => {
+        useChatStore.getState().clear();
+      });
+
+      await waitFor(() => expect(outcome).toBeDefined());
+      expect(callToolSpy).not.toHaveBeenCalled();
+      expect(outcome!.isError).toBe(true);
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
     });
   });
 });

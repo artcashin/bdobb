@@ -232,6 +232,101 @@ describe("chatStore", () => {
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ workspaceOptions: undefined }));
   });
 
+  // Task 7: a Rita-invoked tool (post_to_symphony, arriving as an MCP call
+  // through ChatPane's runAgentTool) must never execute before the user
+  // approves it. The gate itself lives here so it survives ChatPane
+  // unmounting mid-confirmation, the same reason the rest of the turn does.
+  describe("tool confirmation gate", () => {
+    it("exposes a pending confirmation and blocks the caller until it is resolved", async () => {
+      let resolved: "approved" | "declined" | undefined;
+      const promise = useChatStore
+        .getState()
+        .requestToolConfirmation("symphony-bridge", "post_to_symphony", {
+          streamId: "room1",
+          message: "hi",
+        })
+        .then((d) => {
+          resolved = d;
+        });
+
+      const pending = useChatStore.getState().pendingToolConfirmation;
+      expect(pending).toMatchObject({
+        serverId: "symphony-bridge",
+        toolName: "post_to_symphony",
+        parameters: { streamId: "room1", message: "hi" },
+      });
+      expect(resolved).toBeUndefined();
+
+      useChatStore.getState().resolveToolConfirmation(pending!.id, "approved");
+      await promise;
+
+      expect(resolved).toBe("approved");
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+    });
+
+    it("resolves declined without ever marking the confirmation approved", async () => {
+      const promise = useChatStore
+        .getState()
+        .requestToolConfirmation("symphony-bridge", "post_to_symphony", { message: "hi" });
+      const pending = useChatStore.getState().pendingToolConfirmation!;
+
+      useChatStore.getState().resolveToolConfirmation(pending.id, "declined");
+
+      await expect(promise).resolves.toBe("declined");
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+    });
+
+    it("cancel() declines a pending confirmation rather than leaving it hanging forever", async () => {
+      const promise = useChatStore
+        .getState()
+        .requestToolConfirmation("symphony-bridge", "post_to_symphony", { message: "hi" });
+
+      useChatStore.getState().cancel();
+
+      await expect(promise).resolves.toBe("declined");
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+    });
+
+    it("clear() declines a pending confirmation left over from an interrupted turn", async () => {
+      const promise = useChatStore
+        .getState()
+        .requestToolConfirmation("symphony-bridge", "post_to_symphony", { message: "hi" });
+
+      useChatStore.getState().clear();
+
+      await expect(promise).resolves.toBe("declined");
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+    });
+
+    it("keeps a second confirmation independent of a stale resolve for the first", async () => {
+      // Models the "two post_to_symphony calls in one turn" case: each call
+      // gets its own id, and a decision for the first must never leak onto
+      // the second.
+      const p1 = useChatStore
+        .getState()
+        .requestToolConfirmation("symphony-bridge", "post_to_symphony", { message: "one" });
+      const pending1 = useChatStore.getState().pendingToolConfirmation!;
+      useChatStore.getState().resolveToolConfirmation(pending1.id, "approved");
+      await expect(p1).resolves.toBe("approved");
+
+      const p2 = useChatStore
+        .getState()
+        .requestToolConfirmation("symphony-bridge", "post_to_symphony", { message: "two" });
+      const pending2 = useChatStore.getState().pendingToolConfirmation!;
+      expect(pending2.id).not.toBe(pending1.id);
+
+      // A stale resolve for the already-settled first confirmation must be a
+      // no-op: it must not resolve, clear, or otherwise disturb the second,
+      // still-pending one.
+      useChatStore.getState().resolveToolConfirmation(pending1.id, "declined");
+      expect(useChatStore.getState().pendingToolConfirmation).toEqual(pending2);
+
+      useChatStore.getState().resolveToolConfirmation(pending2.id, "approved");
+      await expect(p2).resolves.toBe("approved");
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+    });
+  });
+
   it("persists once per turn, not per streamed delta", async () => {
     saved.length = 0;
     vi.spyOn(agentClient, "runAgentQuery").mockImplementation(async (o: any) => {

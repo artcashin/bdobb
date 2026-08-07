@@ -17,9 +17,49 @@ import { shareChat } from "../../lib/chatShare";
 import { writeTextFile, mkdir } from "@tauri-apps/plugin-fs";
 import { logError } from "../../lib/logger";
 import { safeUrl } from "../../lib/safeUrl";
+import Modal from "../Modal";
 
 import ChatMessages from "./ChatMessages";
 import StatusTrail from "./StatusTrail";
+
+/**
+ * Rita's Symphony-posting tool, arriving as an ordinary MCP call. It is not
+ * declared or discovered here (it comes from whatever MCP server exposes it
+ * -- see mcp.ts's assembleTools), so this is the one place BDOBB knows its
+ * name: `runAgentTool` below gates any call with this name on user approval
+ * before it may run, matching the plan's F2-10 requirement (BDOBB-side gate,
+ * not trust in the model) regardless of which server_id it was declared
+ * under.
+ */
+const SYMPHONY_POST_TOOL = "post_to_symphony";
+
+/**
+ * Best-effort read of a post_to_symphony call's destination/message for the
+ * confirmation dialog. The tool is defined by the symphony-bridge service,
+ * not by this app, so its exact argument names aren't a contract we own --
+ * this tries the field names the plan documents ("streamId or saved-
+ * destination name + message", spec F2-8) plus a couple of obvious synonyms,
+ * and falls back to the raw JSON so the review is honest even if a name
+ * guess misses.
+ */
+function symphonyConfirmationText(parameters: Record<string, unknown>): {
+  destination: string | null;
+  message: string | null;
+} {
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
+  const destination =
+    str(parameters.streamId) ??
+    str(parameters.destination) ??
+    str(parameters.stream_id) ??
+    str(parameters.room) ??
+    str(parameters.roomId);
+  const message =
+    str(parameters.message) ??
+    str(parameters.text) ??
+    str(parameters.content) ??
+    str(parameters.body);
+  return { destination, message };
+}
 
 /** Picks the `{type:"select",...}` feature out of `AgentInfo.features` (desk
  * ChatPane.tsx), e.g. agents.json's "model" picker. */
@@ -70,6 +110,53 @@ export interface ChatPaneProps {
 const NO_TARGETS: NonNullable<Settings["shareTargets"]> = [];
 const NO_MCP: Settings["mcpServers"] = [];
 
+/**
+ * The human confirmation gate's UI: shows what Rita is about to post to
+ * Symphony and lets the user approve or decline before it is sent.
+ */
+function SymphonyConfirmDialog({
+  confirmation,
+}: {
+  confirmation: { id: string; parameters: Record<string, unknown> };
+}) {
+  const { destination, message } = symphonyConfirmationText(confirmation.parameters);
+  const decide = (decision: "approved" | "declined") =>
+    useChatStore.getState().resolveToolConfirmation(confirmation.id, decision);
+
+  return (
+    <Modal isOpen onClose={() => decide("declined")} title="Review and Send"
+      footer={
+        <>
+          <button
+            onClick={() => decide("declined")}
+            className="backend-btn"
+            style={{ color: "var(--text)", padding: "8px 16px" }}
+          >
+            Decline
+          </button>
+          <button
+            onClick={() => decide("approved")}
+            className="backend-btn"
+            style={{ padding: "8px 16px", background: "var(--accent)", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
+            autoFocus
+          >
+            Send
+          </button>
+        </>
+      }
+    >
+      <p>Rita wants to post this message to Symphony{destination ? ` (${destination})` : ""}:</p>
+      <pre className="symphony-confirm-message">
+        {message ?? "(no message text found -- see raw parameters below)"}
+      </pre>
+      <details>
+        <summary>Raw parameters</summary>
+        <pre className="symphony-confirm-raw">{JSON.stringify(confirmation.parameters, null, 2)}</pre>
+      </details>
+    </Modal>
+  );
+}
+
 /** The opening question, used as a title when sending to another app. */
 function firstPrompt(messages: ChatMessage[]): string | null {
   const first = messages.find((m) => m.role === "human");
@@ -93,6 +180,7 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
   const error = useChatStore((s) => s.error);
   const agentOffline = useChatStore((s) => s.agentOffline);
   const calls = useChatStore((s) => s.calls);
+  const pendingToolConfirmation = useChatStore((s) => s.pendingToolConfirmation);
   const [exported, setExported] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const shareTargets = useSettingsStore((s) => s.settings?.shareTargets ?? NO_TARGETS);
@@ -238,6 +326,28 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
       toolName: string,
       parameters: Record<string, unknown>
     ) => {
+      // Human confirmation gate (plan F2-10): a Symphony post must never
+      // execute before the user approves it, regardless of which server_id
+      // it arrived under. Checked before any dispatch below -- including the
+      // local-tool branch -- so there is no path from a discovered
+      // post_to_symphony call to execution that skips this. The await
+      // suspends here until resolveToolConfirmation is called (ChatPane's
+      // dialog below, or chatStore's cancel()/clear() declining it), so
+      // nothing past this point runs until then.
+      if (toolName === SYMPHONY_POST_TOOL) {
+        const decision = await useChatStore
+          .getState()
+          .requestToolConfirmation(serverId, toolName, parameters);
+        if (decision === "declined") {
+          return {
+            content:
+              "The user declined to approve this Symphony message; it was not sent. " +
+              "Do not send it again unless the user explicitly asks.",
+            isError: true,
+          };
+        }
+      }
+
       if (serverId === LOCAL_TOOL_SERVER_ID) {
         return executeLocalTool(toolName, parameters, {
           getDashboards: () => useDashboardStore.getState().dashboards,
@@ -442,6 +552,10 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
           {agentOffline && <strong>Rita offline. </strong>}
           {error}
         </div>
+      )}
+
+      {pendingToolConfirmation && pendingToolConfirmation.toolName === SYMPHONY_POST_TOOL && (
+        <SymphonyConfirmDialog confirmation={pendingToolConfirmation} />
       )}
 
       <div className="chat-input-area">
