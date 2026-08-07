@@ -31,3 +31,8 @@ src-tauri/capabilities/default.json
 scripts/scrub-private-patterns.txt
 src-tauri/gen/apple/
 .claude/
+
+# bdobb-help content repo, cloned on demand by scripts/fetch-help-content.mjs,
+# and its generated bundle output.
+.help-cache/
+src/help/generated/

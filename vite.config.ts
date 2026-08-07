@@ -18,6 +18,17 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // BDOBB Help opens as a second window (help.html) rather than a route
+  // within the main app, so it needs its own Rollup entry point alongside
+  // index.html or `vite build` would never emit it.
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        help: path.resolve(__dirname, "help.html"),
+      },
+    },
+  },
   // tauri.conf.json pins devUrl to http://localhost:1420, so the port must be
   // fixed rather than auto-incremented, and Vite must not watch the Rust tree
   // or every cargo rebuild retriggers the frontend.
