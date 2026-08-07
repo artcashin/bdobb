@@ -39,6 +39,9 @@ describe("settings", () => {
       theme: "dark" as const,
       contextSharing: true,
       mcpServers: [] as any[],
+      symphonyPodUrl: "",
+      symphonyPartnerId: "",
+      symphonyBridgeUrl: "",
     };
     await persistence.setSettings(settings);
     const content = files.get("settings.json");
@@ -51,6 +54,9 @@ describe("settings", () => {
       theme: "dark" as const,
       contextSharing: true,
       mcpServers: [{ id: "1", url: "http://localhost:3000", enabled: true } as any],
+      symphonyPodUrl: "https://my-pod.symphony.com",
+      symphonyPartnerId: "partner-9",
+      symphonyBridgeUrl: "http://localhost:9100",
     };
     files.set("settings.json", JSON.stringify(settings, null, 2));
     const result = await persistence.getSettings();
@@ -112,6 +118,34 @@ describe("settings", () => {
 
   it("quarantines settings.json when contextSharing is present but not a boolean", async () => {
     const bad = JSON.stringify({ contextSharing: "yes" });
+    files.set("settings.json", bad);
+    const s = await persistence.getSettings();
+    expect(s).toEqual(persistence.DEFAULT_SETTINGS);
+    expect(files.get("settings.json.corrupt")).toBe(bad);
+  });
+
+  it("defaults the three Symphony fields to empty strings", async () => {
+    const s = await persistence.getSettings();
+    expect(s.symphonyPodUrl).toBe("");
+    expect(s.symphonyPartnerId).toBe("");
+    expect(s.symphonyBridgeUrl).toBe("");
+  });
+
+  it("round-trips the Symphony fields", async () => {
+    await persistence.setSettings({
+      ...persistence.DEFAULT_SETTINGS,
+      symphonyPodUrl: "https://my-pod.symphony.com",
+      symphonyPartnerId: "partner-9",
+      symphonyBridgeUrl: "http://localhost:9100",
+    });
+    const s = await persistence.getSettings();
+    expect(s.symphonyPodUrl).toBe("https://my-pod.symphony.com");
+    expect(s.symphonyPartnerId).toBe("partner-9");
+    expect(s.symphonyBridgeUrl).toBe("http://localhost:9100");
+  });
+
+  it("quarantines settings.json when a Symphony field is present but not a string", async () => {
+    const bad = JSON.stringify({ symphonyPartnerId: 42 });
     files.set("settings.json", bad);
     const s = await persistence.getSettings();
     expect(s).toEqual(persistence.DEFAULT_SETTINGS);

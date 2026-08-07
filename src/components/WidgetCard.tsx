@@ -4,6 +4,7 @@ import ErrorBoundary from "./ErrorBoundary";
 import type { CardView, DashboardCard, ParamGroup, ParamValues, WidgetDef } from "../lib/types";
 import { effectiveParams, groupedParamNames, splitParamEdit } from "../lib/paramGroups";
 import { useDashboardStore } from "../stores/dashboardStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import ParamControls from "./ParamControls";
 import { useRegistryStore } from "../stores/registryStore";
 import { useBackendsStore } from "../stores/backendsStore";
@@ -54,6 +55,7 @@ function normalizeSymphonyPod(raw: string): string {
 }
 
 export default function WidgetCard({ card }: WidgetCardProps) {
+  const settings = useSettingsStore((s) => s.settings);
   const removeCard = useDashboardStore((s) => s.removeCard);
   const updateCardView = useDashboardStore((s) => s.updateCardView);
   const updateCardParams = useDashboardStore((s) => s.updateCardParams);
@@ -268,14 +270,19 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     }
 
     if (card.widgetId === BUILTIN_SYMPHONY_ID) {
-      // partnerId is an app-level setting Task 5 wires in; until then every
-      // call site (this one included) passes "" rather than inventing a source.
+      // The card's own podUrl param wins when set; an app-level default
+      // (settings.symphonyPodUrl) covers the common case of one pod shared
+      // across every Symphony card. Normalization applies to whichever value
+      // wins, so a scheme or trailing slash typed into either source is
+      // stripped the same way.
+      const cardPod = String(fetchParams[SYMPHONY_POD_URL_PARAM] ?? "");
+      const pod = cardPod || settings.symphonyPodUrl;
       return (
         <SymphonyRenderer
           params={{
-            pod: normalizeSymphonyPod(String(fetchParams[SYMPHONY_POD_URL_PARAM] ?? "")),
+            pod: normalizeSymphonyPod(pod),
             id: String(fetchParams[SYMPHONY_STREAM_ID_PARAM] ?? ""),
-            partnerId: "",
+            partnerId: settings.symphonyPartnerId,
             mode: String(fetchParams[SYMPHONY_MODE_PARAM] ?? ""),
             theme: String(fetchParams[SYMPHONY_THEME_PARAM] ?? ""),
           }}

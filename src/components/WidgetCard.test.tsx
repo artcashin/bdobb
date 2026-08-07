@@ -105,6 +105,17 @@ vi.mock("../stores/backendsStore", () => ({
   useBackendsStore: (selector: (s: any) => any) => selector({ backends: backendsList }),
 }));
 
+// App-level Symphony settings the Task 5 wiring reads. Empty by default so
+// every pre-existing test (written before settings existed) sees the same
+// "" partnerId and card-supplied pod it always did.
+let settingsFixture: { symphonyPodUrl: string; symphonyPartnerId: string } = {
+  symphonyPodUrl: "",
+  symphonyPartnerId: "",
+};
+vi.mock("../stores/settingsStore", () => ({
+  useSettingsStore: (selector: (s: any) => any) => selector({ settings: settingsFixture }),
+}));
+
 vi.mock("../lib/logger", () => ({ logError: vi.fn() }));
 
 // Desk Finding 1 graft: force a real renderer throw inside the card body to
@@ -153,6 +164,7 @@ beforeEach(() => {
     { name: "Bob", age: 25 },
   ]);
   backendsList = [BACKEND];
+  settingsFixture = { symphonyPodUrl: "", symphonyPartnerId: "" };
 });
 
 describe("WidgetCard", () => {
@@ -680,7 +692,7 @@ describe("WidgetCard built-in widgets", () => {
     );
   });
 
-  it("passes partnerId as an empty string rather than reading it from settings", () => {
+  it("passes an empty partnerId when settings.symphonyPartnerId is unset", () => {
     render(
       <WidgetCard
         card={makeCard({
@@ -693,6 +705,76 @@ describe("WidgetCard built-in widgets", () => {
     expect(screen.getByTitle("Symphony")).toHaveAttribute(
       "src",
       expect.stringContaining("partnerId=&")
+    );
+  });
+
+  // Task 5 owns wiring the real partnerId in -- Task 2/3 shipped it as a
+  // hardcoded "" because there was nowhere to source it from yet.
+  it("passes partnerId from settings.symphonyPartnerId", () => {
+    settingsFixture = { symphonyPodUrl: "", symphonyPartnerId: "partner-9" };
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { podUrl: "my-pod.symphony.com", streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      "https://my-pod.symphony.com/embed/index.html?streamId=stream-1&partnerId=partner-9&mode=&theme=&condensed=true"
+    );
+  });
+
+  it("prefers the card's own podUrl param over settings.symphonyPodUrl", () => {
+    settingsFixture = { symphonyPodUrl: "settings-pod.symphony.com", symphonyPartnerId: "" };
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { podUrl: "card-pod.symphony.com", streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      expect.stringMatching(/^https:\/\/card-pod\.symphony\.com\/embed\//)
+    );
+  });
+
+  it("falls back to settings.symphonyPodUrl when the card's own podUrl param is empty", () => {
+    settingsFixture = { symphonyPodUrl: "settings-pod.symphony.com", symphonyPartnerId: "" };
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      expect.stringMatching(/^https:\/\/settings-pod\.symphony\.com\/embed\//)
+    );
+  });
+
+  it("normalizes settings.symphonyPodUrl the same way as a card-supplied pod (strips scheme and trailing slash)", () => {
+    settingsFixture = { symphonyPodUrl: "https://settings-pod.symphony.com/", symphonyPartnerId: "" };
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByTitle("Symphony")).toHaveAttribute(
+      "src",
+      expect.stringMatching(/^https:\/\/settings-pod\.symphony\.com\/embed\//)
     );
   });
 

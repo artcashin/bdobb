@@ -176,4 +176,10 @@ export interface Settings {
   mcpServers: McpServerConfig[];
   /** Places a conversation can be sent (Tolaria, Notion, a webhook…). */
   shareTargets?: ShareTarget[];
+  /** Default Symphony pod base URL, used when a card's own `podUrl` param is empty. */
+  symphonyPodUrl: string;
+  /** Sent as the `partnerId` query param on every Symphony embed. */
+  symphonyPartnerId: string;
+  /** Symphony sharing bridge URL (consumed by Task 6; not used yet). */
+  symphonyBridgeUrl: string;
 }

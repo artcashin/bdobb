@@ -24,6 +24,9 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
   contextSharing: false,
   mcpServers: DEFAULT_MCP_SERVERS,
+  symphonyPodUrl: "",
+  symphonyPartnerId: "",
+  symphonyBridgeUrl: "",
 };
 
 export const DEFAULT_BACKENDS: BackendConfig[] = [
@@ -98,6 +101,9 @@ function isSettingsShape(v: unknown): v is Partial<Settings> {
     if (!Array.isArray(v.mcpServers)) return false;
     if (!v.mcpServers.every(isMcpServerConfig)) return false;
   }
+  if ("symphonyPodUrl" in v && typeof v.symphonyPodUrl !== "string") return false;
+  if ("symphonyPartnerId" in v && typeof v.symphonyPartnerId !== "string") return false;
+  if ("symphonyBridgeUrl" in v && typeof v.symphonyBridgeUrl !== "string") return false;
   return true;
 }
 

@@ -33,6 +33,14 @@ vi.mock("../lib/persistence", () => ({
   loadDashboards: (...a: []) => loadDashboards(...a),
   saveDashboard: (d: Dashboard) => saveDashboard(d),
   deleteDashboard: (id: string) => deleteDashboard(id),
+  // settingsStore reads this at module load; WidgetCard (imported by
+  // DashboardGrid) now imports settingsStore for the Symphony settings
+  // wiring, so this mock must export it too even though this file's own
+  // tests don't otherwise touch settings.
+  DEFAULT_SETTINGS: {
+    ritaUrl: "", theme: "dark", contextSharing: false, mcpServers: [],
+    symphonyPodUrl: "", symphonyPartnerId: "", symphonyBridgeUrl: "",
+  },
 }));
 
 type CapturedLayoutItem = { i: string; x: number; y: number; w: number; h: number };
