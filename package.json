@@ -8,17 +8,18 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "node scripts/generate-capabilities.mjs && vite",
-    "build": "node scripts/generate-capabilities.mjs && tsc && vite build",
+    "dev": "node scripts/generate-capabilities.mjs && node scripts/fetch-help-content.mjs && vite",
+    "build": "node scripts/generate-capabilities.mjs && node scripts/fetch-help-content.mjs && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest",
-    "test:run": "vitest run",
+    "test": "node scripts/help/seed-if-missing.mjs && vitest",
+    "test:run": "node scripts/help/seed-if-missing.mjs && vitest run",
     "test:ui": "vitest --ui",
     "linux:deps": "bash scripts/linux-build.sh deps",
     "linux:build": "bash scripts/linux-build.sh build",
-    "typecheck": "tsc --noEmit",
-    "capabilities": "node scripts/generate-capabilities.mjs"
+    "typecheck": "node scripts/help/seed-if-missing.mjs && tsc --noEmit",
+    "capabilities": "node scripts/generate-capabilities.mjs",
+    "help:fetch": "node scripts/fetch-help-content.mjs"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
@@ -27,12 +28,14 @@
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-http": "^2.5.9",
     "@tauri-apps/plugin-opener": "^2",
+    "minisearch": "^7.2.0",
     "plotly.js-dist-min": "^3.7.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-grid-layout": "^2.2.4",
     "react-markdown": "^10.1.0",
     "react-resizable": "^4.0.2",
+    "remark-gfm": "^4.0.1",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
