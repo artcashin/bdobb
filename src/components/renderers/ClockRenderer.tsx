@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import AnalogFace from "./AnalogFace";
 
 interface ClockRendererProps {
   /** IANA zone names, in display order. */
@@ -7,6 +8,8 @@ interface ClockRendererProps {
   hour12?: boolean;
   /** "dots" for the matrix face, "solid" for the filled one. */
   face?: "dots" | "solid";
+  /** "vertical" for the digital list (default), "horizontal" for analog tiles. */
+  layout?: "vertical" | "horizontal";
 }
 
 /**
@@ -71,6 +74,7 @@ export default function ClockRenderer({
   zones,
   hour12 = false,
   face = "dots",
+  layout = "vertical",
 }: ClockRendererProps) {
   const [now, setNow] = useState(() => new Date());
 
@@ -128,6 +132,34 @@ export default function ClockRenderer({
 
   if (rows.length === 0) {
     return <div className="renderer-empty">No valid time zones set for this card.</div>;
+  }
+
+  if (layout === "horizontal") {
+    return (
+      <div className="clock-gallery" aria-live="off">
+        {rows.map((r) => {
+          const hourNum = parseInt(r.hh, 10) % 12;
+          const minuteNum = parseInt(r.mm, 10);
+          return (
+            <div
+              className="clock-tile"
+              key={r.zone}
+              aria-label={`${r.city}, ${r.hh}:${r.mm}, ${r.label}, ${r.offset}`}
+            >
+              <AnalogFace hour={hourNum} minute={minuteNum} />
+              <div className="clock-tile-caption">
+                <span className="clock-tile-city">{r.city}</span>
+                <span className="clock-tile-region">{r.label}</span>
+                <span className="clock-tile-offset">{r.offset}</span>
+              </div>
+            </div>
+          );
+        })}
+        {invalid.length > 0 && (
+          <div className="clock-invalid">Unknown time zone: {invalid.join(", ")}</div>
+        )}
+      </div>
+    );
   }
 
   return (
