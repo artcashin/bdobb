@@ -34,6 +34,11 @@ export interface NewsArticle {
   highlighted: boolean;
 }
 
+interface FeedInfo {
+  id: number;
+  favicon: string | null;
+}
+
 interface NewsRailRendererProps {
   url: string;
   user: string;
@@ -101,6 +106,10 @@ export default function NewsRailRenderer({
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [state, setState] = useState<RailState>("connecting");
   const [error, setError] = useState<string | null>(null);
+  // feed_id -> favicon data URI. Only entries with a real favicon are
+  // stored, so "missing from the map" and "explicitly null" both read the
+  // same way at render time: nothing to show.
+  const [favicons, setFavicons] = useState<Map<number, string>>(new Map());
   const articlesRef = useRef<NewsArticle[]>([]);
 
   const merge = useCallback((incoming: NewsArticle[], { prepend }: { prepend: boolean }) => {
@@ -222,6 +231,49 @@ export default function NewsRailRenderer({
     };
   }, [base, user, wsUrl, seed, merge]);
 
+  useEffect(() => {
+    if (!base || !user) return;
+    let cancelled = false;
+    (async () => {
+      const target = `${base}/api/feeds?user=${encodeURIComponent(user)}`;
+      try {
+        const res = await fetchImpl(target, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          // Best-effort: a favicon that never loads must not degrade the
+          // headline stream, which is why this effect never touches `state`
+          // — but a non-OK response is still worth one log line to diagnose.
+          logError(`news rail: favicon fetch failed: HTTP ${res.status}`);
+          return;
+        }
+        const body: unknown = await res.json().catch(() => null);
+        const list = Array.isArray((body as { feeds?: unknown[] })?.feeds)
+          ? ((body as { feeds: unknown[] }).feeds)
+          : [];
+        const map = new Map<number, string>();
+        for (const f of list) {
+          const feed = f as Partial<FeedInfo>;
+          if (typeof feed.id === "number" && typeof feed.favicon === "string" && feed.favicon) {
+            map.set(feed.id, feed.favicon);
+          }
+        }
+        if (!cancelled) setFavicons(map);
+      } catch (e) {
+        // Transport failure: same non-fatal handling as a non-OK response.
+        if (!cancelled) logError(`news rail: favicon fetch failed: ${String(e)}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [base, user, token, fetchImpl]);
+
   const openArticle = useCallback((a: NewsArticle) => {
     const link = safeLink(a.link);
     if (!link) return;
@@ -270,6 +322,9 @@ export default function NewsRailRenderer({
               tabIndex={0}
             >
               <span className="news-time">{rowTime(a)}</span>
+              {favicons.has(a.feed_id) && (
+                <img className="news-favicon" src={favicons.get(a.feed_id)} alt="" />
+              )}
               <span className="news-source">{a.source ?? ""}</span>
               <span className="news-title">{a.title}</span>
             </li>
