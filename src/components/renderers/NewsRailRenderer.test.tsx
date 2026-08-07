@@ -218,6 +218,15 @@ describe("NewsRailRenderer", () => {
   });
 
   describe("favicons", () => {
+    // SEED's two articles both take the article() factory's default
+    // feed_id (1), so they can't prove the join is selective per row. These
+    // fixtures give each article a distinct feed_id instead, so a single
+    // render can show one row resolving a favicon and a different row
+    // (whose feed_id the feeds response never mentions) resolving none.
+    const iconArticle = article({ id: 10, title: "Has an icon", feed_id: 11 });
+    const unlistedArticle = article({ id: 20, title: "Unlisted feed", feed_id: 22 });
+    const nullFaviconArticle = article({ id: 30, title: "Null favicon feed", feed_id: 33 });
+
     it("fetches /api/feeds once on mount with the same auth header as the seed call", async () => {
       const fetchImpl = okFetch(SEED, [{ id: 1, favicon: "data:image/x-icon;base64,AAA" }]);
       renderRail({ fetchImpl, token: "tkn-0123456789abcdef0123456789abcdef" });
@@ -235,23 +244,35 @@ describe("NewsRailRenderer", () => {
       expect(calls.filter(([u]) => String(u).includes("/api/feeds"))).toHaveLength(1);
     });
 
-    it("renders the favicon next to the source for a feed that has one", async () => {
-      const fetchImpl = okFetch(SEED, [{ id: 1, favicon: "data:image/x-icon;base64,AAA" }]);
+    it("renders the favicon next to the source for a feed that has one, and no icon for a row whose feed_id is unlisted", async () => {
+      const fetchImpl = okFetch(
+        [iconArticle, unlistedArticle],
+        [{ id: 11, favicon: "data:image/x-icon;base64,AAA" }] // feed_id 22 (unlistedArticle's feed) is absent entirely
+      );
       renderRail({ fetchImpl });
-      await screen.findByText("Second headline");
-      // SEED's second article (id 1, "First headline") has feed_id: 1 (the
-      // article() factory's default) and should get the icon.
-      const row = screen.getByText("First headline").closest(".news-row")!;
-      const img = row.querySelector(".news-favicon") as HTMLImageElement | null;
+      await screen.findByText("Has an icon");
+      await screen.findByText("Unlisted feed");
+
+      const iconRow = screen.getByText("Has an icon").closest(".news-row")!;
+      const img = iconRow.querySelector(".news-favicon") as HTMLImageElement | null;
       expect(img).not.toBeNull();
       expect(img!.src).toBe("data:image/x-icon;base64,AAA");
       expect(img!.alt).toBe("");
+
+      // Same render, different row: an unlisted feed_id gets no icon, proving
+      // the join is selective per row rather than a global on/off switch.
+      const unlistedRow = screen.getByText("Unlisted feed").closest(".news-row")!;
+      expect(unlistedRow.querySelector(".news-favicon")).toBeNull();
     });
 
     it("renders no icon for a feed with a null favicon or an unlisted feed_id", async () => {
-      const fetchImpl = okFetch(SEED, [{ id: 1, favicon: null }]); // feed_id 2 (SEED's other article) is absent entirely
+      const fetchImpl = okFetch(
+        [nullFaviconArticle, unlistedArticle],
+        [{ id: 33, favicon: null }] // feed_id 22 (unlistedArticle's feed) is absent entirely
+      );
       renderRail({ fetchImpl });
-      await screen.findByText("Second headline");
+      await screen.findByText("Null favicon feed");
+      await screen.findByText("Unlisted feed");
       expect(document.querySelectorAll(".news-favicon")).toHaveLength(0);
     });
 
