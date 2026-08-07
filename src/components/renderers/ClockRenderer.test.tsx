@@ -141,11 +141,21 @@ describe("ClockRenderer", () => {
 
   it("horizontal layout labels each tile with the spoken time for screen readers", () => {
     // 15:30 UTC, per the fixed system time this suite sets in beforeEach.
-    const { container } = render(<ClockRenderer zones={["UTC"]} layout="horizontal" />);
-    expect(container.querySelector(".clock-tile")).toHaveAttribute(
-      "aria-label",
-      "UTC, 15:30, UTC, GMT+0"
+    // getByRole, not a raw attribute check: a plain <div> has no ARIA role
+    // (role="generic"), which does not support aria-label, so the label would
+    // silently be dropped without role="img" actually exposing it.
+    render(<ClockRenderer zones={["UTC"]} layout="horizontal" />);
+    expect(screen.getByRole("img", { name: "UTC, 15:30, UTC, GMT+0" })).toBeInTheDocument();
+  });
+
+  it("horizontal layout labels a 12-hour tile with the meridiem", () => {
+    // 15:30 UTC is 11:30 AM in New York (EDT).
+    render(
+      <ClockRenderer zones={["America/New_York"]} layout="horizontal" hour12 />
     );
+    expect(
+      screen.getByRole("img", { name: "New York, 11:30 AM, US/Eastern, GMT-4" })
+    ).toBeInTheDocument();
   });
 
   it("horizontal layout still reports an invalid zone", () => {
