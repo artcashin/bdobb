@@ -11,6 +11,9 @@ const mockInvoke = vi.hoisted(() =>
 );
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
 
+const mockLogError = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/logger", () => ({ logError: mockLogError }));
+
 import SymphonyRenderer from "./SymphonyRenderer";
 
 /**
@@ -59,6 +62,7 @@ describe("SymphonyRenderer", () => {
     mockInvoke.mockClear();
     mockInvoke.mockImplementation(async () => ({ frameable: true, reason: "" }));
     mockOpenUrl.mockClear();
+    mockLogError.mockClear();
   });
 
   afterEach(() => {
@@ -218,6 +222,24 @@ describe("SymphonyRenderer", () => {
       expect(screen.queryByText(/refuses to be embedded/i)).not.toBeInTheDocument();
     });
 
+    it("logs the preflight failure instead of swallowing it silently", async () => {
+      mockInvoke.mockImplementation(async () => {
+        throw new Error("network unreachable");
+      });
+      render(<SymphonyRenderer params={baseParams} />);
+      act(() => FakeIntersectionObserver.instances[0].fire(true));
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockLogError).toHaveBeenCalledWith(
+        expect.stringContaining("check_frame_options failed for")
+      );
+      expect(mockLogError).toHaveBeenCalledWith(
+        expect.stringContaining("network unreachable")
+      );
+    });
+
     it("does not re-check on a later non-intersecting report", async () => {
       render(<SymphonyRenderer params={baseParams} />);
       act(() => FakeIntersectionObserver.instances[0].fire(true));
@@ -225,6 +247,38 @@ describe("SymphonyRenderer", () => {
 
       act(() => FakeIntersectionObserver.instances[0].fire(false));
       expect(mockInvoke).toHaveBeenCalledTimes(1);
+    });
+
+    it("offers an unconditional escape hatch alongside the iframe, so a could-not-determine result is still recoverable", () => {
+      // `refusal` stays null both while the check is pending and when it
+      // never resolves at all (blocked HEAD, VPN-gated pod, unreachable
+      // server) — there is no cross-origin signal to distinguish those from
+      // "confirmed frameable". The hint and the way out must be present in
+      // all of them, not just after a confirmed refusal.
+      render(<SymphonyRenderer params={baseParams} />);
+      act(() => FakeIntersectionObserver.instances[0].fire(true));
+
+      expect(screen.getByTitle("Symphony")).toBeInTheDocument();
+      expect(screen.getByText(/may refuse to be embedded/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Open externally/ })
+      ).toBeInTheDocument();
+    });
+
+    it("keeps the escape hatch usable when the preflight cannot determine an answer", async () => {
+      mockInvoke.mockImplementation(async () => {
+        throw new Error("timed out");
+      });
+      render(<SymphonyRenderer params={baseParams} />);
+      act(() => FakeIntersectionObserver.instances[0].fire(true));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      screen.getByRole("button", { name: /Open externally/ }).click();
+      expect(mockOpenUrl).toHaveBeenCalledWith(
+        "https://my-pod.symphony.com/embed/index.html?streamId=stream-123&partnerId=&mode=focus&theme=dark&condensed=true"
+      );
     });
   });
 });

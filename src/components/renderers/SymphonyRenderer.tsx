@@ -93,8 +93,14 @@ export default function SymphonyRenderer({ params }: SymphonyRendererProps) {
         if (!cancelled && !r.frameable) setRefusal(r.reason);
       })
       // A failed preflight is not evidence of refusal — the pod may be down,
-      // or blocking HEAD. Fall through and let the frame try.
-      .catch(() => {});
+      // or blocking HEAD. Fall through and let the frame try, but the error
+      // itself (scheme rejection, DNS failure, timeout) is worth keeping for
+      // diagnosing a misconfigured or unreachable pod.
+      .catch((e) => {
+        if (!cancelled) {
+          logError(`check_frame_options failed for ${embedUrl}: ${String(e)}`);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -134,15 +140,39 @@ export default function SymphonyRenderer({ params }: SymphonyRendererProps) {
   return (
     <div className="symphony-container" ref={containerRef}>
       {visible && (
-        <iframe
-          src={embedUrl}
-          // allow-same-origin is required here, unlike the general-purpose
-          // Website iframe: Symphony's embed SDK needs its own origin's
-          // storage to maintain the chat session.
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-          className="symphony-widget"
-          title="Symphony"
-        />
+        <>
+          <iframe
+            src={embedUrl}
+            // allow-same-origin is required here, unlike the general-purpose
+            // Website iframe: Symphony's embed SDK needs its own origin's
+            // storage to maintain the chat session.
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            className="symphony-widget"
+            title="Symphony"
+          />
+          {/* Unconditional, like IframeRenderer's: a refusal we could not
+              confirm (preflight blocked, pod unreachable, VPN-gated) leaves
+              `refusal` null and the frame simply blank, with no cross-origin
+              signal to detect it. The explanation and the way out have to be
+              present regardless of whether the check ever resolved. */}
+          <div className="iframe-footer">
+            <span className="iframe-hint">
+              Blank? The pod may refuse to be embedded.
+            </span>
+            <button
+              type="button"
+              className="iframe-external"
+              title="Open in your browser"
+              onClick={() => {
+                openUrl(embedUrl).catch((e) =>
+                  logError(`openUrl failed for ${embedUrl}: ${String(e)}`)
+                );
+              }}
+            >
+              Open externally ↗
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

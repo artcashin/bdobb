@@ -80,11 +80,15 @@ async fn frame_check(url: String) -> Result<FrameCheck, String> {
     let csp = get("content-security-policy");
     if let Some(idx) = csp.find("frame-ancestors") {
         let directive = csp[idx..].split(';').next().unwrap_or_default();
-        // A wildcard or an https: source permits us; anything else is a list of
-        // origins this app is not on.
-        let permissive = directive.contains(" *")
-            || directive.contains("https:")
-            || directive.contains("http:");
+        // Only the CSP wildcard and bare-scheme source forms are actually
+        // permissive. A substring test misreads a host allow-list like
+        // `frame-ancestors 'self' https://*.symphony.com` as permissive because
+        // it *contains* "https:" — tokenize on whitespace instead and require
+        // an exact token match, so `'none'`, `'self'`, and host lists are
+        // correctly read as refusals.
+        let permissive = directive
+            .split_whitespace()
+            .any(|tok| tok == "*" || tok == "https:" || tok == "http:");
         if !permissive {
             return Ok(FrameCheck {
                 frameable: false,
