@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { loadNav, loadPage } from "./loadContent";
+import { loadNav, loadPage, loadSearchIndex } from "./loadContent";
 
 vi.mock("./generated/nav.json", () => ({
   default: { Widgets: [{ slug: "news-ticker", title: "News Ticker" }] },
@@ -18,5 +18,12 @@ describe("loadNav", () => {
 describe("loadPage", () => {
   it("returns the bundled markdown for a given slug", () => {
     expect(loadPage("news-ticker")).toBe("# News Ticker\n\nThe wire.");
+  });
+});
+
+describe("loadSearchIndex", () => {
+  it("returns a MiniSearch instance that can search bundled pages", () => {
+    const index = loadSearchIndex();
+    expect(typeof index.search).toBe("function");
   });
 });
