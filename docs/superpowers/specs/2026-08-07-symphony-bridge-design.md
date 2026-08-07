@@ -33,7 +33,7 @@ Two points here deliberately overrule `2026-08-03-symphony-widget-design.md`:
    unverified for the entire feature precisely because nothing could check both
    ends at once. In one repo, CI can. The cost is real and accepted: bdobb is a
    desktop-app repo, and its release tags are app snapshots — after this, a
-   bdobb tag also carries a server-side container. §8 records the consequence.
+   bdobb tag also carries a server-side container. §9 records the consequence.
 
 2. **Attribution identity.** F2-6 requires every posted message to carry
    `📤 *{user} via BDOBB*`, but no BDOBB payload contains a user. **BDOBB will
