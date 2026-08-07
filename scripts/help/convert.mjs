@@ -33,8 +33,13 @@ function walkMarkdownFiles(dir) {
  * nav tree grouped by source subfolder, and a MiniSearch index.
  */
 export function convertVersionFolder(versionDir, outDir) {
-  const files = walkMarkdownFiles(versionDir);
   const slugOf = (filePath) => basename(filePath, ".md");
+  // readdirSync's order isn't guaranteed and varies by filesystem (e.g.
+  // macOS/APFS happens to return alphabetical order, but release builds run
+  // on ubuntu-latest/ext4, which doesn't) -- sort explicitly so the sidebar
+  // order and default landing page are deterministic across build
+  // environments.
+  const files = walkMarkdownFiles(versionDir).sort((a, b) => slugOf(a).localeCompare(slugOf(b)));
   const knownSlugs = new Set(files.map(slugOf));
 
   const pages = files.map((filePath) => {
@@ -64,13 +69,29 @@ export function convertVersionFolder(versionDir, outDir) {
     writeFileSync(join(outDir, `${page.slug}.md`), page.content, "utf8");
   }
 
-  const nav = pages
+  const categorized = pages
     .filter((p) => p.slug !== "home")
     .reduce((tree, p) => {
       const key = p.category ?? "General";
       (tree[key] ??= []).push({ slug: p.slug, title: p.title });
       return tree;
     }, {});
+
+  // Sort category names and, within each, the pages by slug -- ties this to
+  // the same deterministic ordering as `files` above rather than whatever
+  // order categories were first encountered in.
+  const nav = {};
+  // "home" has no nav entry of its own (see the filter above), so without a
+  // pinned entry it's only reachable via search and the app defaults to
+  // whatever the alphabetically-first category's first page is instead of
+  // the actual home/intro page. Pin it as the first sidebar entry.
+  const homePage = pages.find((p) => p.slug === "home");
+  if (homePage) {
+    nav.Home = [{ slug: "home", title: homePage.title }];
+  }
+  for (const key of Object.keys(categorized).sort((a, b) => a.localeCompare(b))) {
+    nav[key] = categorized[key].sort((a, b) => a.slug.localeCompare(b.slug));
+  }
   writeFileSync(join(outDir, "nav.json"), JSON.stringify(nav, null, 2), "utf8");
 
   const miniSearch = new MiniSearch({

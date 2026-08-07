@@ -4,14 +4,13 @@ import HelpContent from "./HelpContent";
 import HelpSearch from "./HelpSearch";
 import { loadNav } from "./loadContent";
 
-function firstSlug(nav: ReturnType<typeof loadNav>): string | null {
-  const firstCategory = Object.values(nav)[0];
-  return firstCategory?.[0]?.slug ?? null;
-}
-
 export default function HelpApp() {
   const nav = loadNav();
-  const [activeSlug, setActiveSlug] = useState<string | null>(firstSlug(nav));
+  // "home" is the actual intro page (pinned as its own nav entry by
+  // convert.mjs), and is always the right default landing page -- unlike
+  // the previous "first category's first page" default, which happened to
+  // land on a deep config page.
+  const [activeSlug, setActiveSlug] = useState<string | null>("home");
 
   return (
     <div className="help-app">
