@@ -80,6 +80,7 @@ export function convertVersionFolder(versionDir, outDir) {
   miniSearch.addAll(
     pages.map((p) => ({
       id: p.slug,
+      slug: p.slug,
       title: p.title,
       tags: p.tags.join(" "),
       content: p.content,

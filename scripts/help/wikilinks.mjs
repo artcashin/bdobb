@@ -1,4 +1,7 @@
-const WIKILINK_RE = /\[\[([a-zA-Z0-9_-]+)(?:\|([^\]]+))?\]\]/g;
+// The separator allows an optional leading backslash: inside a GFM table
+// cell, a literal "|" must be written "\|" so it isn't parsed as a column
+// break, so [[slug\|text]] is exactly as valid a wikilink as [[slug|text]].
+const WIKILINK_RE = /\[\[([a-zA-Z0-9_-]+)(?:\\?\|([^\]]+))?\]\]/g;
 
 /**
  * Rewrites Tolaria [[slug]] / [[slug|text]] wikilinks to standard markdown

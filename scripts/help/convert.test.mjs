@@ -46,4 +46,17 @@ describe("convertVersionFolder", () => {
     const index = JSON.parse(readFileSync(join(outDir, "search-index.json"), "utf8"));
     expect(index).toBeTruthy();
   });
+
+  it("stores the slug on each search index entry so results are navigable", () => {
+    // storeFields is ["title", "slug"] (see loadContent.ts's loadSearchIndex),
+    // so every indexed doc must carry a "slug" property -- otherwise
+    // MiniSearch.storeFields silently stores `undefined` and HelpSearch's
+    // onSelect(result.slug) navigates nowhere.
+    const index = JSON.parse(readFileSync(join(outDir, "search-index.json"), "utf8"));
+    const stored = Object.values(index.storedFields);
+    expect(stored.length).toBeGreaterThan(0);
+    for (const doc of stored) {
+      expect(doc.slug).toBeTruthy();
+    }
+  });
 });

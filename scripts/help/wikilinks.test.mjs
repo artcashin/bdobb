@@ -16,6 +16,16 @@ describe("rewriteWikilinks", () => {
     );
   });
 
+  it("rewrites a piped wikilink whose pipe is backslash-escaped (GFM table cell syntax)", () => {
+    // Inside a Markdown table cell a literal "|" must be written "\|" so it
+    // isn't parsed as a column separator -- real content (e.g.
+    // backends-and-connections.md) writes wikilinks this way inside tables.
+    const known = new Set(["news-ticker"]);
+    expect(rewriteWikilinks("| [[news-ticker\\|News ticker]] | row |", known)).toBe(
+      "| [News ticker](help://news-ticker) | row |"
+    );
+  });
+
   it("throws when the target slug isn't in this version's page set", () => {
     const known = new Set(["news-ticker"]);
     expect(() => rewriteWikilinks("See [[live-quotes]].", known)).toThrow(
