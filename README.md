@@ -72,6 +72,14 @@ Settings persist in `$APPDATA` (on macOS,
 `backends.json`, `dashboards/` (one JSON file per dashboard — back up freely),
 `logs/bdobb.log`.
 
+## Feedback
+
+Bug reports go to [GitHub Issues](https://github.com/artcashin/bdobb/issues).
+Enhancement requests and feature ideas go to
+[BDOBB on Canny](https://artcashin.canny.io/bdobb) — search first and upvote
+an existing idea if it's already there; post a new request when yours is
+genuinely new.
+
 ## License
 
 MIT. The Clock widget's typeface (Erbos Draco NBP, CC BY-SA 3.0) is bundled —
