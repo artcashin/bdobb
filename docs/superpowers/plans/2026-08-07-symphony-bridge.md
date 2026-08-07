@@ -1218,8 +1218,10 @@ git commit -m "feat(bridge): conversation listing and room search"
 - Create: `deploy/symphony-bridge/tests/test_mcp.py`
 
 **Interfaces:**
-- Consumes: `SymphonyClient` (Task 3); `attribute`, the send path (Task 4).
+- Consumes: `SymphonyClient` (Task 3); `attribute` and `log_send` (Task 4); `markdown_to_messageml`, `sanitize` (Task 2).
 - Produces: `build_mcp(client: SymphonyClient, cfg: Config) -> FastMCP` exposing one tool, `post_to_symphony(stream_id: str, message: str) -> str`.
+
+**Rita's sends are sends.** They must carry the same attribution as the HTTP path (spec F2-9) and must be audit-logged like any other send (Global Constraints). The tool takes no `sender` parameter — attribution degrades to `📤 *via BDOBB*` — because adding one would spend Rita's tool budget on a value the model would be inventing anyway.
 
 **Constraint:** the tool descriptor must stay well under ~2k tokens. One tool, one short docstring, two scalar parameters.
 
@@ -1242,6 +1244,24 @@ async def test_tool_sends_through_the_client():
     tools = await mcp.list_tools()
     assert [t.name for t in tools] == ["post_to_symphony"]
     assert len(tools[0].description or "") < 400  # keep Rita's budget small
+
+
+async def test_tool_attributes_like_the_http_path():
+    fake = FakeClient()
+    mcp = build_mcp(fake, load_config({"BRIDGE_FAKE": "1"}))
+    await mcp.call_tool("post_to_symphony", {"stream_id": "room-1", "message": "hi"})
+    assert "via BDOBB" in fake.sent[0].message_ml
+
+
+async def test_tool_writes_an_audit_record(caplog):
+    import logging
+
+    fake = FakeClient()
+    mcp = build_mcp(fake, load_config({"BRIDGE_FAKE": "1"}))
+    with caplog.at_level(logging.INFO):
+        await mcp.call_tool("post_to_symphony", {"stream_id": "room-1", "message": "secret"})
+    assert "room-1" in caplog.text
+    assert "secret" not in caplog.text
 
 
 async def test_tool_respects_the_destination_allowlist():
@@ -1272,6 +1292,7 @@ this is a send path, not a general Symphony proxy."""
 
 from mcp.server.fastmcp import FastMCP
 
+from app.audit import log_send
 from app.client import SendRequest, SymphonyClient
 from app.config import Config
 from app.messageml import markdown_to_messageml, sanitize
@@ -1286,10 +1307,20 @@ def build_mcp(client: SymphonyClient, cfg: Config) -> FastMCP:
         MessageML. Requires the user's approval in BDOBB before it runs."""
         if cfg.allowed_destinations is not None and stream_id not in cfg.allowed_destinations:
             return f"Refused: {stream_id} is not in the configured destination allowlist."
-        body = sanitize(markdown_to_messageml(message))
-        result = await client.send_message(
-            SendRequest(stream_id=stream_id, message_ml=body, attachment=None)
-        )
+        # Same pipeline as POST /messages: sanitize, then attribute, then log.
+        # Rita has no sender name to offer, so attribution degrades to
+        # "via BDOBB" rather than the model inventing one.
+        from app.main import attribute
+
+        body = attribute(sanitize(markdown_to_messageml(message)), None)
+        try:
+            result = await client.send_message(
+                SendRequest(stream_id=stream_id, message_ml=body, attachment=None)
+            )
+        except Exception as exc:
+            log_send(source="rita/mcp", stream_id=stream_id, body=body, result=f"error: {exc}")
+            return f"Send failed: {exc}"
+        log_send(source="rita/mcp", stream_id=stream_id, body=body, result="ok")
         return f"Sent to {stream_id} (message id {result.message_id})."
 
     return mcp
