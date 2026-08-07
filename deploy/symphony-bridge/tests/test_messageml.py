@@ -134,6 +134,21 @@ def test_parenthesized_url_produces_complete_href():
     sanitize(out)
 
 
+# --- Fix 4: link labels must not receive emphasis formatting -------------
+
+
+def test_link_label_does_not_receive_emphasis():
+    # Labels are placeheld as part of the whole anchor before the emphasis
+    # passes run, so an emphasis marker straddling a link's brackets must
+    # not pair with one inside the label -- see the comment in pass 2 of
+    # markdown_to_messageml. If a future change re-exposes labels to the
+    # emphasis passes, this must fail.
+    out = markdown_to_messageml("_buy[cash_balance](https://e.com/x)")
+    sanitize(out)  # must not raise
+    assert "<i>" not in out
+    assert '<a href="https://e.com/x">cash_balance</a>' in out
+
+
 # --- Round-trip property: sanitize(markdown_to_messageml(s)) never raises -
 #
 # A curated string list (the previous version of this test) can't find a
@@ -142,13 +157,23 @@ def test_parenthesized_url_produces_complete_href():
 # six-character inputs like "__*__*" that nobody would think to hand-write.
 # This generates a large, fixed-seed corpus from the relevant alphabet
 # instead, so it reliably finds -- and keeps finding -- inputs like that.
+#
+# The alphabet includes a backtick and explicit composed link templates
+# whose label and/or URL each carry a code span, emphasis, or parentheses
+# (e.g. "`[L](U)`", "[`L`](U)", "[L](`U`)", "_L[L](U)**"). Without those,
+# the generator can build a code span or a link, but essentially never both
+# in the same input -- and the region where the href-attribute bug (a code
+# span placeholder landing inside a link's URL capture) lives is exactly
+# "link containing a code span". This was measured, not assumed: see
+# test_generator_catches_href_attribute_bug below, which reconstructs the
+# broken href guard and confirms this generator fails against it.
 
 _SENTINEL_RANGE = re.compile("[\uE000-\uE003]")
 
 _FUZZ_SEED = 20260807
-_FUZZ_COUNT = 5000
+_FUZZ_COUNT = 8000
 
-_MARKER_CHARS = list("_*()[]<>&\"/:. ") + list("0123456789")
+_MARKER_CHARS = list("_*()[]<>&\"/:.` ") + list("0123456789")
 _WORDS = [
     "buy", "sell", "AAPL", "stop_loss", "price", "target", "bid_ask_spread",
     "10y_2y_spread", "the", "and", "is", "not", "moving_average_50d", "px",
@@ -161,6 +186,35 @@ _URL_FRAGMENTS = [
 ]
 _SENTINELS = ["\uE000", "\uE001", "\uE002", "\uE003"]
 
+# Composed link templates: a link whose label and/or URL contains a code
+# span, emphasis marker, or parentheses. These are the shapes that exercise
+# "protected span lands inside another pass's capture group" bugs -- the
+# href-attribute bug (Fix 1) and the earlier label/emphasis-crossing bug
+# (see pass 2's comment in app/messageml.py) both live here.
+_LINK_LABELS = ["buy", "stop_loss", "the list", "AAPL", "a(b)", "cash_balance"]
+_LINK_URLS = [
+    "https://e.com/x",
+    "https://e.com/a_b",
+    "https://sec.gov/f_(2023)",
+    "https://api.e.com/list",
+]
+_LINK_TEMPLATES = [
+    "[{label}]({url})",
+    "`[{label}]({url})`",
+    "[`{label}`]({url})",
+    "[{label}](`{url}`)",
+    "[{label}](http:`x`)",
+    "_{label}[{label}]({url})**",
+    "[the `{label}` endpoint]({url})",
+]
+
+
+def _composed_link(rng: random.Random) -> str:
+    label = rng.choice(_LINK_LABELS)
+    url = rng.choice(_LINK_URLS)
+    template = rng.choice(_LINK_TEMPLATES)
+    return template.format(label=label, url=url)
+
 
 def _generate_fuzz_inputs(rng: random.Random, count: int) -> list[str]:
     inputs = []
@@ -169,14 +223,16 @@ def _generate_fuzz_inputs(rng: random.Random, count: int) -> list[str]:
         parts = []
         for _ in range(num_parts):
             bucket = rng.random()
-            if bucket < 0.4:
+            if bucket < 0.35:
                 parts.append(rng.choice(_MARKER_CHARS))
-            elif bucket < 0.65:
+            elif bucket < 0.55:
                 parts.append(rng.choice(_WORDS))
-            elif bucket < 0.8:
+            elif bucket < 0.65:
                 parts.append(str(rng.randint(0, 9999)))
-            elif bucket < 0.93:
+            elif bucket < 0.78:
                 parts.append(rng.choice(_URL_FRAGMENTS))
+            elif bucket < 0.93:
+                parts.append(_composed_link(rng))
             else:
                 parts.append(rng.choice(_SENTINELS))
             if rng.random() < 0.3:
@@ -194,3 +250,66 @@ def test_property_no_raise_and_no_sentinel_leak_on_generated_inputs():
         out = markdown_to_messageml(s)
         sanitize(out)  # must not raise
         assert not _SENTINEL_RANGE.search(out), f"sentinel leaked for input {s!r}: {out!r}"
+
+
+def test_generator_catches_href_attribute_bug():
+    """Validates the validator: reconstruct the broken href guard (accept a
+    placeholder-bearing URL, i.e. revert Fix 1) and confirm the repaired
+    generator actually fails against it within its input budget. A property
+    test that cannot catch a bug that shipped is decoration."""
+    import app.messageml as messageml_module
+
+    # Re-run the whole pipeline with the pre-Fix-1 guard (drop the
+    # _PLACEHOLDER.search(url) check) via a small local reimplementation
+    # that shares the module's regexes and escaping, so it's a faithful
+    # stand-in for the old, broken code.
+    def _broken_markdown_to_messageml(md: str) -> str:
+        body = messageml_module._escape(md)
+        spans: list[str] = []
+
+        def _protect(markup: str) -> str:
+            spans.append(markup)
+            return f"{messageml_module._SPAN_OPEN}{len(spans) - 1}{messageml_module._SPAN_CLOSE}"
+
+        def _code(m: re.Match[str]) -> str:
+            return _protect(f"<code>{m.group(1)}</code>")
+
+        body = messageml_module._CODE.sub(_code, body)
+
+        def _link(m: re.Match[str]) -> str:
+            label, url = m.group(1), m.group(2)
+            if not messageml_module._HTTP_SCHEME.match(url):  # Fix 1 reverted: no placeholder guard
+                return label
+            return _protect(f'<a href="{url}">{label}</a>')
+
+        body = messageml_module._LINK.sub(_link, body)
+        body = messageml_module._BOLD.sub(lambda m: _protect(f"<b>{m.group(1)}</b>"), body)
+        body = messageml_module._BOLD_U.sub(lambda m: _protect(f"<b>{m.group(1)}</b>"), body)
+        body = messageml_module._ITAL.sub(lambda m: _protect(f"<i>{m.group(1)}</i>"), body)
+        body = messageml_module._ITAL_U.sub(lambda m: _protect(f"<i>{m.group(1)}</i>"), body)
+        body = body.replace("\n", "<br/>")
+
+        def _resolve(text: str, resolved: list[str]) -> str:
+            def _sub(m: re.Match[str]) -> str:
+                idx = int(m.group(1))
+                if 0 <= idx < len(resolved):
+                    return resolved[idx]
+                return m.group(0)
+
+            return messageml_module._PLACEHOLDER.sub(_sub, text)
+
+        resolved: list[str] = []
+        for span in spans:
+            resolved.append(_resolve(span, resolved))
+        body = _resolve(body, resolved)
+        return f"<messageML>{body}</messageML>"
+
+    rng = random.Random(_FUZZ_SEED)
+    failures = 0
+    for s in _generate_fuzz_inputs(rng, _FUZZ_COUNT):
+        out = _broken_markdown_to_messageml(s)
+        try:
+            sanitize(out)
+        except MessageMLError:
+            failures += 1
+    assert failures > 0, "repaired generator failed to catch the reverted href guard"

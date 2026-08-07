@@ -119,19 +119,31 @@ def markdown_to_messageml(md: str) -> str:
 
     # 2. Links. The whole anchor -- href *and* label -- is placeheld as one
     #    opaque unit. (An earlier version of this fix shielded only the
-    #    href and left the label exposed for nested emphasis; a 130k-input
-    #    fuzz run found that an emphasis marker before the link could still
+    #    href and left the label exposed for nested emphasis; a targeted
+    #    repro found that an emphasis marker before the link could still
     #    pair with a marker inside the label, e.g. "_buy[cash_balance](u)",
     #    crossing the `<a href="...">` tag boundary the same way the
     #    bold/italic bug did. Link labels do not get emphasis formatting
-    #    as a result -- untested, and not worth reopening this bug class
+    #    as a result -- see test_link_label_does_not_receive_emphasis in
+    #    tests/test_messageml.py, and not worth reopening this bug class
     #    for.)
     def _link(match: re.Match[str]) -> str:
         label, url = match.group(1), match.group(2)
-        if not _HTTP_SCHEME.match(url):
-            # Not a web link -- render the label as plain text, drop the target.
+        # A placeholder captured by the URL group must never reach attribute
+        # context: it resolves (at final-resolution time) to markup -- e.g.
+        # a code span's "<code>...</code>" -- and markup inside an XML
+        # attribute value is always malformed. The general rule: a
+        # placeholder that resolves to markup must never reach attribute
+        # context. (The pre-restructure code didn't need this guard because
+        # its href placeholder resolved to a raw string, not markup.)
+        if _PLACEHOLDER.search(url) or not _HTTP_SCHEME.match(url):
+            # Not a plain http(s) URL -- render the label as plain text, drop the target.
             return label
-        return _protect(f'<a href="{url}">{label}</a>')
+        # The URL char class excludes whitespace, so only the label can ever
+        # carry a raw newline here; give it the same <br/> treatment `body`
+        # gets below, since once protected it will never pass through that
+        # replace itself.
+        return _protect(f'<a href="{url}">{label.replace(chr(10), "<br/>")}</a>')
 
     body = _LINK.sub(_link, body)
 
@@ -141,10 +153,15 @@ def markdown_to_messageml(md: str) -> str:
     #    pass's <b> or <i> output at all, so it cannot pair one of its
     #    markers with a leftover marker character sitting inside that
     #    output: bold and italic can no longer cross.
-    body = _BOLD.sub(lambda m: _protect(f"<b>{m.group(1)}</b>"), body)
-    body = _BOLD_U.sub(lambda m: _protect(f"<b>{m.group(1)}</b>"), body)
-    body = _ITAL.sub(lambda m: _protect(f"<i>{m.group(1)}</i>"), body)
-    body = _ITAL_U.sub(lambda m: _protect(f"<i>{m.group(1)}</i>"), body)
+    #
+    #    Each span's content gets the same \n -> <br/> treatment `body`
+    #    gets below, applied here because once protected the content never
+    #    passes through that replace itself (it's lifted out of `body`
+    #    before the replace runs).
+    body = _BOLD.sub(lambda m: _protect(f"<b>{m.group(1).replace(chr(10), '<br/>')}</b>"), body)
+    body = _BOLD_U.sub(lambda m: _protect(f"<b>{m.group(1).replace(chr(10), '<br/>')}</b>"), body)
+    body = _ITAL.sub(lambda m: _protect(f"<i>{m.group(1).replace(chr(10), '<br/>')}</i>"), body)
+    body = _ITAL_U.sub(lambda m: _protect(f"<i>{m.group(1).replace(chr(10), '<br/>')}</i>"), body)
 
     body = body.replace("\n", "<br/>")
 
