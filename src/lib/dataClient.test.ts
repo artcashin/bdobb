@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BackendConfig, WidgetDef } from "./types";
 import {
   HttpError, buildWidgetUrl, buildWidgetWsUrl, extractData, fetchWidgetData,
-  fetchWidgetHtml, fetchWidgetsJson, serializeParams,
+  fetchWidgetHtml, fetchWidgetsJson, putJson, serializeParams,
 } from "./dataClient";
 import { fetch as tauriHttpFetch } from "@tauri-apps/plugin-http";
 import { startMockBackend, type MockBackend } from "../test/mockServer";
@@ -196,6 +196,42 @@ describe("fetch failures", () => {
     });
     const backend = { id: "b", name: "b", baseUrl: "https://down.example" } as BackendConfig;
     await expect(fetchWidgetsJson(backend, fetchImpl as never)).rejects.toThrow("Connection refused");
+  });
+});
+
+describe("putJson", () => {
+  const backend: BackendConfig = {
+    id: "b", name: "b", baseUrl: "https://host.example",
+    headerName: "x-api-key", headerValue: "secret123",
+  };
+
+  it("PUTs the body as JSON with the auth header, and returns the parsed response", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ status: "set", restart_required: true }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      })
+    );
+    const result = await putJson(
+      "https://host.example/keys/FMP_API_KEY",
+      { value: "topsecret" },
+      backend,
+      fetchImpl as unknown as typeof fetch
+    );
+    expect(result).toEqual({ status: "set", restart_required: true });
+
+    const [calledUrl, init] = fetchImpl.mock.calls[0];
+    expect(init?.method).toBe("PUT");
+    expect((init?.headers as Record<string, string>)["x-api-key"]).toBe("secret123");
+    // The value must travel in the body only, never in the URL.
+    expect(String(calledUrl)).not.toContain("topsecret");
+    expect(JSON.parse(init?.body as string)).toEqual({ value: "topsecret" });
+  });
+
+  it("throws HttpError with the response status on a non-2xx response", async () => {
+    const fetchImpl = vi.fn(async () => new Response("nope", { status: 403 }));
+    await expect(
+      putJson("https://host.example/keys/FMP_API_KEY", { value: "x" }, backend, fetchImpl as unknown as typeof fetch)
+    ).rejects.toMatchObject({ status: 403 });
   });
 });
 

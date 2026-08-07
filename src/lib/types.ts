@@ -112,6 +112,12 @@ import type { ShareTarget } from "./chatShare";
 
 export type ParamValues = Record<string, string | number | boolean | string[] | null>;
 
+export interface WidgetParams {
+  pod: string;
+  id: string;
+  pid: string;
+}
+
 export interface CardLayout { x: number; y: number; w: number; h: number; }
 
 export type CardView = "default" | "raw" | "chart";

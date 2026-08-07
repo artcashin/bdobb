@@ -296,6 +296,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       if (protocolMsgs.length > 0) {
         set((s) => ({ messages: [...s.messages, ...protocolMsgs] }));
       }
+
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
       const message = err instanceof Error ? err.message : "Failed to send message";

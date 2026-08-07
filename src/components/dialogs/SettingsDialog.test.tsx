@@ -173,6 +173,8 @@ describe("SettingsDialog", () => {
       expect(screen.getByRole("tab", { name: "MCP" })).toHaveAttribute("aria-selected", "true");
       fireEvent.keyDown(screen.getByRole("tab", { name: "MCP" }), { key: "End" });
       expect(screen.getByRole("tab", { name: "Logs" })).toHaveAttribute("aria-selected", "true");
+      fireEvent.keyDown(screen.getByRole("tab", { name: "Logs" }), { key: "ArrowLeft" });
+      expect(screen.getByRole("tab", { name: "Symphony" })).toHaveAttribute("aria-selected", "true");
       // Landing on Logs mounts its async load effect; let it settle so the
       // test doesn't finish with a state update outside of act().
       await waitFor(() => expect(readLogTail).toHaveBeenCalled());
