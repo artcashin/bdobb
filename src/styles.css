@@ -1686,3 +1686,8 @@ input, select, textarea {
 .help-content img {
   max-width: 100%;
 }
+
+.help-error {
+  padding: 32px;
+  color: var(--text-dim);
+}
