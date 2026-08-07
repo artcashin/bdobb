@@ -65,6 +65,11 @@ let registryColumns: unknown = [
   { field: "name", headerName: "Name" },
   { field: "age", headerName: "Age" },
 ];
+// Overrides widgetFixture's hardcoded `raw: false`. Needed to prove the keys
+// guard is a real type check and not just riding on the server already
+// setting raw: false for keys widgets (Task 4) — a card must not offer or
+// honour "raw" for a keys widget even when the server flag says it may.
+let registryRaw = false;
 /**
  * Cache keyed like the real store. registryStore.find returns an element of the
  * widgets array, so its identity is stable across renders; a mock that built a
@@ -85,6 +90,7 @@ vi.mock("../stores/registryStore", () => ({
           ...widgetFixture(widgetId, registryType),
           columnsDefs: registryColumns,
           params: registryParams,
+          raw: registryRaw,
         });
       }
       return registryCache.get(key);
@@ -144,6 +150,7 @@ beforeEach(() => {
   registryCache.clear();
   registryType = "table";
   registryParams = [];
+  registryRaw = false;
   registryColumns = [
     { field: "name", headerName: "Name" },
     { field: "age", headerName: "Age" },
@@ -720,6 +727,85 @@ describe("WidgetCard fetch hardening (desk graft)", () => {
     await waitFor(() => expect(vi.mocked(fetchWidgetData)).toHaveBeenCalled());
     expect(vi.mocked(fetchWidgetHtml)).not.toHaveBeenCalled();
     expect(vi.mocked(fetchWidgetData).mock.calls[0][3]).toMatchObject({ raw: true });
+  });
+});
+
+describe("WidgetCard keys widget secrecy (Task 6)", () => {
+  it("never shows the raw view for a keys widget, even if the card asks for it", async () => {
+    // A card's view can be persisted as "raw" from before the keys widget
+    // type existed (or by hand-edited storage). Without a client-side type
+    // guard, WidgetCard's raw branch fires before the type dispatch below it
+    // and would dump the fetched envelope — including a tier-3 `value`
+    // secret — straight into the DOM via RawJsonView.
+    registryType = "keys";
+    vi.mocked(fetchWidgetData).mockResolvedValue({
+      tier: 3,
+      rows: [
+        {
+          provider: "OpenAI",
+          env_var: "OPENAI_API_KEY",
+          status: "set",
+          demo: false,
+          value: "sk-should-never-leak",
+        },
+      ],
+    });
+    render(<WidgetCard card={makeCard({ view: "raw" })} />);
+    await waitFor(() => expect(screen.getByText("OpenAI")).toBeInTheDocument());
+
+    // The keys table rendered (KeysRenderer), not the raw JSON dump.
+    expect(document.querySelector(".raw-json-view")).toBeNull();
+    expect(document.querySelector(".table-container")).toBeInTheDocument();
+    // Belt and suspenders: the secret value must not appear anywhere in the
+    // rendered output, however it got there.
+    expect(screen.queryByText(/sk-should-never-leak/)).not.toBeInTheDocument();
+  });
+
+  it("does not offer raw as an available view for a keys widget", async () => {
+    // registryRaw: true simulates a server that (incorrectly, or on an old
+    // deploy) still flags this widget raw-capable. availableViews must still
+    // exclude "raw" for a keys widget on the type alone, not merely because
+    // the server said not to.
+    registryType = "keys";
+    registryRaw = true;
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText("Test Widget")).toBeInTheDocument());
+    expect(screen.queryByRole("option", { name: "Raw" })).not.toBeInTheDocument();
+  });
+
+  it("does not dump the raw envelope in the error-boundary fallback for a keys widget, even when the renderer throws", async () => {
+    // isKeysEnvelope only checks Array.isArray(data.rows), not the shape of
+    // each row. A null row reaches KeysRenderer's per-row cells
+    // (row.original.provider) and throws, which is caught here by
+    // WidgetCard's ErrorBoundary. Its fallback used to render RawJsonView
+    // with the full unfiltered fetched envelope whenever data !== null, with
+    // no keys guard -- so a malformed row turned into every tier-3 `value`
+    // in the response being dumped verbatim to the screen.
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    registryType = "keys";
+    vi.mocked(fetchWidgetData).mockResolvedValue({
+      tier: 3,
+      rows: [
+        {
+          provider: "OpenAI",
+          env_var: "OPENAI_API_KEY",
+          status: "set",
+          demo: false,
+          value: "sk-should-never-leak-in-error-fallback",
+        },
+        null,
+      ],
+    });
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => {
+      expect(screen.getByText("This widget failed to render.")).toBeInTheDocument();
+    });
+    // The fallback must not fall through to the raw dump for a keys widget.
+    expect(document.querySelector(".raw-json-view")).toBeNull();
+    // Belt and suspenders: the secret value must not appear anywhere in the
+    // rendered output, however it got there.
+    expect(screen.queryByText(/sk-should-never-leak-in-error-fallback/)).not.toBeInTheDocument();
+    consoleErrorSpy.mockRestore();
   });
 });
 

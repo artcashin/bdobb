@@ -26,6 +26,7 @@ import HtmlRenderer from "./renderers/HtmlRenderer";
 import IframeRenderer from "./renderers/IframeRenderer";
 import MarkdownRenderer from "./renderers/MarkdownRenderer";
 import TableRenderer from "./renderers/TableRenderer";
+import KeysRenderer from "./renderers/KeysRenderer";
 import LiveGridRenderer from "./renderers/LiveGridRenderer";
 import MetricRenderer from "./renderers/MetricRenderer";
 import RawJsonView from "./renderers/RawJsonView";
@@ -284,7 +285,14 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     // The raw view fetches with raw=true and shows the JSON directly. It
     // previously fell through to the type renderer, which showed it only via
     // that renderer's shape-mismatch fallback.
-    if (card.view === "raw") {
+    //
+    // A keys widget's rows carry credential values at tier 3; the raw view
+    // would dump them verbatim into the DOM. The server already declares
+    // raw: false for this widget, but a card whose view was persisted as
+    // "raw" before this widget existed (or hand-edited in storage) would
+    // still reach this branch ahead of the type dispatch below, so the
+    // server flag alone is not enough — the client needs its own guard.
+    if (card.view === "raw" && widget.type !== "keys") {
       return <RawJsonView data={data} widgetDef={widgetDef} theme={theme} />;
     }
     if (card.view === "default" && widget.type === "chart") {
@@ -295,6 +303,9 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     }
     if (widget.type === "markdown") {
       return <MarkdownRenderer data={data} widgetDef={widgetDef} theme={theme} />;
+    }
+    if (widget.type === "keys") {
+      return <KeysRenderer data={data} widgetDef={widgetDef} theme={theme} backend={backend} />;
     }
     if (widget.type === "table") {
       return <TableRenderer data={data} widgetDef={widgetDef} theme={theme} />;
@@ -343,7 +354,10 @@ export default function WidgetCard({ card }: WidgetCardProps) {
   );
 
   const availableViews: CardView[] = ["default"];
-  if (widget?.raw) availableViews.push("raw");
+  // Never offer the raw view for a keys widget, even if the server flags it
+  // raw-capable: the point of the guard above is defeated if the UI still
+  // lets the user select the view it silently downgrades.
+  if (widget?.raw && widget.type !== "keys") availableViews.push("raw");
   // Spec: a widget with a date/time column can toggle table <-> chart. Many
   // widgets.json entries omit columnsDefs, so also offer it when the rows in
   // hand actually yield a figure.
@@ -442,7 +456,16 @@ export default function WidgetCard({ card }: WidgetCardProps) {
             <div className="renderer-error">
               <p>This widget failed to render.</p>
               <pre className="renderer-error-detail">{err.message}</pre>
-              {data !== null && (
+              {/* A keys widget's fetched envelope carries tier-3 credential
+                  values, and isKeysEnvelope only checks that `rows` is an
+                  array, not the shape of each row -- a malformed row (e.g.
+                  a null element) makes KeysRenderer throw while reading it,
+                  landing here with the same unfiltered envelope the raw-view
+                  guard above exists to keep out of the DOM. Falling through
+                  to RawJsonView in that case would dump it verbatim, so this
+                  is a second, independent guard rather than a rely-on-the-
+                  renderer-not-throwing assumption. */}
+              {data !== null && widget?.type !== "keys" && (
                 <RawJsonView data={data} widgetDef={widget as WidgetDef} theme="dark" />
               )}
             </div>

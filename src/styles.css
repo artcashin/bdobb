@@ -1000,6 +1000,106 @@ input, select, textarea {
   padding: 6px 8px;
   font-size: 12px; color: var(--text-dim);
 }
+/* Keys widget: a key-state pill and a vendor-reachability dot per provider
+   row. Colour is never the only carrier — the pill's own text names the
+   state, and the dot carries an aria-label naming the server result — so
+   both classes below exist purely as a visual reinforcement of text that's
+   already there. Reuses the green/red pair from .widget-library-widget-provider
+   (#4caf7d / #d9695f) and the amber already used for warnings elsewhere in
+   this file (#d9a75f), with the same dark-on-light pill text (#0e1116). */
+.keys-provider { display: inline-block; }
+.keys-pill {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
+  white-space: nowrap;
+}
+.keys-pill.own { background: #4caf7d; color: #0e1116; }
+.keys-pill.demo { background: #d9a75f; color: #0e1116; }
+.keys-pill.unset { background: #d9695f; color: #0e1116; }
+.keys-pill.unknown {
+  background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
+}
+/* The dot has no text of its own — a plain circle would fail contrast and
+   colour-blind readers alike, so aria-label carries the same state the pill
+   states in words. */
+.keys-dot {
+  display: inline-block;
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.keys-dot.ok { background: #4caf7d; }
+.keys-dot.warn { background: #d9a75f; }
+.keys-dot.down { background: #d9695f; }
+.keys-dot.idle { background: var(--text-dim); }
+
+/* Keys widget: the Refresh control that re-runs the ~18-vendor probe sweep,
+   and the row context menu ("Test this service") that re-probes just one
+   provider. Both are the only way to (re-)probe — a re-render never does. */
+.keys-toolbar {
+  display: flex; justify-content: flex-end;
+  padding: 4px 8px;
+}
+.keys-refresh {
+  font-size: 11px; padding: 3px 10px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.keys-refresh:hover:not(:disabled) { border-color: var(--text-dim); }
+.keys-refresh:disabled { opacity: 0.6; cursor: default; }
+.keys-context-menu-anchor { z-index: 100; }
+.keys-context-menu {
+  list-style: none; margin: 0; padding: 4px;
+  min-width: 160px;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.keys-context-menu li[role="menuitem"] {
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+  color: var(--text);
+}
+.keys-context-menu li[role="menuitem"]:hover,
+.keys-context-menu li[role="menuitem"]:focus {
+  background: var(--bg); outline: none;
+}
+
+/* Keys widget: the tier-3 inline editor. The button collapses to the form
+   on click; the input is password-masked (type="password") so the value
+   never appears as plaintext on screen either, on top of never reaching a
+   URL, log, title, or React key -- see KeysRenderer's module-level secrecy
+   note. The restart notice reuses the amber warning colour: it is not an
+   error, but it is something the user must act on (the running API cannot
+   see the new key until openbb-api restarts). */
+.keys-edit-btn {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.keys-edit-btn:hover { border-color: var(--text-dim); }
+.keys-edit-form {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+.keys-edit-form input[type="password"] {
+  font-size: 11px; padding: 2px 6px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  width: 160px;
+}
+.keys-edit-form button {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.keys-edit-form button:disabled { opacity: 0.6; cursor: default; }
+.keys-edit-error {
+  font-size: 11px; color: #d9695f;
+  flex-basis: 100%;
+}
+.keys-restart-notice {
+  padding: 6px 8px; margin: 0 8px 8px;
+  font-size: 12px; color: #0e1116; background: #d9a75f;
+  border-radius: 4px;
+}
+
 .metric-value { font-size: 28px; font-weight: 600; color: var(--text); }
 .metric-container { display: flex; align-items: center; justify-content: center; }
 .raw-json-view pre {
