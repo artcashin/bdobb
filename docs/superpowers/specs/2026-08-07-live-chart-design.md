@@ -2,12 +2,15 @@
 
 **Date:** 2026-08-07 · **Status:** Approved (Art, 2026-08-07)
 
-Spans one repo: **bdobb** only. openbb-docker's half already shipped as
-`v10.0.0` — `live-grid`'s `GET /series` and `GET /chart` endpoints, the kdb+
-read-through cache, and the tick recorder are unchanged by this spec. The
-series-level framing (why Ep. 10 is the chart, not the cache) lives in
-`episodes-10-12-plan.md` in the substack-articles project; this document
-covers only the bdobb build.
+Spans two repos, asymmetrically. **bdobb** carries all of the new logic — a
+renderer, a `WidgetCard.tsx` dispatch branch, and its tests. **openbb-docker**
+needs exactly one change: a new entry in `live-grid/widgets.json` declaring
+the widget. No Python, no server code, no new endpoint — `GET /series` and
+`live_grid_ws` already shipped as part of `v10.0.0` and are unchanged by this
+spec; `widgets.json` just needs to advertise a client type they don't
+currently back. The series-level framing (why Ep. 10 is the chart, not the
+cache) lives in `episodes-10-12-plan.md` in the substack-articles project;
+this document covers the widget itself.
 
 ## Goal
 
@@ -136,10 +139,14 @@ the new symbol list. This is a full reset, not an incremental diff — matches
 how `LiveGridRenderer` already treats a symbol-list change (re-sends the full
 `params` message; it does not track per-symbol add/remove deltas either).
 
-## Widget declaration
+## Widget declaration — openbb-docker
 
-Additive entry in `live-grid/widgets.json`, alongside `live_grid` and
-`kdb_cache_chart`:
+Additive entry in `openbb-docker/live-grid/widgets.json`, alongside the
+existing `live_grid` and `kdb_cache_chart` entries. This is the only change
+this spec makes outside bdobb: no Python file in `live-grid/app/` is touched,
+and the service's existing test suite (`live-grid/tests/`) needs no new
+coverage — `widgets.json` isn't code under test there, it's a static file
+`live-grid`'s `GET /widgets.json` route already serves verbatim.
 
 ```json
 "live_chart": {
@@ -165,9 +172,9 @@ Additive entry in `live-grid/widgets.json`, alongside `live_grid` and
 }
 ```
 
-No backend change is required to add this — `live-grid` already serves
-`/series` and `/live_grid_ws`; this is a client-only widgets.json entry plus
-new bdobb code.
+No server-side change is required to add this — `live-grid` already serves
+`/series` and `/live_grid_ws`; this is a data-only `widgets.json` entry, plus
+new bdobb code to actually render it.
 
 ## Renderer
 
@@ -233,8 +240,9 @@ that case) mirrors `LiveGridRenderer` exactly — no new reconnect logic.
 
 ## Out of scope
 
-- Any change to `live-grid`, `kdb-store`, or `openbb-kdb` — the backend for
-  this episode shipped as `v10.0.0` already.
+- Any change to `live-grid`'s Python app, `kdb-store`, or `openbb-kdb` — the
+  backend for this episode shipped as `v10.0.0` already. `widgets.json` is
+  the one openbb-docker file this spec touches, and it's data, not code.
 - Changing or removing the existing `kdb_cache_chart` widget.
 - Persisting the chart-type selection across a reload (local state only;
   reopening the card resets to the default).
