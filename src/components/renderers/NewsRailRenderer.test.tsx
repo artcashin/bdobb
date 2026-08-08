@@ -117,6 +117,20 @@ describe("NewsRailRenderer", () => {
     expect(calledUrl).toBe("https://openbb.example.ts.net:8088/api/news?user=art&limit=100");
   });
 
+  it("parses a sort_at with a negative UTC offset without mangling it with an appended Z", async () => {
+    const stamp = "2026-08-04T18:03:00-05:00";
+    const expected = new Date(stamp);
+    const h = String(expected.getHours()).padStart(2, "0");
+    const m = String(expected.getMinutes()).padStart(2, "0");
+    const fetchImpl = okFetch([
+      article({ id: 3, sort_at: stamp, published_at: stamp, title: "Offset headline" }),
+    ]);
+    renderRail({ fetchImpl });
+    await screen.findByText("Offset headline");
+    const row = document.querySelector(".news-row");
+    expect(row?.querySelector(".news-time")?.textContent).toBe(`${h}:${m}`);
+  });
+
   it("sends the token as an Authorization header, never in the REST URL", async () => {
     const fetchImpl = okFetch();
     renderRail({ fetchImpl, token: "tkn-0123456789abcdef0123456789abcdef" });
