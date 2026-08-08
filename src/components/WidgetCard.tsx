@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useHoverPanel } from "../hooks/useHoverPanel";
 import ErrorBoundary from "./ErrorBoundary";
 import type { CardView, DashboardCard, ParamGroup, ParamValues, WidgetDef } from "../lib/types";
 import { effectiveParams, groupedParamNames, splitParamEdit } from "../lib/paramGroups";
@@ -28,6 +27,7 @@ import MarkdownRenderer from "./renderers/MarkdownRenderer";
 import TableRenderer from "./renderers/TableRenderer";
 import KeysRenderer from "./renderers/KeysRenderer";
 import LiveGridRenderer from "./renderers/LiveGridRenderer";
+import LiveChartRenderer from "./renderers/LiveChartRenderer";
 import MetricRenderer from "./renderers/MetricRenderer";
 import RawJsonView from "./renderers/RawJsonView";
 import UnsupportedRenderer from "./renderers/UnsupportedRenderer";
@@ -86,11 +86,6 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     if (!paramsOpen) setDraftParams(fetchParams);
   }, [fetchParams, paramsOpen]);
 
-  const { expanded, onMouseEnter, onMouseLeave, open, close } = useHoverPanel({
-    collapseDelayMs: 500,
-    sticky: loading,
-  });
-
   /**
    * Identifies the newest request. Widget fetches are not cancellable and
    * complete out of order — editing params, or clicking Refresh twice, leaves
@@ -122,6 +117,12 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     // iframe widgets load their endpoint directly in the frame; there is no
     // JSON payload to fetch, and requesting one would fail against an app URL.
     if (widget.type === "iframe") return;
+    // live_chart fetches its own per-symbol history and opens its own
+    // websocket (LiveChartRenderer) -- the generic single-endpoint fetch
+    // below would send a comma-joined multi-symbol query against /series,
+    // which only accepts one symbol per call and has no defined behavior
+    // for a joined list.
+    if (widget.type === "live_chart") return;
 
     const seq = ++requestSeq.current;
     // Cancel the superseded request at the network layer too, not just in
@@ -257,11 +258,23 @@ export default function WidgetCard({ card }: WidgetCardProps) {
         />
       );
     }
-
     // An iframe widget loads its endpoint in the frame, so it has no fetched
     // payload and must not be gated on one.
     if (widget.type === "iframe") {
       return <IframeRenderer data={data} widgetDef={widgetDef} theme={theme} />;
+    }
+
+    // A live_chart widget fetches its own per-symbol history and opens its
+    // own websocket, so it has no generic fetched payload to gate on.
+    if (widget.type === "live_chart") {
+      return (
+        <LiveChartRenderer
+          widgetDef={widgetDef}
+          backend={backend}
+          params={fetchParams}
+          theme={theme}
+        />
+      );
     }
 
     if (data === null) return <div className="renderer-empty">No data loaded</div>;
@@ -358,23 +371,9 @@ export default function WidgetCard({ card }: WidgetCardProps) {
   return (
     <div
       className="widget-card"
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
     >
-      {expanded && (
-        <div className="card-hover-panel">
-          {!builtin && (
-            <button onClick={handleRefresh} title="Refresh">
-              ↻
-            </button>
-          )}
-          <button onClick={close} title="Hide controls">
-            ✕
-          </button>
-        </div>
-      )}
       <div className="card-header">
-        <span className="card-title" onClick={open}>
+        <span className="card-title">
           {widget?.name ?? card.widgetId}
         </span>
         <span className="card-actions">

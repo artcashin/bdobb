@@ -123,6 +123,12 @@ vi.mock("./renderers/MetricRenderer", () => ({
   },
 }));
 
+vi.mock("./renderers/LiveChartRenderer", () => ({
+  default: ({ widgetDef }: { widgetDef: { id: string } }) => (
+    <div>live-chart-rendered:{widgetDef.id}</div>
+  ),
+}));
+
 vi.mock("../lib/dataClient", () => ({
   fetchWidgetData: vi.fn().mockResolvedValue([
     { name: "Alice", age: 30 },
@@ -224,9 +230,41 @@ describe("WidgetCard", () => {
     expect(vi.mocked(fetchWidgetHtml)).not.toHaveBeenCalled();
   });
 
+  it("dispatches live_chart widgets to LiveChartRenderer and skips the generic seed fetch", async () => {
+    registryType = "live_chart";
+    render(<WidgetCard card={makeCard()} />);
+    await screen.findByText("live-chart-rendered:w1");
+    expect(vi.mocked(fetchWidgetData)).not.toHaveBeenCalled();
+    expect(vi.mocked(fetchWidgetHtml)).not.toHaveBeenCalled();
+  });
+
   it("calls removeCard on close button click", async () => {
     render(<WidgetCard card={makeCard()} />);
     screen.getByRole("button", { name: /Remove widget/i }).click();
+    expect(mockRemoveCard).toHaveBeenCalledWith("c1");
+  });
+
+  // .card-hover-panel is position:absolute top:4px right:4px z-index:2 -- the
+  // exact corner .card-actions occupies. Measured against the real stylesheet,
+  // the panel spanned x 351-415 while the Remove button sat at 383-411, so the
+  // panel covered it completely and swallowed the click. Its own X was
+  // onClick={close} ("Hide controls"), so hitting the visible X dismissed the
+  // panel and left the widget on the dashboard. Trimming the panel's contents
+  // does not help: with only the Refresh button it still spanned 383-415.
+  it("puts nothing on top of the Remove button while the card is hovered", async () => {
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText("Test Widget")).toBeInTheDocument());
+    fireEvent.mouseEnter(document.querySelector(".widget-card")!);
+
+    expect(document.querySelector(".card-hover-panel")).toBeNull();
+
+    const crosses = screen
+      .getAllByRole("button")
+      .filter((b) => b.textContent?.includes("\u2715"));
+    expect(crosses).toHaveLength(1);
+    expect(crosses[0]).toHaveAttribute("aria-label", "Remove widget");
+
+    crosses[0].click();
     expect(mockRemoveCard).toHaveBeenCalledWith("c1");
   });
 
@@ -840,4 +878,3 @@ describe("WidgetCard renderer error containment (desk graft)", () => {
     consoleErrorSpy.mockRestore();
   });
 });
-
