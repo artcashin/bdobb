@@ -37,6 +37,13 @@ describe("seedToBar", () => {
     });
     expect(bar.date).toBe(Date.UTC(2026, 7, 7, 18, 3, 0));
   });
+
+  it("leaves a timestamp with a negative UTC offset alone instead of appending Z", () => {
+    const bar = seedToBar({
+      date: "2026-08-07T18:03:00-05:00", open: 1, high: 1, low: 1, close: 1, volume: null,
+    });
+    expect(bar.date).toBe(Date.parse("2026-08-07T18:03:00-05:00"));
+  });
 });
 
 describe("applyTick", () => {

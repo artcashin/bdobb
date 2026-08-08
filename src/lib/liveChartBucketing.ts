@@ -52,7 +52,8 @@ function toFiniteNumber(v: unknown): number | null {
  * the same pattern NewsRailRenderer.tsx uses for this exact backend shape.
  */
 function parseUtc(stamp: string): number {
-  return new Date(stamp.endsWith("Z") || stamp.includes("+") ? stamp : `${stamp}Z`).getTime();
+  const hasOffset = stamp.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(stamp);
+  return new Date(hasOffset ? stamp : `${stamp}Z`).getTime();
 }
 
 export function seedToBar(seed: SeedBar): Bar {
