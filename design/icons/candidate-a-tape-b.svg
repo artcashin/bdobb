@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bgA" cx="50%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#1b2431"/>
+      <stop offset="55%" stop-color="#121822"/>
+      <stop offset="100%" stop-color="#090d12"/>
+    </radialGradient>
+    <pattern id="scanA" width="10" height="10" patternUnits="userSpaceOnUse">
+      <rect width="10" height="5" fill="#ffffff" opacity="0.022"/>
+    </pattern>
+    <filter id="glowGA" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="11" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowBA" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bgA)"/>
+  <rect width="1024" height="1024" fill="url(#scanA)"/>
+
+  <!-- unlit ghost segments -->
+  <g fill="none" stroke="#3dff8a" stroke-width="62" stroke-linecap="round" opacity="0.08">
+    <path d="M368 226 V786"/>
+    <path d="M368 226 H540 C648 226 676 288 676 356 C676 444 618 498 540 498 H368"/>
+    <path d="M368 510 H562 C672 510 700 578 700 648 C700 736 642 786 562 786 H368"/>
+  </g>
+
+  <!-- lit LED segments -->
+  <g fill="none" stroke="#3dff8a" stroke-width="62" stroke-linecap="round"
+     stroke-dasharray="108 46" filter="url(#glowGA)">
+    <path d="M368 226 V786"/>
+    <path d="M368 226 H540 C648 226 676 288 676 356 C676 444 618 498 540 498 H368"/>
+    <path d="M368 510 H562 C672 510 700 578 700 648 C700 736 642 786 562 786 H368"/>
+  </g>
+
+  <!-- blue ticker tape -->
+  <g filter="url(#glowBA)">
+    <polyline points="96,918 208,900 292,926 388,886 470,912 560,872 652,894 742,856 826,872 872,846"
+              fill="none" stroke="#4f8cc9" stroke-width="16"
+              stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+  </g>
+  <circle cx="906" cy="838" r="17" fill="#3dff8a" filter="url(#glowGA)"/>
+</svg>
