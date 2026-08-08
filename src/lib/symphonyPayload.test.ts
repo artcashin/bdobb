@@ -106,6 +106,20 @@ describe("rowsToCsv", () => {
     expect(csv).toBe("name,age\r\nAlice,30");
   });
 
+  it("unions keys across every row when no columns are declared, not just rows[0]", () => {
+    // A column that only appears on a later, sparser record must not be
+    // silently dropped -- common with heterogeneous JSON backend output.
+    const csv = rowsToCsv([{ a: 1 }, { a: 2, b: "lost" }], null);
+    expect(csv).toBe("a,b\r\n1,\r\n2,lost");
+  });
+
+  it("keeps declared columns' order and labels even when rows carry extra keys not in the declaration", () => {
+    // Explicit columns still win outright -- only the no-columns case unions.
+    const cols: ColumnDef[] = [{ field: "a", headerName: "A" }];
+    const csv = rowsToCsv([{ a: 1, b: "ignored" }], cols);
+    expect(csv).toBe("A\r\n1");
+  });
+
   it("uses declared column headerName and order, and drops hidden columns", () => {
     const cols: ColumnDef[] = [
       { field: "age", headerName: "Age" },
