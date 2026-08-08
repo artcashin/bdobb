@@ -1,5 +1,7 @@
-from app.client import Attachment, SendRequest
+from app.client import Attachment, SendRequest, SymphonyClient
 from app.fake_client import FakeClient
+
+_: SymphonyClient = FakeClient()
 
 
 async def test_health_reports_connected():
