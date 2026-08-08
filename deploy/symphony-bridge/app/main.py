@@ -16,10 +16,19 @@ from app.models import SendMessageBody
 
 ATTRIBUTION_SUFFIX = "via BDOBB"
 
-# Length cap on the exception text kept in the audit log's `result` field.
-_MAX_AUDIT_REASON_LEN = 200
-
 _TAG_RE = re.compile(r"<[^>]+>")
+_CDATA_RE = re.compile(r"<!\[CDATA\[(.*?)\]\]>", re.DOTALL)
+
+# A strict, narrow pattern for pulling an HTTP status code out of an upstream
+# exception's text -- the only thing besides the exception's type name that
+# is ever allowed into the audit log's `result` field. See the `except`
+# block in send_message for why str(exc) itself never goes there.
+_HTTP_STATUS_RE = re.compile(r"\b[45]\d\d\b")
+
+# XML 1.0 Char production excludes these even when escaped: C0 controls
+# other than tab/CR/LF, and (on a narrow build) lone surrogates. A `sender`
+# containing one would make sanitize(final) reject our own assembly.
+_XML_ILLEGAL_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff￾￿]")
 
 _ML_OPEN = "<messageML>"
 _ML_CLOSE = "</messageML>"
@@ -27,7 +36,13 @@ _ML_CLOSE = "</messageML>"
 
 def _escape_plain(text: str) -> str:
     """Escape text for a MessageML text node without interpreting markdown.
-    Same character set markdown_to_messageml escapes -- but no rendering."""
+    Same character set markdown_to_messageml escapes -- but no rendering.
+    XML-illegal control characters are stripped first: unlike the message
+    body (which reaches sanitize() directly and is correctly rejected as
+    malformed XML), `sender` is spliced into `final` after body validation,
+    so a stray control byte there would only surface as our own re-validation
+    failing on our own assembly -- a 500, not a 400."""
+    text = _XML_ILLEGAL_RE.sub("", text)
     return (
         text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     )
@@ -51,8 +66,16 @@ def _extract_body(message_ml: str) -> str:
 
 
 def _is_empty_content(message_ml: str) -> bool:
-    """True if the document has no content once tags are stripped."""
-    return _TAG_RE.sub("", message_ml).strip() == ""
+    """True if the document has no content once tags are stripped.
+    CDATA content counts as content, not markup -- but _TAG_RE alone can't
+    tell the difference: CDATA text is free to contain a bare "<", which
+    makes the tag-regex run past the section's own "]]>" hunting for the
+    next ">", swallowing the whole section (markers and text together) as
+    though it were one big tag. Pull each CDATA section's text out first,
+    with any "<"/">" of its own removed so it can never be misread as
+    markup, before the ordinary tag-strip below ever sees it."""
+    without_cdata = _CDATA_RE.sub(lambda m: m.group(1).replace("<", "").replace(">", ""), message_ml)
+    return _TAG_RE.sub("", without_cdata).strip() == ""
 
 
 def attribute(message_ml: str, sender: str | None) -> str:
@@ -169,18 +192,27 @@ def create_app(
                 SendRequest(stream_id=body.stream_id, message_ml=final, attachment=attachment)
             )
         except Exception as exc:  # surface Symphony's error, never a silent success
-            # The exception text is unbounded and uncontrolled -- Symphony
-            # and HTTP-client errors routinely echo the request payload.
-            # Scrub any occurrence of the body before it goes anywhere near
-            # the log; the full text is only ever returned to the caller,
-            # who already has the body.
-            reason = str(exc).replace(final, "[redacted]") if final else str(exc)
-            reason = reason[:_MAX_AUDIT_REASON_LEN]
+            # str(exc) is unbounded and adversarial -- Symphony and
+            # HTTP-client errors routinely echo all or part of the request
+            # payload, in shapes no substring redaction reliably catches
+            # (partial echoes, <br/> reflowed to newlines, JSON-wrapped,
+            # base64-encoded...). Redacting arbitrary upstream text is
+            # unwinnable, so this is structural instead: the audit record is
+            # built only from values this service itself constructs -- the
+            # exception's type name, and, if one can be pulled out with the
+            # strict, narrow _HTTP_STATUS_RE, an HTTP status code. str(exc)
+            # itself never reaches the audit logger. The full text still
+            # reaches the caller below (who already has the body), and
+            # nowhere else.
+            status_match = _HTTP_STATUS_RE.search(str(exc))
+            reason = type(exc).__name__
+            if status_match:
+                reason = f"{reason} status={status_match.group()}"
             log_send(
                 source=source,
                 stream_id=body.stream_id,
                 body=final,
-                result=f"error: {type(exc).__name__}: {reason}",
+                result=f"error: {reason}",
             )
             raise HTTPException(status_code=502, detail=f"Symphony send failed: {exc}") from exc
 
