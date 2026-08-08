@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bgD" cx="50%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#1b2431"/>
+      <stop offset="55%" stop-color="#121822"/>
+      <stop offset="100%" stop-color="#090d12"/>
+    </radialGradient>
+    <pattern id="scanD" width="10" height="10" patternUnits="userSpaceOnUse">
+      <rect width="10" height="5" fill="#ffffff" opacity="0.022"/>
+    </pattern>
+    <filter id="glowGD" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="15" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowBD" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bgD)"/>
+  <rect width="1024" height="1024" fill="url(#scanD)"/>
+
+  <!-- widget card frame -->
+  <g filter="url(#glowBD)">
+    <rect x="118" y="150" width="788" height="724" rx="68" fill="none"
+          stroke="#4f8cc9" stroke-width="28" opacity="0.95"/>
+    <line x1="160" y1="282" x2="864" y2="282" stroke="#4f8cc9" stroke-width="14" opacity="0.55"/>
+  </g>
+
+  <!-- LED stairstep sparkline -->
+  <g filter="url(#glowGD)">
+    <path d="M196 748 H302 V646 H398 V688 H494 V540 H590 V586 H686 V440 H782"
+          fill="none" stroke="#3dff8a" stroke-width="30" stroke-linejoin="miter"/>
+    <rect x="762" y="400" width="80" height="80" rx="10" fill="#3dff8a"/>
+  </g>
+
+  <!-- blue baseline dashes -->
+  <line x1="196" y1="806" x2="828" y2="806" stroke="#4f8cc9" stroke-width="13"
+        stroke-dasharray="46 30" stroke-linecap="round" opacity="0.6"/>
+</svg>
