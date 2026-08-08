@@ -23,7 +23,7 @@
 // this file's positive case redundant with that one's, or vice versa.
 import { act, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Dashboard } from "../lib/types";
+import type { Dashboard, Settings } from "../lib/types";
 
 const saveDashboard = vi.fn(async (_d: Dashboard) => {});
 const deleteDashboard = vi.fn(async (_id: string) => {});
@@ -37,10 +37,13 @@ vi.mock("../lib/persistence", () => ({
   // DashboardGrid) now imports settingsStore for the Symphony settings
   // wiring, so this mock must export it too even though this file's own
   // tests don't otherwise touch settings.
+  //
+  // `satisfies Settings` so a future required field on Settings fails
+  // typecheck here instead of surfacing as a silent runtime `undefined`.
   DEFAULT_SETTINGS: {
     ritaUrl: "", theme: "dark", contextSharing: false, mcpServers: [],
     symphonyPodUrl: "", symphonyPartnerId: "", symphonyBridgeUrl: "",
-  },
+  } satisfies Settings,
 }));
 
 type CapturedLayoutItem = { i: string; x: number; y: number; w: number; h: number };

@@ -13,10 +13,12 @@ const loadSettings = vi.fn(async (): Promise<Settings> => ({
 const saveSettings = vi.fn(async (_s: Settings) => {});
 
 vi.mock("../lib/persistence", () => ({
+  // `satisfies Settings` so a future required field on Settings fails
+  // typecheck here instead of surfacing as a silent runtime `undefined`.
   DEFAULT_SETTINGS: {
     ritaUrl: "", theme: "dark", contextSharing: false, mcpServers: [],
     symphonyPodUrl: "", symphonyPartnerId: "", symphonyBridgeUrl: "",
-  },
+  } satisfies Settings,
   loadSettings: (...a: []) => loadSettings(...a),
   saveSettings: (s: Settings) => saveSettings(s),
 }));

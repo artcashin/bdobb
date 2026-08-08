@@ -539,7 +539,23 @@ export default function WidgetCard({ card }: WidgetCardProps) {
           </button>
         </span>
       </div>
-      {symphonyStatus && <div className="card-symphony-status">{symphonyStatus}</div>}
+      {symphonyStatus && (
+        // A send's outcome (success or failure) otherwise sits here forever --
+        // only the NEXT send replaces it, so a stale failure from an hour ago
+        // could still be showing. Dismissible the same way the dashboard-level
+        // save-error banner is (DashboardTabs.tsx).
+        <div className="card-symphony-status">
+          <span>{symphonyStatus}</span>
+          <button
+            type="button"
+            title="Dismiss"
+            aria-label="Dismiss Symphony status"
+            onClick={() => setSymphonyStatus(null)}
+          >
+            <span aria-hidden="true">✕</span>
+          </button>
+        </div>
+      )}
       {paramsOpen && editableParams.length > 0 && (
         <div className="card-params">
           <ParamControls

@@ -20,7 +20,8 @@ import SymphonyRenderer from "./SymphonyRenderer";
  * jsdom has no IntersectionObserver. This stub captures the callback per
  * instance so tests can fire it manually, and records observe/disconnect
  * calls so the "only when visible" behaviour is verifiable rather than
- * assumed.
+ * assumed. No `unobserve` stub: the component only ever calls
+ * `observe`/`disconnect`.
  */
 class FakeIntersectionObserver {
   static instances: FakeIntersectionObserver[] = [];
@@ -35,7 +36,6 @@ class FakeIntersectionObserver {
   observe(el: Element) {
     this.observed.push(el);
   }
-  unobserve() {}
   disconnect() {
     this.disconnected = true;
   }
@@ -165,6 +165,12 @@ describe("SymphonyRenderer", () => {
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
 
     act(() => FakeIntersectionObserver.instances[0].fire(true));
+    expect(screen.getByTitle("Symphony")).toBeInTheDocument();
+  });
+
+  it("renders immediately, bypassing lazy loading, when IntersectionObserver is unavailable", () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    render(<SymphonyRenderer params={baseParams} />);
     expect(screen.getByTitle("Symphony")).toBeInTheDocument();
   });
 
