@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bgC" cx="50%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#1b2431"/>
+      <stop offset="55%" stop-color="#121822"/>
+      <stop offset="100%" stop-color="#090d12"/>
+    </radialGradient>
+    <pattern id="scanC" width="10" height="10" patternUnits="userSpaceOnUse">
+      <rect width="10" height="5" fill="#ffffff" opacity="0.022"/>
+    </pattern>
+    <linearGradient id="upC" x1="0" y1="812" x2="0" y2="212" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4f8cc9"/>
+      <stop offset="55%" stop-color="#40c9a6"/>
+      <stop offset="100%" stop-color="#3dff8a"/>
+    </linearGradient>
+    <filter id="glowC" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bgC)"/>
+  <rect width="1024" height="1024" fill="url(#scanC)"/>
+
+  <!-- B built from data bars, blue at the base rising to LED green -->
+  <g fill="url(#upC)" filter="url(#glowC)">
+    <!-- top bar -->
+    <rect x="308" y="206" width="366" height="58" rx="16"/>
+    <!-- upper bowl -->
+    <rect x="308" y="276" width="94" height="58" rx="16"/><rect x="586" y="276" width="126" height="58" rx="16"/>
+    <rect x="308" y="346" width="94" height="58" rx="16"/><rect x="602" y="346" width="126" height="58" rx="16"/>
+    <rect x="308" y="416" width="94" height="58" rx="16"/><rect x="586" y="416" width="126" height="58" rx="16"/>
+    <!-- middle bar -->
+    <rect x="308" y="486" width="382" height="58" rx="16"/>
+    <!-- lower bowl -->
+    <rect x="308" y="556" width="94" height="58" rx="16"/><rect x="606" y="556" width="126" height="58" rx="16"/>
+    <rect x="308" y="626" width="94" height="58" rx="16"/><rect x="624" y="626" width="126" height="58" rx="16"/>
+    <rect x="308" y="696" width="94" height="58" rx="16"/><rect x="606" y="696" width="126" height="58" rx="16"/>
+    <!-- bottom bar -->
+    <rect x="308" y="766" width="400" height="58" rx="16"/>
+  </g>
+</svg>
