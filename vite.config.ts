@@ -48,5 +48,11 @@ export default defineConfig(({ mode }) => ({
     // MERGE-NOTES rows) are picked up by vitest's default glob and double-count
     // that sibling checkout's own tests. Extend, don't replace, the defaults.
     exclude: [...configDefaults.exclude, "**/.claude/**"],
+    // Pinned to a non-UTC zone so tests relying on local-time vs. UTC
+    // conversion (e.g. liveChartBucketing.test.ts) fail on a UTC-vs-local
+    // bug regardless of the runner's own timezone.
+    env: {
+      TZ: "America/New_York",
+    },
   },
 }));
