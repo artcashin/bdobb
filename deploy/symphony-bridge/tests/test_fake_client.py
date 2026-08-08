@@ -7,6 +7,7 @@ _: SymphonyClient = FakeClient()
 async def test_health_reports_connected():
     status = await FakeClient().health()
     assert status.connected is True
+    assert status.detail == "fake client; no pod session"
 
 
 async def test_send_returns_a_message_id():
@@ -56,9 +57,24 @@ async def test_list_conversations_returns_stable_fixtures():
 async def test_search_rooms_filters_by_query():
     client = FakeClient()
     hits = await client.search_rooms("trading")
-    assert all("trading" in room.name.lower() for room in hits)
+    assert [room.name for room in hits] == ["Trading Desk"]
 
 
 async def test_search_rooms_is_case_insensitive():
     client = FakeClient()
-    assert await client.search_rooms("TRADING") == await client.search_rooms("trading")
+    hits = await client.search_rooms("TRADING")
+    assert [room.name for room in hits] == ["Trading Desk"]
+
+
+async def test_search_rooms_matches_name_not_description():
+    # "Ops alerts" is the Operations room's description, not its name --
+    # search_rooms deliberately does not match against description.
+    client = FakeClient()
+    assert await client.search_rooms("alerts") == []
+
+
+async def test_search_rooms_empty_query_returns_all_rooms():
+    client = FakeClient()
+    all_rooms = await FakeClient().list_conversations()
+    hits = await client.search_rooms("")
+    assert len(hits) == len(all_rooms)

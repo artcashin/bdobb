@@ -37,5 +37,9 @@ class FakeClient:
         return [Conversation(stream_id=r.stream_id, name=r.name) for r in _FIXTURE_ROOMS]
 
     async def search_rooms(self, query: str) -> list[Room]:
+        """Case-insensitive substring match against `name` only -- `description`
+        is not searched. An empty (or all-whitespace) query matches every room,
+        the same "no filter configured" convention used elsewhere in this
+        service (see `load_config`'s `allowed_destinations`)."""
         needle = query.lower()
         return [r for r in _FIXTURE_ROOMS if needle in r.name.lower()]
