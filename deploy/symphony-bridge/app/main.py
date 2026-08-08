@@ -99,8 +99,12 @@ def build_client(cfg: Config) -> SymphonyClient:
 def create_app(
     env: Mapping[str, str] | None = None,
     client: SymphonyClient | None = None,
+    config: Config | None = None,
 ) -> FastAPI:
-    cfg: Config = load_config(env)
+    # `config`, when given, is used as-is instead of re-reading `env`/os.environ --
+    # lets a caller that already loaded a Config (main(), below) hand it through
+    # instead of paying for a second, independent load_config() call.
+    cfg: Config = config if config is not None else load_config(env)
     app = FastAPI(title="symphony-bridge", version="1.0.0")
     app.state.config = cfg
     # Resolved lazily on first send, not at app-creation time: /health must
@@ -222,10 +226,45 @@ def create_app(
     return app
 
 
+_DEFAULT_BIND_HOST = "127.0.0.1"
+_DEFAULT_BIND_PORT = 8099
+
+
+def _parse_bind(bind: str) -> tuple[str, int]:
+    """Parse BRIDGE_BIND as "host:port", a bare port ("8099"), or a bare host
+    ("0.0.0.0") -- each falling back to the default for the piece it omits.
+    `"8099".partition(":")` used to be trusted directly: for a colonless value
+    that yields host="8099" (the whole string) and an empty port, so a bare
+    port silently became the wrong *host* and uvicorn failed at bind time with
+    a confusing socket error instead of a clear config one. Anything that
+    still doesn't resolve to a usable host/port pair raises here, naming
+    BRIDGE_BIND, instead of reaching uvicorn at all."""
+    value = bind.strip()
+    if not value:
+        raise ValueError(
+            f'BRIDGE_BIND is empty; expected e.g. "{_DEFAULT_BIND_HOST}:{_DEFAULT_BIND_PORT}"'
+        )
+
+    if ":" in value:
+        host, _, port_str = value.rpartition(":")
+        host = host or _DEFAULT_BIND_HOST
+    elif value.isdigit():
+        host, port_str = _DEFAULT_BIND_HOST, value
+    else:
+        host, port_str = value, str(_DEFAULT_BIND_PORT)
+
+    if not port_str.isdigit():
+        raise ValueError(f"BRIDGE_BIND={bind!r} has a non-numeric port")
+    port = int(port_str)
+    if not (0 < port < 65536):
+        raise ValueError(f"BRIDGE_BIND={bind!r} has an out-of-range port {port}")
+    return host, port
+
+
 def main() -> None:
     cfg = load_config()
-    host, _, port = cfg.bind.partition(":")
-    uvicorn.run(create_app(), host=host or "127.0.0.1", port=int(port or "8099"))
+    host, port = _parse_bind(cfg.bind)
+    uvicorn.run(create_app(config=cfg), host=host, port=port)
 
 
 if __name__ == "__main__":
