@@ -1,13 +1,25 @@
 """HTTP request models. The send endpoint accepts two payload shapes because
 two independent BDOBB paths produce different ones."""
 
-from pydantic import BaseModel, Field, model_validator
+import base64
+import binascii
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class AttachmentBody(BaseModel):
     filename: str
     content_type: str = Field(alias="contentType")
     data: str
+
+    @field_validator("data")
+    @classmethod
+    def data_must_be_base64(cls, v: str) -> str:
+        try:
+            base64.b64decode(v, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError(f"attachment.data must be valid base64: {exc}") from exc
+        return v
 
 
 class SendMessageBody(BaseModel):
@@ -18,6 +30,13 @@ class SendMessageBody(BaseModel):
     title: str | None = None
     sender: str | None = None
     attachment: AttachmentBody | None = None
+
+    @field_validator("stream_id")
+    @classmethod
+    def stream_id_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("streamId must not be empty or whitespace-only")
+        return v
 
     @model_validator(mode="after")
     def exactly_one_content_field(self) -> "SendMessageBody":
