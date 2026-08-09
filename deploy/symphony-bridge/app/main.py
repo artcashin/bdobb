@@ -1,16 +1,26 @@
 """FastAPI application."""
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from mcp.server.transport_security import TransportSecuritySettings
 
 from app.audit import log_send
-from app.client import Attachment, SendRequest, SymphonyClient
+from app.client import (
+    Attachment,
+    Conversation,
+    HealthStatus,
+    Room,
+    SendRequest,
+    SendResult,
+    SymphonyClient,
+)
 from app.config import Config, load_config
 from app.fake_client import FakeClient
+from app.mcp_server import build_mcp
 from app.messageml import MessageMLError, markdown_to_messageml, sanitize
 from app.models import SendMessageBody
 
@@ -116,6 +126,32 @@ def build_client(cfg: Config) -> SymphonyClient:
     from app.live_client import LiveClient  # imported lazily; needs the BDK
 
     return LiveClient(cfg)
+
+
+class _LazyClient:
+    """A SymphonyClient that resolves `get_client()` at call time, not at
+    construction time. build_mcp() needs a concrete client up front, but
+    resolving one eagerly at mount time would reintroduce the exact bug just
+    fixed in the discovery endpoints: main() injects no client, so
+    app.state.client starts out None, and forcing a build at app-creation
+    time breaks a cold start in live mode -- before app/live_client.py even
+    exists (Task 7), calling get_client() here would crash server startup
+    outright instead of only failing the first send."""
+
+    def __init__(self, get_client: Callable[[], SymphonyClient]) -> None:
+        self._get_client = get_client
+
+    async def health(self) -> HealthStatus:
+        return await self._get_client().health()
+
+    async def send_message(self, request: SendRequest) -> SendResult:
+        return await self._get_client().send_message(request)
+
+    async def list_conversations(self) -> list[Conversation]:
+        return await self._get_client().list_conversations()
+
+    async def search_rooms(self, query: str) -> list[Room]:
+        return await self._get_client().search_rooms(query)
 
 
 def create_app(
@@ -264,6 +300,31 @@ def create_app(
                 for r in rooms
             ]
         }
+
+    mcp = build_mcp(_LazyClient(get_client), cfg)
+    # Mounted at /mcp with no trailing slash. mcp==2.0.0 renamed FastMCP to
+    # MCPServer and reshaped this API (verified against the installed
+    # version's own source; see task-6-report.md for the API surface used).
+    #
+    # streamable_http_app()'s own internal route already lives at "/mcp" by
+    # default, so mounting *that* sub-app under an outer "/mcp" prefix would
+    # double it up into "/mcp/mcp". Mounting at "/" instead lets the sub-app's
+    # own route land at exactly "/mcp" on the parent, and any path it doesn't
+    # recognize still falls through to its own 404 -- confirmed by test.
+    #
+    # The session manager's task group is created inside its own `run()`
+    # context, entered via the ASGI lifespan protocol -- not by mounting
+    # alone. Skipping this wiring makes every /mcp request raise "Task group
+    # is not initialized. Make sure to use run()." at request time.
+    mcp_app = mcp.streamable_http_app(
+        # v1's posture (see README's "Security posture") is reachability-as-
+        # auth on the tailnet, not a browser Origin/Host allowlist -- disable
+        # DNS-rebinding protection rather than have it reject legitimate
+        # requests whose Host header is the tailnet hostname, not localhost.
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
+    app.router.lifespan_context = mcp_app.router.lifespan_context
+    app.mount("/", mcp_app)
 
     return app
 
