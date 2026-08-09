@@ -405,3 +405,78 @@ def test_round_trip_converter_link_still_passes_sanitize():
     out = markdown_to_messageml("[docs](https://example.com/a_b)")
     safe = sanitize(out)  # must not raise
     assert '<a href="https://example.com/a_b">docs</a>' in safe
+
+
+# --- Idempotence: sanitize(sanitize(x)) == sanitize(x) ---------------------
+#
+# ElementTree's text-node escaper (_escape_cdata) escapes &, < and > but not
+# CR. A CR *character reference* in the input (e.g. "&#13;") parses to a raw
+# "\r" text-node character, which tostring() then emits back out unescaped.
+# A second sanitize() pass parses that raw "\r" as literal source text, and
+# the XML spec's line-ending-normalization rule (which a parser applies to
+# raw CR bytes, not to character references) silently turns it into "\n" --
+# so the first pass's output was not stable under a second pass. (Attribute
+# values never had this problem: ElementTree's _escape_attrib already emits
+# "&#13;" there.) Fixed in sanitize() by re-escaping any raw CR left in the
+# serialized output back to "&#13;".
+
+
+def test_sanitize_cr_reference_round_trips_stably():
+    once = sanitize("<messageML>&#13;</messageML>")
+    twice = sanitize(once)
+    assert once == twice == "<messageML>&#13;</messageML>"
+
+
+# Small generator dedicated to sanitize() idempotence: builds arbitrary,
+# always-well-formed MessageML documents out of allowed tags, a plain <a>
+# anchor, and a handful of "interesting" character/entity leaves -- CR in
+# three notations (decimal, hex, zero-padded decimal), a bare CR, a bare LF,
+# CRLF, and the other XML metacharacter entities -- nested up to 3 levels
+# deep inside <b>/<i>/<code>. Every leaf is either plain text or a
+# self-contained tag, so recursive .format() nesting can never produce
+# unbalanced or malformed XML.
+_IDEMPOTENCE_SEED = 20260808
+
+_IDEMPOTENCE_LEAVES = [
+    "&#13;", "&#xD;", "&#013;", "&#10;",
+    "&amp;", "&lt;", "&gt;", "&quot;",
+    "\r", "\n", "\r\n",
+    "plain text", "x", " ", "",
+    "<br/>",
+    '<a href="https://e.com/x">label</a>',
+]
+_IDEMPOTENCE_WRAPPERS = ["<b>{0}</b>", "<i>{0}</i>", "<code>{0}</code>"]
+
+
+def _random_idempotence_fragment(rng: random.Random, depth: int = 0) -> str:
+    if depth < 3 and rng.random() < 0.4:
+        template = rng.choice(_IDEMPOTENCE_WRAPPERS)
+        inner = "".join(
+            _random_idempotence_fragment(rng, depth + 1) for _ in range(rng.randint(0, 2))
+        )
+        return template.format(inner)
+    return rng.choice(_IDEMPOTENCE_LEAVES)
+
+
+def _generate_idempotence_docs(rng: random.Random, count: int) -> list[str]:
+    docs = []
+    for _ in range(count):
+        body = "".join(_random_idempotence_fragment(rng) for _ in range(rng.randint(1, 6)))
+        docs.append(f"<messageML>{body}</messageML>")
+    return docs
+
+
+def test_sanitize_is_idempotent_on_generated_corpus():
+    """A dedicated, fixed-seed sweep over documents built to specifically
+    exercise CR in its various notations (the class a larger, independent
+    50,000-document sweep found to be the only non-idempotence class).
+    Kept small here to stay fast in the normal test run; see the fix
+    report for the larger ad hoc sweep."""
+    rng = random.Random(_IDEMPOTENCE_SEED)
+    violations = []
+    for doc in _generate_idempotence_docs(rng, 3000):
+        once = sanitize(doc)
+        twice = sanitize(once)
+        if once != twice:
+            violations.append((doc, once, twice))
+    assert violations == [], f"{len(violations)} idempotence violations, e.g. {violations[0]}"

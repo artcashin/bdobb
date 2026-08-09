@@ -249,6 +249,18 @@ def sanitize(message_ml: str) -> str:
         root = ElementTree.fromstring(message_ml)
     except ElementTree.ParseError as exc:
         raise MessageMLError(f"not well-formed XML: {exc}") from exc
+    except UnicodeEncodeError as exc:
+        # expat encodes internally to UTF-8 as it feeds the parser; a lone
+        # (unpaired) UTF-16 surrogate -- reachable from a raw JSON body via
+        # an escape like "\ud83d" with no matching low surrogate -- cannot
+        # be encoded to UTF-8 and expat surfaces that as UnicodeEncodeError,
+        # not a ParseError. Left uncaught, that exception type doesn't match
+        # any `except MessageMLError` handler in the caller, and an
+        # unauthenticated malformed request produces a 500 instead of a 400.
+        # A lone surrogate is malformed content by any reasonable reading of
+        # "not well-formed" -- fold it into the same error type as every
+        # other parse failure.
+        raise MessageMLError(f"not well-formed XML: {exc}") from exc
 
     if root.tag != "messageML":
         raise MessageMLError(f"root element must be <messageML>, got <{root.tag}>")
@@ -265,4 +277,19 @@ def sanitize(message_ml: str) -> str:
         if element.tag == "a" and "href" in element.attrib:
             _check_href(element.tag, element.attrib["href"])
 
-    return ElementTree.tostring(root, encoding="unicode")
+    serialized = ElementTree.tostring(root, encoding="unicode")
+    # ElementTree's text-node escaper (_escape_cdata) escapes only &, < and >
+    # -- not CR. A CR *character reference* in the input (e.g. "&#13;")
+    # parses to a raw "\r" in a text node (raw CR bytes in the source don't
+    # have this problem: the XML spec requires a parser to line-end-normalize
+    # those to "\n" before they ever become text, and expat does). That raw
+    # "\r" then round-trips out of tostring() unescaped. A second sanitize()
+    # pass parses that raw "\r" as literal source text, which the *same*
+    # line-ending normalization rule silently turns into "\n" -- so the
+    # first pass's output is not stable under a second pass.
+    # ElementTree's attribute escaper (_escape_attrib) does not have this gap
+    # -- it already emits "&#13;" for CR -- so a raw "\r" can only appear
+    # here inside text-node content, never inside an attribute value. That
+    # makes a blanket replace on the whole serialized string safe: re-escape
+    # it back to "&#13;", matching what ET already does for attributes.
+    return serialized.replace("\r", "&#13;")

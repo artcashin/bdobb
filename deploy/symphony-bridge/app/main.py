@@ -32,6 +32,10 @@ _XML_ILLEGAL_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff￾￿]")
 
 _ML_OPEN = "<messageML>"
 _ML_CLOSE = "</messageML>"
+# The canonical serialization ElementTree.tostring() produces for a root
+# element with no text and no children -- the one self-closing shape
+# sanitize() itself can actually hand back (see _extract_body below).
+_ML_SELF_CLOSED = "<messageML />"
 
 
 def _escape_plain(text: str) -> str:
@@ -50,13 +54,31 @@ def _escape_plain(text: str) -> str:
 
 def _extract_body(message_ml: str) -> str:
     """Pull the inner content out of a document that has already passed
-    sanitize(). sanitize() deliberately returns the caller's original string
-    verbatim -- so it accepts surrounding whitespace, root attributes, and
-    self-closing roots that a naive removeprefix/removesuffix splice would
-    mishandle. Require the exact literal form here (whitespace-trimmed) so
-    splicing is safe; reject anything else instead of silently producing
-    unbalanced XML."""
+    sanitize(). sanitize() no longer returns the caller's original string
+    verbatim -- it re-serializes from the parsed tree -- so most of the
+    shapes a naive removeprefix/removesuffix splice used to have to worry
+    about (surrounding whitespace, root attributes) can no longer reach here
+    at all: ElementTree.fromstring() discards surrounding whitespace, and
+    sanitize()'s own attribute-allowlist check rejects a root with any
+    attribute (messageML allows none) before this function ever runs. One
+    shape *can* still reach here: an empty root re-serializes to the
+    self-closing form "<messageML />" (a space before "/>", ElementTree's
+    canonical form for an element with no text and no children), handled
+    explicitly below. Require the exact literal form otherwise
+    (whitespace-trimmed) so splicing is safe; reject anything else instead
+    of silently producing unbalanced XML."""
     stripped = message_ml.strip()
+    if stripped == _ML_SELF_CLOSED:
+        # In the current /messages flow this never actually fires:
+        # send_message's _is_empty_content(safe) check rejects an empty body
+        # with 422 before attribute() (and so _extract_body) ever runs on
+        # it. Handled explicitly anyway, rather than left to accidentally
+        # fall through to the mismatch rejection below (which happens to
+        # also reject it, but only because "<messageML />" doesn't match
+        # the literal-string checks that follow -- not because anyone
+        # decided it should) -- so this stays correct on its own terms if
+        # that check ordering ever changes.
+        return ""
     if not stripped.startswith(_ML_OPEN) or not stripped.endswith(_ML_CLOSE):
         raise MessageMLError(
             "root element must be exactly <messageML>...</messageML> "
@@ -161,12 +183,17 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         # Re-validate the document actually being sent, in its final,
-        # spliced-together form. `safe` was validated before attribution was
+        # spliced-together form -- and send *that* re-serialization, not the
+        # hand-assembled string. `safe` was validated before attribution was
         # appended; nothing may go out that hasn't been validated as it will
-        # actually be transmitted. A failure here means our own assembly
+        # actually be transmitted. Using the return value here (rather than
+        # discarding it and keeping the hand-assembled `final`) is what makes
+        # that literally true instead of just checked: sanitize() is "the
+        # final authority" specifically because its output, not its input,
+        # is what reaches Symphony. A failure here means our own assembly
         # produced something malformed -- a server bug, not a client error.
         try:
-            sanitize(final)
+            final = sanitize(final)
         except MessageMLError as exc:
             raise HTTPException(
                 status_code=500, detail=f"internal error assembling message: {exc}"

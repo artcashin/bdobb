@@ -459,3 +459,53 @@ def test_allowlist_denial_is_logged_with_hash_and_no_body(caplog):
     assert "refused: destination not allowed" in caplog.text
     assert "room-999" in caplog.text
     assert "secret payload" not in caplog.text
+
+
+# -- Fix: the re-validated document, not the hand-assembled string, must be
+# what actually goes out. Before this fix, the second sanitize(final) call's
+# return value was discarded, so the wire mixed "<br />" (from the sanitized
+# body's re-serialization) with "<br/>" (from the hand-assembled attribution
+# template) -- proof the thing validated was not the thing sent.
+
+
+def test_wire_payload_is_the_re_validated_serialization_not_the_hand_assembly():
+    api, fake = build()
+    res = api.post("/messages", json={"streamId": "room-1", "text": "line one\nline two"})
+    assert res.status_code == 200
+    sent = fake.sent[0].message_ml
+    # Every self-closing tag in the actually-sent document must be in
+    # ElementTree's canonical form (space before "/>") -- if the hand-built
+    # `final` string had leaked through instead, the attribution template's
+    # own "<br/>" (no space) would still be present.
+    assert "<br/>" not in sent
+    assert sent.count("<br />") >= 2  # one from the body's newline, one from attribution
+    root = ElementTree.fromstring(sent)  # re-parses cleanly either way; belt and suspenders
+    assert root.tag == "messageML"
+
+
+# -- Fix: a lone (unpaired) UTF-16 surrogate in the request body must 400,
+# not crash the handler with an uncaught UnicodeEncodeError (500). Reachable
+# from an unauthenticated request via a raw JSON escape like "\ud83d" with no
+# matching low surrogate.
+
+
+def test_lone_surrogate_in_text_is_400_not_500():
+    api, fake = build()
+    res = api.post(
+        "/messages",
+        content='{"streamId": "room-1", "text": "\\ud83d"}',
+        headers={"content-type": "application/json"},
+    )
+    assert res.status_code == 400
+    assert fake.sent == []
+
+
+def test_lone_surrogate_in_message_ml_is_400_not_500():
+    api, fake = build()
+    res = api.post(
+        "/messages",
+        content='{"streamId": "room-1", "messageML": "<messageML>\\ud83d</messageML>"}',
+        headers={"content-type": "application/json"},
+    )
+    assert res.status_code == 400
+    assert fake.sent == []
