@@ -223,6 +223,21 @@ def create_app(
         log_send(source=source, stream_id=body.stream_id, body=final, result="ok")
         return JSONResponse({"messageId": result.message_id})
 
+    @app.get("/conversations")
+    async def conversations() -> dict[str, object]:
+        items = await app.state.client.list_conversations()
+        return {"conversations": [{"streamId": c.stream_id, "name": c.name} for c in items]}
+
+    @app.get("/search/rooms")
+    async def search_rooms(q: str) -> dict[str, object]:
+        rooms = await app.state.client.search_rooms(q)
+        return {
+            "rooms": [
+                {"streamId": r.stream_id, "name": r.name, "description": r.description}
+                for r in rooms
+            ]
+        }
+
     return app
 
 
