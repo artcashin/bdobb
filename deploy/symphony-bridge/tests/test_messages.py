@@ -5,6 +5,7 @@ from xml.etree import ElementTree
 
 from fastapi.testclient import TestClient
 
+from app import main as app_main
 from app.fake_client import FakeClient
 from app.main import create_app
 
@@ -350,9 +351,23 @@ def test_empty_base64_attachment_data_is_422():
 # -- Fix 5: client construction failure must be its own error, not a send failure.
 
 
-def test_client_construction_failure_is_503_with_no_audit_record(caplog):
-    # Live mode (BRIDGE_FAKE unset), no client override: get_client() must
-    # try to import app.live_client, which does not exist in this repo.
+def test_client_construction_failure_is_503_with_no_audit_record(caplog, monkeypatch):
+    # What this pins is main.py's own contract (see the comment on its
+    # `except Exception as exc:` around `get_client()`): if *building* the
+    # Symphony client raises, that is a 503 and must never be audited as a
+    # rejected send. Before app/live_client.py existed, the easiest way to
+    # trigger that was letting build_client()'s `import app.live_client`
+    # fail with ModuleNotFoundError -- but that was an accident of the
+    # module's absence, not a deliberate simulation of construction failure,
+    # and it silently stopped meaning anything the moment the module was
+    # created (LiveClient.__init__ just stores cfg; it never raises, live
+    # mode or not, BDK installed or not). Pin the behavior directly instead:
+    # force build_client() itself to raise, regardless of whether a real
+    # Symphony SDK is installed.
+    def _boom(cfg):
+        raise RuntimeError("simulated construction failure")
+
+    monkeypatch.setattr(app_main, "build_client", _boom)
     api = TestClient(create_app({}), base_url=_BASE_URL)
     with caplog.at_level(logging.INFO, logger=AUDIT_LOGGER):
         res = api.post("/messages", json={"streamId": "room-1", "text": "hi"})

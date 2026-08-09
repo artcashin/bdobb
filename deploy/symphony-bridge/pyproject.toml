@@ -15,8 +15,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# "sym-api-client-python" (the old REST-only client, no `symphony.bdk`
+# namespace, tops out at 1.3.x on PyPI) was declared here but the code in
+# app/live_client.py imports from `symphony.bdk.core...` -- that namespace is
+# provided only by "symphony-bdk-python" (the FINOS Symphony BDK, PyPI name
+# `symphony-bdk-python`, importable as `symphony.bdk`), which is also what
+# the design spec calls for ("Symphony BDK, Python BDK preferred"). Fixed to
+# match the actual import.
 dev = ["pytest", "pytest-asyncio", "httpx", "ruff"]
-live = ["sym-api-client-python>=0.3"]
+live = ["symphony-bdk-python>=2.0"]
 
 [tool.setuptools]
 packages = ["app"]
