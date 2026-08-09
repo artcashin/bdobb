@@ -184,9 +184,67 @@ def markdown_to_messageml(md: str) -> str:
     return f"<messageML>{body}</messageML>"
 
 
+# Per-tag attribute allowlist. Any tag not listed here (i.e. every ALLOWED_TAGS
+# member except <a>) carries no attributes at all -- looked up via .get(tag,
+# frozenset()) below, so an unlisted tag's allowed set is simply empty.
+_ATTR_ALLOWLIST: dict[str, frozenset[str]] = {
+    "a": frozenset({"href"}),
+}
+
+# DOCTYPE is rejected before parsing, not neutralized after: an internal
+# entity declaration and an external-DTD SYSTEM reference are only ever
+# syntactically nested inside a DOCTYPE's declaration (`<!DOCTYPE ... [ ...
+# ]>` / `<!DOCTYPE ... SYSTEM "...">`), so one substring check ahead of
+# ElementTree.fromstring rejects all three vectors -- and does so before
+# expat does any DTD processing at all, which matters: waiting until after
+# parsing to notice is too late for an external reference that requires a
+# fetch to notice.
+_DOCTYPE_RE = re.compile(r"<!DOCTYPE")
+
+
+def _check_href(tag: str, value: str) -> None:
+    if not _HTTP_SCHEME.match(value):
+        raise MessageMLError(
+            f"disallowed href scheme on <{tag}>: only http:/https: URLs are "
+            f"permitted, got {value!r}"
+        )
+
+
 def sanitize(message_ml: str) -> str:
-    """Return the payload unchanged if it is well-formed MessageML using only
-    allowed tags. Raise MessageMLError otherwise."""
+    """Validate that `message_ml` is well-formed MessageML using only
+    allowed tags, each carrying only its allowed attributes with allowed
+    attribute values, and return a canonical re-serialization of the parsed
+    tree -- never the caller's original string.
+
+    That last part is deliberate, not incidental: a validating *pass-through*
+    (parse it, check it, then hand back the input string unchanged) lets
+    anything the XML parser discards instead of turning into an Element --
+    a DOCTYPE, an internal entity declaration, an external-DTD SYSTEM
+    reference, a comment, a processing instruction -- ride along in the
+    returned string even though none of the validation above ever looked at
+    it as a tag or an attribute. Building the return value from the parsed
+    tree closes that gap by construction: only content that round-tripped
+    through validated Elements can appear in the output. Comments and
+    processing instructions fall out of this for free -- ElementTree's
+    parser never surfaces them as tree nodes in the first place, so they are
+    silently dropped on re-serialization rather than needing an explicit
+    rejection rule (see test_comment_is_silently_dropped and
+    test_processing_instruction_is_silently_dropped).
+
+    The tradeoff: re-serializing changes bytes that were not a validation
+    concern (attribute quoting is unaffected here since ElementTree already
+    double-quotes, but self-closing empty elements gain a space, e.g.
+    "<br/>" -> "<br />", and surrounding whitespace/root attributes/
+    self-closing roots no longer round-trip -- callers relying on exact
+    byte-for-byte pass-through of *valid* documents would see a diff). That
+    is judged worth it here: this module is documented as "the final
+    authority on outbound payloads," and a validator whose output is not
+    provably a rendering of only what it validated is not actually final
+    authority over what reaches Symphony.
+    """
+    if _DOCTYPE_RE.search(message_ml):
+        raise MessageMLError("DOCTYPE declarations are not permitted in MessageML payloads")
+
     try:
         root = ElementTree.fromstring(message_ml)
     except ElementTree.ParseError as exc:
@@ -199,4 +257,12 @@ def sanitize(message_ml: str) -> str:
         if element.tag not in ALLOWED_TAGS:
             raise MessageMLError(f"disallowed tag <{element.tag}>")
 
-    return message_ml
+        allowed_attrs = _ATTR_ALLOWLIST.get(element.tag, frozenset())
+        for attr in element.attrib:
+            if attr not in allowed_attrs:
+                raise MessageMLError(f"disallowed attribute {attr!r} on <{element.tag}>")
+
+        if element.tag == "a" and "href" in element.attrib:
+            _check_href(element.tag, element.attrib["href"])
+
+    return ElementTree.tostring(root, encoding="unicode")

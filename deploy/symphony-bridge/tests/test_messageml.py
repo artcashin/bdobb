@@ -313,3 +313,95 @@ def test_generator_catches_href_attribute_bug():
         except MessageMLError:
             failures += 1
     assert failures > 0, "repaired generator failed to catch the reverted href guard"
+
+
+# --- Attribute validation: hole 1 from the spec (attributes were entirely
+# unvalidated) -------------------------------------------------------------
+
+
+def test_href_javascript_scheme_is_rejected():
+    with pytest.raises(MessageMLError):
+        sanitize('<messageML><a href="javascript:alert(1)">x</a></messageML>')
+
+
+def test_href_data_scheme_is_rejected():
+    with pytest.raises(MessageMLError):
+        sanitize('<messageML><a href="data:text/html,<script>alert(1)</script>">x</a></messageML>')
+
+
+def test_href_relative_url_is_rejected():
+    with pytest.raises(MessageMLError):
+        sanitize('<messageML><a href="/relative/path">x</a></messageML>')
+
+
+def test_href_http_scheme_is_accepted():
+    out = sanitize('<messageML><a href="http://example.com">x</a></messageML>')
+    assert 'href="http://example.com"' in out
+
+
+def test_href_https_scheme_is_accepted():
+    out = sanitize('<messageML><a href="https://example.com">x</a></messageML>')
+    assert 'href="https://example.com"' in out
+
+
+def test_onclick_attribute_on_b_is_rejected():
+    with pytest.raises(MessageMLError):
+        sanitize('<messageML><b onclick="alert(1)">x</b></messageML>')
+
+
+def test_unexpected_attribute_on_a_is_rejected():
+    with pytest.raises(MessageMLError):
+        sanitize('<messageML><a href="https://example.com" onclick="alert(1)">x</a></messageML>')
+
+
+# --- Pass-through closure: hole 2 from the spec (sanitize validated the
+# parsed tree but returned the caller's original string, so anything the
+# parser discarded rather than surfaced as an element rode along unchanged)
+# --------------------------------------------------------------------------
+
+
+def test_doctype_is_rejected():
+    with pytest.raises(MessageMLError):
+        sanitize("<messageML><!DOCTYPE messageML><b>x</b></messageML>")
+
+
+def test_internal_entity_declaration_is_rejected():
+    payload = (
+        "<messageML><!DOCTYPE messageML ["
+        '<!ENTITY xxe "expanded">'
+        "]><b>&xxe;</b></messageML>"
+    )
+    with pytest.raises(MessageMLError):
+        sanitize(payload)
+
+
+def test_external_dtd_system_reference_is_rejected():
+    payload = (
+        '<messageML><!DOCTYPE messageML SYSTEM "http://evil.example/evil.dtd">'
+        "<b>x</b></messageML>"
+    )
+    with pytest.raises(MessageMLError):
+        sanitize(payload)
+
+
+def test_comment_is_silently_dropped():
+    # Decision: comments carry nothing to validate or forbid on their own,
+    # and ElementTree's parser never surfaces them as tree nodes -- so
+    # re-serializing from the parsed tree silently drops them rather than
+    # explicitly rejecting the document. Nothing of the comment survives to
+    # reach Symphony either way.
+    out = sanitize("<messageML><!-- evil --><b>x</b></messageML>")
+    assert "evil" not in out
+    assert "<b>x</b>" in out
+
+
+def test_processing_instruction_is_silently_dropped():
+    out = sanitize('<messageML><?evil data?><b>x</b></messageML>')
+    assert "evil" not in out
+    assert "<b>x</b>" in out
+
+
+def test_round_trip_converter_link_still_passes_sanitize():
+    out = markdown_to_messageml("[docs](https://example.com/a_b)")
+    safe = sanitize(out)  # must not raise
+    assert '<a href="https://example.com/a_b">docs</a>' in safe
