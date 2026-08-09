@@ -2,11 +2,13 @@
 
 import re
 from collections.abc import Callable, Mapping
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from mcp.server.transport_security import TransportSecuritySettings
+from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.audit import log_send
 from app.client import (
@@ -132,26 +134,120 @@ class _LazyClient:
     """A SymphonyClient that resolves `get_client()` at call time, not at
     construction time. build_mcp() needs a concrete client up front, but
     resolving one eagerly at mount time would reintroduce the exact bug just
-    fixed in the discovery endpoints: main() injects no client, so
-    app.state.client starts out None, and forcing a build at app-creation
-    time breaks a cold start in live mode -- before app/live_client.py even
-    exists (Task 7), calling get_client() here would crash server startup
-    outright instead of only failing the first send."""
+    fixed in the discovery endpoints: main() injects no client, so the
+    resolved-client box in create_app() starts out empty, and forcing a
+    build at app-creation time breaks a cold start in live mode -- before
+    app/live_client.py even exists (Task 7), calling get_client() here would
+    crash server startup outright instead of only failing the first send."""
 
     def __init__(self, get_client: Callable[[], SymphonyClient]) -> None:
         self._get_client = get_client
 
+    def resolve(self) -> SymphonyClient:
+        """Force client construction now, separately from any send. Exists so
+        a caller (app/mcp_server.py's post_to_symphony) can resolve the real
+        client *before* its own send try/except, keeping a build_client()
+        failure from being caught by that broad except and misfiled as a
+        rejected send -- mirroring POST /messages, which calls get_client()
+        outside its own send try for the same reason."""
+        return self._get_client()
+
     async def health(self) -> HealthStatus:
-        return await self._get_client().health()
+        return await self.resolve().health()
 
     async def send_message(self, request: SendRequest) -> SendResult:
-        return await self._get_client().send_message(request)
+        return await self.resolve().send_message(request)
 
     async def list_conversations(self) -> list[Conversation]:
-        return await self._get_client().list_conversations()
+        return await self.resolve().list_conversations()
 
     async def search_rooms(self, query: str) -> list[Room]:
-        return await self._get_client().search_rooms(query)
+        return await self.resolve().search_rooms(query)
+
+
+class _HostOriginGate:
+    """Pure-ASGI middleware that applies the identical Host/Origin allowlist
+    the mounted MCP route already enforces (via TransportSecurityMiddleware)
+    to every other route on this app -- /health, /messages, /conversations,
+    /search/rooms.
+
+    Why this exists at all: the control isn't defending against a tailnet
+    attacker (who could set any Host header directly) -- CORS already blocks
+    a plain cross-origin browser request with no help from this. It defends
+    against a *confused deputy*: a DNS-rebinding page the user's own browser
+    has open. A short-TTL attacker-controlled name resolves first to itself
+    (passing same-origin checks at page-load time) and then, after the TTL
+    expires, to this bridge's address -- at which point the browser's own
+    `fetch` calls it "same-origin" (no preflight, whatever Origin the page's
+    real origin was) with a `Host` header of the attacker's name, which
+    never matches this allowlist. Without Host/Origin validation on *every*
+    route (not just /mcp), the same rebinding trick reaches /messages and
+    posts as the bot outside BDOBB's confirmation gate.
+
+    A raw ASGI middleware, not Starlette's BaseHTTPMiddleware, so it never
+    buffers or otherwise interferes with a streaming response body (the /mcp
+    route's SSE stream) if this ever runs upstream of one. `is_post=False` is
+    passed unconditionally to `validate_request`: that argument only gates
+    the library's Content-Type check, a requirement of the MCP transport's
+    own body parsing, not of DNS-rebinding protection -- every route here
+    already validates its own body shape independently (FastAPI's Pydantic
+    model for POST /messages, nothing for the GETs), so re-imposing it here
+    would be a new, untested behavior change with no relationship to the
+    vulnerability this middleware exists to close.
+    """
+
+    def __init__(self, app: ASGIApp, security: TransportSecurityMiddleware) -> None:
+        self._app = app
+        self._security = security
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        request = Request(scope, receive=receive)
+        response = await self._security.validate_request(request, is_post=False)
+        if response is not None:
+            await response(scope, receive, send)
+            return
+        await self._app(scope, receive, send)
+
+
+# Always allowed, regardless of operator config -- matches the MCP library's
+# own auto-enabled default for a loopback bind.
+_LOOPBACK_ALLOWED_HOSTS = frozenset({"127.0.0.1:*", "localhost:*", "[::1]:*"})
+# Bind hosts that are either already covered by the loopback set above, or
+# that name every interface rather than one this bridge is actually reachable
+# at -- "0.0.0.0" tells the OS to listen everywhere, but a client's Host
+# header is never literally "0.0.0.0", so adding it to the allowlist would
+# permit nothing real while looking like it permits something.
+_NOT_A_USABLE_HOST_HEADER = frozenset({"127.0.0.1", "localhost", "::1", "0.0.0.0", ""})
+
+
+def _default_allowed_hosts(bind: str) -> frozenset[str]:
+    """The allowlist used when BRIDGE_ALLOWED_HOSTS is not set: loopback plus
+    whatever BRIDGE_BIND resolves to, so a tailnet deployment bound to its
+    tailnet hostname or IP keeps working with zero extra config. A bind host
+    of "0.0.0.0" gives no usable Host value to add -- the operator must set
+    BRIDGE_ALLOWED_HOSTS explicitly (their tailnet hostname) in that case."""
+    host, _ = _parse_bind(bind)
+    hosts = set(_LOOPBACK_ALLOWED_HOSTS)
+    if host not in _NOT_A_USABLE_HOST_HEADER:
+        hosts.add(f"{host}:*")
+    return frozenset(hosts)
+
+
+def _security_settings(cfg: Config) -> TransportSecuritySettings:
+    """One TransportSecuritySettings, shared by the MCP route's own transport
+    security and by _HostOriginGate above -- one mechanism, one allowlist,
+    applied app-wide, rather than two independent implementations of Host
+    validation that could drift apart."""
+    hosts = cfg.allowed_hosts if cfg.allowed_hosts is not None else _default_allowed_hosts(cfg.bind)
+    origins = frozenset(f"{scheme}://{host}" for host in hosts for scheme in ("http", "https"))
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=sorted(hosts),
+        allowed_origins=sorted(origins),
+    )
 
 
 def create_app(
@@ -163,17 +259,69 @@ def create_app(
     # lets a caller that already loaded a Config (main(), below) hand it through
     # instead of paying for a second, independent load_config() call.
     cfg: Config = config if config is not None else load_config(env)
-    app = FastAPI(title="symphony-bridge", version="1.0.0")
-    app.state.config = cfg
-    # Resolved lazily on first send, not at app-creation time: /health must
-    # keep working in live mode even before a real client can be built (no
-    # pod session yet), and building one is only ever needed to send.
-    app.state.client = client
+
+    # A one-element mutable box rather than `app.state.client`: the FastAPI
+    # `app` object doesn't exist yet at this point (its `lifespan=` -- see
+    # below -- must be built first, from the MCP sub-app, which itself needs
+    # `get_client` up front via `_LazyClient`). Resolved lazily on first send,
+    # not at app-creation time: /health must keep working in live mode even
+    # before a real client can be built (no pod session yet), and building
+    # one is only ever needed to send.
+    resolved_client: list[SymphonyClient | None] = [client]
 
     def get_client() -> SymphonyClient:
-        if app.state.client is None:
-            app.state.client = build_client(cfg)
-        return app.state.client
+        if resolved_client[0] is None:
+            resolved_client[0] = build_client(cfg)
+        return resolved_client[0]
+
+    security_settings = _security_settings(cfg)
+
+    mcp = build_mcp(_LazyClient(get_client), cfg)
+    # mcp==2.0.0 renamed FastMCP to MCPServer and reshaped this API (verified
+    # against the installed version's own source; see task-6-report.md for
+    # the API surface used). `streamable_http_app()` returns a throwaway
+    # Starlette app whose only purpose here is to hand us its one route
+    # (registered at the default streamable_http_path, "/mcp") and its
+    # lifespan context; that route is appended directly onto this app's own
+    # router below, rather than mounted, so the final route table has no
+    # catch-all "/" entry that a route registered after this call could be
+    # silently swallowed by.
+    #
+    # `streamable_http_path="/"` mounted at an outer "/mcp" prefix -- the
+    # obvious-looking alternative -- does NOT produce the same URL without a
+    # redirect: Starlette's Mount strips the "/mcp" prefix before dispatch, so
+    # a request to exactly "/mcp" (no trailing slash) is forwarded to the
+    # sub-app with an empty remaining path, which its own router does not
+    # match against a route registered at "/" -- it 307-redirects to "/mcp/"
+    # instead (confirmed by direct test). That silently reintroduces the
+    # trailing-slash gotcha this service's README explicitly warns about.
+    # Lifting the route out and appending it directly avoids both problems:
+    # no catch-all, and no redirect on the bare "/mcp" path (confirmed by
+    # direct test: GET /mcp -> 400 "Missing session ID", same as before).
+    mcp_app = mcp.streamable_http_app(transport_security=security_settings)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # Composes the sub-app's lifespan into this app's own, rather than
+        # replacing it outright (`app.router.lifespan_context =
+        # mcp_app.router.lifespan_context`, the previous approach): the
+        # session manager's task group is created inside `run()`, entered via
+        # this context, and skipping it makes every /mcp request raise "Task
+        # group is not initialized. Make sure to use run()." at request time
+        # -- but silently replacing FastAPI's default lifespan also means any
+        # future `@app.on_event("startup")`/`lifespan`-based hook on *this*
+        # app would never run, with no warning (confirmed by direct test).
+        async with mcp_app.router.lifespan_context(mcp_app):
+            yield
+
+    app = FastAPI(title="symphony-bridge", version="1.0.0", lifespan=lifespan)
+    app.state.config = cfg
+    # One mechanism, applied app-wide: the same TransportSecuritySettings
+    # that gate the /mcp route below also gate every other route, via this
+    # middleware. See _HostOriginGate's own docstring for why a Host/Origin
+    # allowlist is the right control here (DNS rebinding, not tailnet
+    # reachability) and why it must not be limited to /mcp alone.
+    app.add_middleware(_HostOriginGate, security=TransportSecurityMiddleware(security_settings))
 
     @app.get("/health")
     def health() -> dict[str, object]:
@@ -301,30 +449,13 @@ def create_app(
             ]
         }
 
-    mcp = build_mcp(_LazyClient(get_client), cfg)
-    # Mounted at /mcp with no trailing slash. mcp==2.0.0 renamed FastMCP to
-    # MCPServer and reshaped this API (verified against the installed
-    # version's own source; see task-6-report.md for the API surface used).
-    #
-    # streamable_http_app()'s own internal route already lives at "/mcp" by
-    # default, so mounting *that* sub-app under an outer "/mcp" prefix would
-    # double it up into "/mcp/mcp". Mounting at "/" instead lets the sub-app's
-    # own route land at exactly "/mcp" on the parent, and any path it doesn't
-    # recognize still falls through to its own 404 -- confirmed by test.
-    #
-    # The session manager's task group is created inside its own `run()`
-    # context, entered via the ASGI lifespan protocol -- not by mounting
-    # alone. Skipping this wiring makes every /mcp request raise "Task group
-    # is not initialized. Make sure to use run()." at request time.
-    mcp_app = mcp.streamable_http_app(
-        # v1's posture (see README's "Security posture") is reachability-as-
-        # auth on the tailnet, not a browser Origin/Host allowlist -- disable
-        # DNS-rebinding protection rather than have it reject legitimate
-        # requests whose Host header is the tailnet hostname, not localhost.
-        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
-    )
-    app.router.lifespan_context = mcp_app.router.lifespan_context
-    app.mount("/", mcp_app)
+    # Append the MCP sub-app's own route(s) directly onto this app's router
+    # (see the long comment above, by `mcp_app`'s construction, for why this
+    # replaces the earlier `app.mount("/", mcp_app)`). `mcp_app.routes` holds
+    # exactly one entry in this app's configuration (no auth, no custom
+    # routes passed to build_mcp) but this stays correct if that ever
+    # changes, rather than unpacking and asserting exactly one.
+    app.router.routes.extend(mcp_app.routes)
 
     return app
 

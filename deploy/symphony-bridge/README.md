@@ -121,6 +121,7 @@ a mounted key file — no hardcoded pod/bot identity in the image:
 | `SYMPHONY_BOT_KEY_PATH` | Path *inside the container* to the bot's RSA private key. Mount the key as a file (Docker secret or bind mount); never bake it into the image. |
 | `BRIDGE_BIND` | Interface/port the bridge's HTTP API listens on. Bind the tailnet interface only — the design's network posture is reachability-as-auth, not open internet exposure. |
 | `BRIDGE_ALLOWED_DESTINATIONS` *(optional)* | Allowlist of stream IDs the bridge will post to — a blast-radius limiter so a compromised or buggy client can't post everywhere the bot has access. |
+| `BRIDGE_ALLOWED_HOSTS` *(optional)* | Comma-separated `Host` header values the bridge will accept, on every route (not just `/mcp`) — DNS-rebinding protection. Defaults to loopback plus whatever `BRIDGE_BIND` resolves to, so a bridge bound to a specific tailnet hostname or IP needs no extra config. If `BRIDGE_BIND` is `0.0.0.0` (listen on all interfaces), the default has no real tailnet hostname to add — set this explicitly to your tailnet FQDN (e.g. `bridge.your-tailnet.ts.net:*`) in that case, or every request will 421. |
 
 None of these are BDOBB env vars — they belong to the bridge's own process.
 BDOBB only needs `settings.symphonyBridgeUrl` (Symphony settings tab) and,

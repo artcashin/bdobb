@@ -47,3 +47,24 @@ def test_comma_only_allowlist_is_none_not_an_empty_set():
     # An empty frozenset would mean "permit nothing" -- every send blocked.
     for raw in (",", " , ", ",,"):
         assert load_config({"BRIDGE_ALLOWED_DESTINATIONS": raw}).allowed_destinations is None
+
+
+# -- Fix 1: BRIDGE_ALLOWED_HOSTS, same three-state parsing convention as
+# BRIDGE_ALLOWED_DESTINATIONS. Unlike allowed_destinations, None here does
+# NOT mean "no restriction" -- app/main.py fills in a default allowlist
+# (loopback + BRIDGE_BIND) at app-creation time; it only means "operator did
+# not override."
+
+
+def test_allowed_hosts_is_none_when_unset():
+    assert load_config({}).allowed_hosts is None
+
+
+def test_allowed_hosts_parses_and_strips():
+    cfg = load_config({"BRIDGE_ALLOWED_HOSTS": "bridge.tailnet.ts.net:8099 , 127.0.0.1:8099"})
+    assert cfg.allowed_hosts == frozenset({"bridge.tailnet.ts.net:8099", "127.0.0.1:8099"})
+
+
+def test_blank_allowed_hosts_is_none_not_empty_set():
+    for raw in ("", "   ", ",", " , "):
+        assert load_config({"BRIDGE_ALLOWED_HOSTS": raw}).allowed_hosts is None

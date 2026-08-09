@@ -45,8 +45,31 @@ def build_mcp(client: SymphonyClient, cfg: Config) -> MCPServer:
         except MessageMLError as exc:
             return f"Refused: {exc}"
 
+        # Resolve the real client *before* the send try block, not inside it.
+        # `client` here is a `_LazyClient` (see app/main.py) whose ordinary
+        # methods resolve `get_client()` internally on every call -- so a
+        # `build_client()` failure (no pod session yet, live mode) would
+        # otherwise surface inside the `except Exception` below and get
+        # audited as a rejected send, which it is not: construction failure
+        # means the service can't serve at all, exactly the invariant
+        # app/main.py's `send_message` already enforces for POST /messages
+        # (get_client() called outside its own send try, 503 with no audit
+        # record). `resolve()` only exists on `_LazyClient`; the plain
+        # `SymphonyClient`s the test suite passes directly (FakeClient, the
+        # brief's raising fakes) have no such indirection to unwrap, so this
+        # falls back to using `client` as-is when `resolve` isn't present.
+        resolve = getattr(client, "resolve", None)
         try:
-            result = await client.send_message(
+            live_client = resolve() if resolve is not None else client
+        except Exception as exc:  # noqa: BLE001 -- deliberately broad, matching
+            # the send-failure catch below: construction can fail in
+            # unpredictable ways (missing key file, bad pod config, ...) and
+            # must never propagate as an opaque ToolError. Never audited
+            # (see the comment above) -- a build failure isn't a send.
+            return f"Symphony client unavailable: {exc}"
+
+        try:
+            result = await live_client.send_message(
                 SendRequest(stream_id=stream_id, message_ml=body, attachment=None)
             )
         except Exception as exc:  # noqa: BLE001 -- deliberately broad, and never silent:

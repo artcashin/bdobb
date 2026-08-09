@@ -3,15 +3,22 @@ from fastapi.testclient import TestClient
 from app.fake_client import FakeClient
 from app.main import create_app
 
+# Fix 1: the Host/Origin allowlist defaults to loopback + whatever BRIDGE_BIND
+# resolves to ("127.0.0.1:8099" unless overridden) -- TestClient's own default
+# base_url ("http://testserver") matches none of it and would 421 every
+# request, so every TestClient here targets a base_url that does.
+_BASE_URL = "http://127.0.0.1:8099"
+
 
 def build():
-    return TestClient(create_app({"BRIDGE_FAKE": "1"}, client=FakeClient()))
+    return TestClient(create_app({"BRIDGE_FAKE": "1"}, client=FakeClient()), base_url=_BASE_URL)
 
 
 def build_cold():
     """Build the app the way main() does: fake mode, no client injected, so
-    app.state.client starts out None and only get_client() can resolve it."""
-    return TestClient(create_app({"BRIDGE_FAKE": "1"}))
+    the resolved-client box in create_app() starts out empty and only
+    get_client() can resolve it."""
+    return TestClient(create_app({"BRIDGE_FAKE": "1"}), base_url=_BASE_URL)
 
 
 def test_conversations_returns_stream_ids_and_names():

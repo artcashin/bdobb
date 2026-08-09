@@ -11,9 +11,20 @@ from app.main import create_app
 AUDIT_LOGGER = "symphony_bridge.audit"
 
 
+# Fix 1: DNS-rebinding protection now validates the Host header against an
+# allowlist that defaults to loopback + whatever BRIDGE_BIND resolves to
+# ("127.0.0.1:8099" unless a test overrides it). TestClient's own default
+# base_url ("http://testserver") sends a Host header that matches nothing in
+# that allowlist -- every request 421s -- so every TestClient in this file
+# is built against a base_url that does.
+_BASE_URL = "http://127.0.0.1:8099"
+
+
 def build(env=None, client=None):
     fake = client or FakeClient()
-    return TestClient(create_app({"BRIDGE_FAKE": "1", **(env or {})}, client=fake)), fake
+    return TestClient(
+        create_app({"BRIDGE_FAKE": "1", **(env or {})}, client=fake), base_url=_BASE_URL
+    ), fake
 
 
 def test_accepts_the_share_target_shape():
@@ -342,7 +353,7 @@ def test_empty_base64_attachment_data_is_422():
 def test_client_construction_failure_is_503_with_no_audit_record(caplog):
     # Live mode (BRIDGE_FAKE unset), no client override: get_client() must
     # try to import app.live_client, which does not exist in this repo.
-    api = TestClient(create_app({}))
+    api = TestClient(create_app({}), base_url=_BASE_URL)
     with caplog.at_level(logging.INFO, logger=AUDIT_LOGGER):
         res = api.post("/messages", json={"streamId": "room-1", "text": "hi"})
     assert res.status_code == 503
@@ -388,7 +399,8 @@ def test_symphony_send_failure_returns_502_with_the_symphony_error():
     api = TestClient(
         create_app(
             {"BRIDGE_FAKE": "1"}, client=_raising_client(lambda ml: f"upstream said {ml}")
-        )
+        ),
+        base_url=_BASE_URL,
     )
     res = api.post("/messages", json={"streamId": "room-1", "text": _LEAK_MARKER})
     assert res.status_code == 502
@@ -413,7 +425,10 @@ _EXCEPTION_SHAPES = {
 
 def test_symphony_send_failure_audit_never_leaks_the_body(caplog):
     for shape_name, build_message in _EXCEPTION_SHAPES.items():
-        api = TestClient(create_app({"BRIDGE_FAKE": "1"}, client=_raising_client(build_message)))
+        api = TestClient(
+            create_app({"BRIDGE_FAKE": "1"}, client=_raising_client(build_message)),
+            base_url=_BASE_URL,
+        )
         caplog.clear()
         with caplog.at_level(logging.INFO, logger=AUDIT_LOGGER):
             res = api.post(
@@ -438,7 +453,8 @@ def test_symphony_send_failure_audit_result_is_exception_type_only(caplog):
         create_app(
             {"BRIDGE_FAKE": "1"},
             client=_raising_client(lambda ml: f"HTTP 400 from agent; payload was {ml}"),
-        )
+        ),
+        base_url=_BASE_URL,
     )
     with caplog.at_level(logging.INFO, logger=AUDIT_LOGGER):
         res = api.post("/messages", json={"streamId": "room-1", "text": _LEAK_MARKER})
@@ -452,7 +468,7 @@ def test_symphony_send_failure_audit_result_is_exception_type_only(caplog):
 
 
 def test_allowlist_denial_is_logged_with_hash_and_no_body(caplog):
-    api = TestClient(create_app({"BRIDGE_ALLOWED_DESTINATIONS": "room-1"}))
+    api = TestClient(create_app({"BRIDGE_ALLOWED_DESTINATIONS": "room-1"}), base_url=_BASE_URL)
     with caplog.at_level(logging.INFO, logger=AUDIT_LOGGER):
         res = api.post("/messages", json={"streamId": "room-999", "text": "secret payload"})
     assert res.status_code == 403
