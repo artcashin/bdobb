@@ -25,6 +25,136 @@ interface ParamControlsProps {
   backend?: BackendConfig;
 }
 
+function ParamRow({
+  children,
+  label,
+  sharedTag,
+  description,
+  labelClasses,
+  inputId,
+  isRequired,
+}: {
+  children: React.ReactNode;
+  label: string;
+  sharedTag: React.ReactNode;
+  description?: string;
+  labelClasses: string;
+  inputId: string;
+  isRequired: boolean;
+}) {
+  return (
+    <div className="param-controls-row">
+      <label htmlFor={inputId} className={labelClasses}>
+        {label} {isRequired ? "*" : ""}
+        {sharedTag}
+      </label>
+      {children}
+      {description && <span className="param-controls-help">{description}</span>}
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  isRequired,
+  sharedTag,
+  labelClasses,
+  inputId,
+  description,
+  options,
+  value,
+  onChange,
+  multiple = false,
+  className,
+}: {
+  label: string;
+  isRequired: boolean;
+  sharedTag: ReactNode;
+  labelClasses: string;
+  inputId: string;
+  description?: string;
+  options: ParamOption[];
+  value: any;
+  onChange: (value: string | number | boolean | string[] | null) => void;
+  multiple?: boolean;
+  className: string;
+}) {
+  return (
+    <ParamRow
+      label={label}
+      isRequired={isRequired}
+      sharedTag={sharedTag}
+      labelClasses={labelClasses}
+      inputId={inputId}
+      description={description}
+    >
+      <select
+        id={inputId}
+        multiple={multiple}
+        value={multiple && Array.isArray(value) ? value : (value ?? "")}
+        onChange={(e) => {
+          const selected = Array.from(e.target.selectedOptions, (option) => option.value);
+          onChange(multiple ? selected : (selected?.[0] ?? ""));
+        }}
+        className={className}
+        style={{ minHeight: "auto" }}
+      >
+        {options.map((o) => (
+          <option key={String(o.value)} value={String(o.value)}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </ParamRow>
+  );
+}
+
+function TextField({
+  label,
+  isRequired,
+  sharedTag,
+  labelClasses,
+  inputId,
+  description,
+  type = "text",
+  value,
+  onChange,
+  className,
+  placeholder,
+}: {
+  label: string;
+  isRequired: boolean;
+  sharedTag: ReactNode;
+  labelClasses: string;
+  inputId: string;
+  description?: string;
+  type?: "text" | "date" | "ticker";
+  value: any;
+  onChange: (value: string | number | boolean | string[] | null) => void;
+  className: string;
+  placeholder?: string;
+}) {
+  return (
+    <ParamRow
+      label={label}
+      isRequired={isRequired}
+      sharedTag={sharedTag}
+      labelClasses={labelClasses}
+      inputId={inputId}
+      description={description}
+    >
+      <input
+        id={inputId}
+        type={type === "date" ? "date" : "text"}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        className={className}
+        placeholder={placeholder}
+      />
+    </ParamRow>
+  );
+}
+
 const BLOCKED_PLACEHOLDER = "Select required parameter(s) first";
 // Distinct wording from BLOCKED_PLACEHOLDER (desk Finding 7): a failed fetch
 // and "waiting on a parent param" are different situations -- one means
@@ -307,25 +437,19 @@ export function ParamControls({
       (param.type === "text" || param.type === "ticker" || param.type === "number")
     ) {
       return (
-        <div key={paramName} className="param-controls-row">
-          <label htmlFor={inputId(paramName)} className={labelClasses}>
-            {param.label} {param.value === null ? "*" : ""}
-            {sharedTag}
-          </label>
-          <select
-            id={inputId(paramName)}
-            value={(currentValue as string | number) ?? ""}
-            onChange={(e) => handleParamChange(paramName, e.target.value)}
-            className={baseClasses}
-          >
-            {paramOptions.map((o) => (
-              <option key={String(o.value)} value={String(o.value)}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          {param.description && <span className="param-controls-help">{param.description}</span>}
-        </div>
+        <SelectField
+          key={paramName}
+          label={param.label}
+          isRequired={param.value === null}
+          sharedTag={sharedTag}
+          labelClasses={labelClasses}
+          inputId={inputId(paramName)}
+          description={param.description}
+          options={paramOptions}
+          value={currentValue}
+          onChange={handleParamChange}
+          className={baseClasses}
+        />
       );
     }
 
@@ -334,30 +458,33 @@ export function ParamControls({
       case "date":
       case "ticker":
         return (
-          <div key={paramName} className="param-controls-row">
-            <label htmlFor={inputId(paramName)} className={labelClasses}>
-              {param.label} {param.value === null ? "*" : ""}
-              {sharedTag}
-            </label>
-            <input
-              id={inputId(paramName)}
-              type={param.type === "date" ? "date" : "text"}
-              value={(currentValue as string) ?? ""}
-              onChange={(e) => handleParamChange(paramName, e.target.value)}
-              className={baseClasses}
-              placeholder={param.description}
-            />
-            {param.description && <span className="param-controls-help">{param.description}</span>}
-          </div>
+          <TextField
+            key={paramName}
+            label={param.label}
+            isRequired={param.value === null}
+            sharedTag={sharedTag}
+            labelClasses={labelClasses}
+            inputId={inputId(paramName)}
+            description={param.description}
+            type={param.type === "date" ? "date" : "text"}
+            value={currentValue}
+            onChange={handleParamChange}
+            className={baseClasses}
+            placeholder={param.description}
+          />
         );
 
       case "number":
         return (
-          <div key={paramName} className="param-controls-row">
-            <label htmlFor={inputId(paramName)} className={labelClasses}>
-              {param.label} {param.value === null ? "*" : ""}
-              {sharedTag}
-            </label>
+          <ParamRow
+            key={paramName}
+            label={param.label}
+            isRequired={param.value === null}
+            sharedTag={sharedTag}
+            labelClasses={labelClasses}
+            inputId={inputId(paramName)}
+            description={param.description}
+          >
             <NumberField
               paramName={paramName}
               value={currentValue}
@@ -365,8 +492,7 @@ export function ParamControls({
               className={baseClasses}
               placeholder={param.description}
             />
-            {param.description && <span className="param-controls-help">{param.description}</span>}
-          </div>
+          </ParamRow>
         );
 
       case "boolean":
@@ -393,50 +519,35 @@ export function ParamControls({
 
         if (hasOptions) {
           return (
-            <div key={paramName} className="param-controls-row">
-              <label htmlFor={inputId(paramName)} className={labelClasses}>
-                {param.label} {param.value === null ? "*" : ""}
-                {sharedTag}
-              </label>
-              <select
-                id={inputId(paramName)}
-                multiple={isMultiSelect}
-                value={isMultiSelect && Array.isArray(currentValue) ? currentValue : ((currentValue as string | number) ?? "")}
-                onChange={(e) => {
-                  const selected = Array.from(
-                    e.target.selectedOptions,
-                    (option) => option.value
-                  );
-                  handleParamChange(
-                    paramName,
-                    isMultiSelect ? selected : selected?.[0] ?? ""
-                  );
-                }}
-                className={baseClasses}
-                style={{ minHeight: "auto" }}
-              >
-                {paramOptions.map((opt) => (
-                  <option key={String(opt.value)} value={String(opt.value)}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SelectField
+              key={paramName}
+              label={param.label}
+              isRequired={param.value === null}
+              sharedTag={sharedTag}
+              labelClasses={labelClasses}
+              inputId={inputId(paramName)}
+              description={param.description}
+              options={paramOptions}
+              value={currentValue}
+              onChange={handleParamChange}
+              multiple={isMultiSelect}
+              className={baseClasses}
+            />
           );
         }
         return (
-          <div key={paramName} className="param-controls-row">
-            <label htmlFor={inputId(paramName)} className={labelClasses}>{param.label}</label>
-            <input
-              id={inputId(paramName)}
-              type="text"
-              value={(currentValue as string) ?? ""}
-              onChange={(e) => handleParamChange(paramName, e.target.value)}
-              className={baseClasses}
-              placeholder={param.description}
-            />
-            {param.description && <span className="param-controls-help">{param.description}</span>}
-          </div>
+          <TextField
+            key={paramName}
+            label={param.label}
+            sharedTag={sharedTag}
+            labelClasses={labelClasses}
+            inputId={inputId(paramName)}
+            description={param.description}
+            value={currentValue}
+            onChange={handleParamChange}
+            className={baseClasses}
+            placeholder={param.description}
+          />
         );
 
       case "form":
@@ -446,18 +557,18 @@ export function ParamControls({
 
       default:
         return (
-          <div key={paramName} className="param-controls-row">
-            <label htmlFor={inputId(paramName)} className={labelClasses}>{param.label}</label>
-            <input
-              id={inputId(paramName)}
-              type="text"
-              value={(currentValue as string) ?? ""}
-              onChange={(e) => handleParamChange(paramName, e.target.value)}
-              className={baseClasses}
-              placeholder={param.description}
-            />
-            {param.description && <span className="param-controls-help">{param.description}</span>}
-          </div>
+          <TextField
+            key={paramName}
+            label={param.label}
+            sharedTag={sharedTag}
+            labelClasses={labelClasses}
+            inputId={inputId(paramName)}
+            description={param.description}
+            value={currentValue}
+            onChange={handleParamChange}
+            className={baseClasses}
+            placeholder={param.description}
+          />
         );
     }
   };
