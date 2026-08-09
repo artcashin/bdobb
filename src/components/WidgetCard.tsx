@@ -239,6 +239,7 @@ export default function WidgetCard({ card }: WidgetCardProps) {
       title: widget?.name ?? card.widgetId,
       data: shareData,
       columns: widget?.columnsDefs ?? null,
+      sender: settings.symphonyDisplayName,
     })
       .then((res) => setSymphonyStatus(`${res.target}: ${res.detail}`))
       .catch((e) => {
@@ -247,7 +248,7 @@ export default function WidgetCard({ card }: WidgetCardProps) {
         setSymphonyStatus(`Failed: ${msg}`);
       })
       .finally(() => setSendingToSymphony(false));
-  }, [shareKind, settings.symphonyBridgeUrl, card, widget, data]);
+  }, [shareKind, settings.symphonyBridgeUrl, settings.symphonyDisplayName, card, widget, data]);
 
   const applyParams = useCallback(() => {
     // Grouped values belong to the dashboard, not the card. Writing them onto

@@ -42,6 +42,7 @@ describe("settings", () => {
       symphonyPodUrl: "",
       symphonyPartnerId: "",
       symphonyBridgeUrl: "",
+      symphonyDisplayName: "",
     };
     await persistence.setSettings(settings);
     const content = files.get("settings.json");
@@ -57,6 +58,7 @@ describe("settings", () => {
       symphonyPodUrl: "https://my-pod.symphony.com",
       symphonyPartnerId: "partner-9",
       symphonyBridgeUrl: "http://localhost:9100",
+      symphonyDisplayName: "Art Cashin",
     };
     files.set("settings.json", JSON.stringify(settings, null, 2));
     const result = await persistence.getSettings();
@@ -124,11 +126,12 @@ describe("settings", () => {
     expect(files.get("settings.json.corrupt")).toBe(bad);
   });
 
-  it("defaults the three Symphony fields to empty strings", async () => {
+  it("defaults the four Symphony fields to empty strings", async () => {
     const s = await persistence.getSettings();
     expect(s.symphonyPodUrl).toBe("");
     expect(s.symphonyPartnerId).toBe("");
     expect(s.symphonyBridgeUrl).toBe("");
+    expect(s.symphonyDisplayName).toBe("");
   });
 
   it("round-trips the Symphony fields", async () => {
@@ -137,11 +140,13 @@ describe("settings", () => {
       symphonyPodUrl: "https://my-pod.symphony.com",
       symphonyPartnerId: "partner-9",
       symphonyBridgeUrl: "http://localhost:9100",
+      symphonyDisplayName: "Art Cashin",
     });
     const s = await persistence.getSettings();
     expect(s.symphonyPodUrl).toBe("https://my-pod.symphony.com");
     expect(s.symphonyPartnerId).toBe("partner-9");
     expect(s.symphonyBridgeUrl).toBe("http://localhost:9100");
+    expect(s.symphonyDisplayName).toBe("Art Cashin");
   });
 
   it("quarantines settings.json when a Symphony field is present but not a string", async () => {

@@ -119,6 +119,7 @@ let settingsFixture: {
   symphonyPodUrl: string;
   symphonyPartnerId: string;
   symphonyBridgeUrl: string;
+  symphonyDisplayName?: string;
 } = {
   symphonyPodUrl: "",
   symphonyPartnerId: "",
@@ -1190,6 +1191,22 @@ describe("Send to Symphony", () => {
         { name: "Bob", age: 25 },
       ],
     });
+    promptSpy.mockRestore();
+  });
+
+  it("passes the configured display name as the sender", async () => {
+    settingsFixture = {
+      ...settingsFixture,
+      symphonyBridgeUrl: "http://localhost:9911",
+      symphonyDisplayName: "Art Cashin",
+    };
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("stream-42");
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText(/Alice/i)).toBeInTheDocument());
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(vi.mocked(shareWidgetToSymphony)).toHaveBeenCalled());
+    const [input] = vi.mocked(shareWidgetToSymphony).mock.calls[0];
+    expect(input).toMatchObject({ sender: "Art Cashin" });
     promptSpy.mockRestore();
   });
 

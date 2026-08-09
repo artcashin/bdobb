@@ -331,6 +331,28 @@ describe("shareWidgetToSymphony", () => {
     ).rejects.toThrow(/stream id/i);
   });
 
+  it("includes the sender when one is supplied", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    await shareWidgetToSymphony(
+      { ...base, sender: "Art Cashin" },
+      { fetchImpl: fetchImpl as never }
+    );
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body.sender).toBe("Art Cashin");
+  });
+
+  it("omits the sender entirely when it is blank", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    await shareWidgetToSymphony(
+      { ...base, sender: "   " },
+      { fetchImpl: fetchImpl as never }
+    );
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect("sender" in body).toBe(false);
+  });
+
   it("surfaces the response body on a failed post", async () => {
     const fetchImpl = vi.fn(async () => new Response("bot not in room", { status: 403 }));
     await expect(

@@ -188,4 +188,7 @@ export interface Settings {
   symphonyPartnerId: string;
   /** HTTP base URL of the Symphony bot bridge; widget shares are POSTed to `{symphonyBridgeUrl}/messages`. */
   symphonyBridgeUrl: string;
+  /** Display name stamped on outbound Symphony messages as "📤 {name} via BDOBB".
+   *  Self-asserted courtesy label, never an identity claim. */
+  symphonyDisplayName: string;
 }

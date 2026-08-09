@@ -9,6 +9,7 @@ const loadSettings = vi.fn(async (): Promise<Settings> => ({
   symphonyPodUrl: "",
   symphonyPartnerId: "",
   symphonyBridgeUrl: "",
+  symphonyDisplayName: "",
 }));
 const saveSettings = vi.fn(async (_s: Settings) => {});
 
@@ -16,6 +17,7 @@ vi.mock("../lib/persistence", () => ({
   DEFAULT_SETTINGS: {
     ritaUrl: "", theme: "dark", contextSharing: false, mcpServers: [],
     symphonyPodUrl: "", symphonyPartnerId: "", symphonyBridgeUrl: "",
+    symphonyDisplayName: "",
   },
   loadSettings: (...a: []) => loadSettings(...a),
   saveSettings: (s: Settings) => saveSettings(s),
@@ -42,6 +44,7 @@ describe("useSettingsStore", () => {
       symphonyPodUrl: "",
       symphonyPartnerId: "",
       symphonyBridgeUrl: "",
+      symphonyDisplayName: "",
     });
   });
 
@@ -78,6 +81,7 @@ describe("useSettingsStore", () => {
       symphonyPodUrl: "",
       symphonyPartnerId: "",
       symphonyBridgeUrl: "",
+      symphonyDisplayName: "",
     });
     await useSettingsStore.getState().load();
     const state = useSettingsStore.getState();
@@ -89,6 +93,7 @@ describe("useSettingsStore", () => {
       symphonyPodUrl: "",
       symphonyPartnerId: "",
       symphonyBridgeUrl: "",
+      symphonyDisplayName: "",
     });
   });
 
@@ -118,6 +123,7 @@ describe("useSettingsStore", () => {
       loadSettings.mockResolvedValueOnce({
         ritaUrl: "", theme: "dark", contextSharing: false, mcpServers: [],
         symphonyPodUrl: "", symphonyPartnerId: "", symphonyBridgeUrl: "",
+        symphonyDisplayName: "",
       });
       await useSettingsStore.getState().load();
       expect(useSettingsStore.getState().loadError).toBeNull();
