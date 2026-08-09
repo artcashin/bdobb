@@ -360,3 +360,80 @@ describe("shareWidgetToSymphony", () => {
     ).rejects.toThrow(/403.*bot not in room/s);
   });
 });
+
+// ---- bridge contract fixture (Task 9) ----
+//
+// deploy/symphony-bridge/tests/test_contract.py reads the fixture this test
+// writes and asserts the bridge's POST /messages accepts every payload shape
+// here. The fixture is a byproduct of actually calling shareWidgetToSymphony
+// -- not hand-written JSON -- so changing what chatShare.ts sends changes the
+// fixture, and a bridge that no longer agrees fails the Python side. That is
+// the entire point: it is the one thing that makes the client/bridge contract
+// verified instead of merely assumed (see deploy/symphony-bridge/README.md).
+describe("bridge contract fixture", () => {
+  it("captures every payload shape shareWidgetToSymphony can emit, with a sender, for the Python contract test", async () => {
+    const cases: Array<[string, SymphonyShareInput]> = [
+      [
+        "note",
+        {
+          kind: "note",
+          bridgeUrl: "https://bridge.test",
+          streamId: "room-1",
+          title: "Note",
+          data: "**hi**",
+          sender: "Art Cashin",
+        },
+      ],
+      [
+        "table",
+        {
+          kind: "table",
+          bridgeUrl: "https://bridge.test",
+          streamId: "room-1",
+          title: "AAPL quotes",
+          data: [{ symbol: "AAPL", price: 250 }],
+          sender: "Art Cashin",
+        },
+      ],
+      [
+        "chart",
+        {
+          kind: "chart",
+          bridgeUrl: "https://bridge.test",
+          streamId: "room-1",
+          title: "Price chart",
+          data: { data: [], layout: {} },
+          sender: "Art Cashin",
+        },
+      ],
+    ];
+
+    const shapes: Record<string, unknown> = {};
+    for (const [name, input] of cases) {
+      const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+      // jsdom has no canvas, so the chart case needs a renderer injected --
+      // harmless to pass for note/table too, since only the chart branch
+      // reads it.
+      const renderChartPng = vi.fn(async () => ({ base64: "QUJD", mimeType: "image/png" }));
+      await shareWidgetToSymphony(input, { fetchImpl: fetchImpl as never, renderChartPng });
+      const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+      shapes[name] = JSON.parse(String(init.body));
+    }
+
+    const fs = await import("node:fs/promises");
+    await fs.mkdir("deploy/symphony-bridge/tests/fixtures", { recursive: true });
+    await fs.writeFile(
+      "deploy/symphony-bridge/tests/fixtures/bdobb_payloads.json",
+      JSON.stringify(shapes, null, 2) + "\n"
+    );
+
+    expect(Object.keys(shapes)).toEqual(["note", "table", "chart"]);
+    expect(shapes.note).toMatchObject({ streamId: "room-1", sender: "Art Cashin" });
+    expect((shapes.table as { attachment: { contentType: string } }).attachment.contentType).toBe(
+      "text/csv"
+    );
+    expect((shapes.chart as { attachment: { contentType: string } }).attachment.contentType).toBe(
+      "image/png"
+    );
+  });
+});
