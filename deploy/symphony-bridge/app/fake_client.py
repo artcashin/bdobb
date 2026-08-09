@@ -41,5 +41,5 @@ class FakeClient:
         is not searched. An empty (or all-whitespace) query matches every room,
         the same "no filter configured" convention used elsewhere in this
         service (see `load_config`'s `allowed_destinations`)."""
-        needle = query.lower()
+        needle = query.strip().lower()
         return [r for r in _FIXTURE_ROOMS if needle in r.name.lower()]

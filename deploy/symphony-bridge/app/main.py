@@ -225,12 +225,12 @@ def create_app(
 
     @app.get("/conversations")
     async def conversations() -> dict[str, object]:
-        items = await app.state.client.list_conversations()
+        items = await get_client().list_conversations()
         return {"conversations": [{"streamId": c.stream_id, "name": c.name} for c in items]}
 
     @app.get("/search/rooms")
     async def search_rooms(q: str) -> dict[str, object]:
-        rooms = await app.state.client.search_rooms(q)
+        rooms = await get_client().search_rooms(q)
         return {
             "rooms": [
                 {"streamId": r.stream_id, "name": r.name, "description": r.description}
