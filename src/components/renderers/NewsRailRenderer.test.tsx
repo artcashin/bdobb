@@ -5,6 +5,12 @@ const openUrl = vi.fn().mockResolvedValue(undefined);
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (...a: unknown[]) => openUrl(...a),
 }));
+
+const logError = vi.fn();
+vi.mock("../../lib/logger", () => ({
+  logError: (...a: unknown[]) => logError(...a),
+}));
+
 // The renderer defaults fetchImpl to the plugin; tests always inject their own.
 vi.mock("@tauri-apps/plugin-http", () => ({
   fetch: vi.fn(() => {
@@ -66,13 +72,21 @@ const SEED = [
   article({ id: 1, title: "First headline", highlighted: true }),
 ];
 
-function okFetch(articles: NewsArticle[] = SEED) {
-  return vi.fn(async () =>
-    new Response(JSON.stringify({ articles, next_cursor: null }), {
+interface FeedFixture {
+  id: number;
+  favicon?: string | null;
+}
+
+function okFetch(articles: NewsArticle[] = SEED, feeds: FeedFixture[] = []) {
+  return vi.fn(async (url: string | URL) => {
+    const body = String(url).includes("/api/feeds")
+      ? { feeds }
+      : { articles, next_cursor: null };
+    return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "Content-Type": "application/json" },
-    })
-  ) as unknown as typeof fetch;
+    });
+  }) as unknown as typeof fetch;
 }
 
 function renderRail(over: Partial<Parameters<typeof NewsRailRenderer>[0]> = {}) {
@@ -96,6 +110,7 @@ describe("NewsRailRenderer", () => {
   beforeEach(() => {
     MockWebSocket.instances = [];
     openUrl.mockClear();
+    logError.mockClear();
     vi.stubGlobal("WebSocket", MockWebSocket);
   });
   afterEach(() => {
@@ -113,7 +128,10 @@ describe("NewsRailRenderer", () => {
     // Newest (higher sort_at) first.
     expect(rows[0].textContent).toContain("Second headline");
     expect(rows[1].className).toContain("highlighted");
-    const calledUrl = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const newsCall = calls.find(([u]) => String(u).includes("/api/news"));
+    expect(newsCall).toBeDefined();
+    const calledUrl = (newsCall as [string])[0];
     expect(calledUrl).toBe("https://openbb.example.ts.net:8088/api/news?user=art&limit=100");
   });
 
@@ -121,9 +139,10 @@ describe("NewsRailRenderer", () => {
     const fetchImpl = okFetch();
     renderRail({ fetchImpl, token: "tkn-0123456789abcdef0123456789abcdef" });
     await screen.findByText("Second headline");
-    const [calledUrl, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [
-      string, RequestInit,
-    ];
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    const newsCall = calls.find(([u]) => String(u).includes("/api/news"));
+    expect(newsCall).toBeDefined();
+    const [calledUrl, init] = newsCall as [string, RequestInit];
     expect(calledUrl).not.toContain("token");
     expect((init.headers as Record<string, string>).Authorization).toBe(
       "Bearer tkn-0123456789abcdef0123456789abcdef"
@@ -200,5 +219,110 @@ describe("NewsRailRenderer", () => {
     expect(screen.getByText(/Set the ticker URL/)).toBeInTheDocument();
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  describe("favicons", () => {
+    // SEED's two articles both take the article() factory's default
+    // feed_id (1), so they can't prove the join is selective per row. These
+    // fixtures give each article a distinct feed_id instead, so a single
+    // render can show one row resolving a favicon and a different row
+    // (whose feed_id the feeds response never mentions) resolving none.
+    const iconArticle = article({ id: 10, title: "Has an icon", feed_id: 11 });
+    const unlistedArticle = article({ id: 20, title: "Unlisted feed", feed_id: 22 });
+    const nullFaviconArticle = article({ id: 30, title: "Null favicon feed", feed_id: 33 });
+    const missingFaviconArticle = article({ id: 40, title: "Missing favicon field", feed_id: 44 });
+
+    it("fetches /api/feeds once on mount with the same auth header as the seed call", async () => {
+      const fetchImpl = okFetch(SEED, [{ id: 1, favicon: "data:image/x-icon;base64,AAA" }]);
+      renderRail({ fetchImpl, token: "tkn-0123456789abcdef0123456789abcdef" });
+      await screen.findByText("Second headline");
+
+      const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      const feedsCall = calls.find(([u]) => String(u).includes("/api/feeds"));
+      expect(feedsCall).toBeDefined();
+      const [calledUrl, init] = feedsCall as [string, RequestInit];
+      expect(calledUrl).toBe("https://openbb.example.ts.net:8088/api/feeds?user=art");
+      expect((init.headers as Record<string, string>).Authorization).toBe(
+        "Bearer tkn-0123456789abcdef0123456789abcdef"
+      );
+      // Called exactly once, matching the seed call's own single-call shape.
+      expect(calls.filter(([u]) => String(u).includes("/api/feeds"))).toHaveLength(1);
+    });
+
+    it("renders the favicon next to the source for a feed that has one, and no icon for a row whose feed_id is unlisted", async () => {
+      const fetchImpl = okFetch(
+        [iconArticle, unlistedArticle],
+        [{ id: 11, favicon: "data:image/x-icon;base64,AAA" }] // feed_id 22 (unlistedArticle's feed) is absent entirely
+      );
+      renderRail({ fetchImpl });
+      await screen.findByText("Has an icon");
+      await screen.findByText("Unlisted feed");
+
+      const iconRow = screen.getByText("Has an icon").closest(".news-row")!;
+      const img = iconRow.querySelector(".news-favicon") as HTMLImageElement | null;
+      expect(img).not.toBeNull();
+      expect(img!.src).toBe("data:image/x-icon;base64,AAA");
+      expect(img!.alt).toBe("");
+
+      // Same render, different row: an unlisted feed_id gets no icon, proving
+      // the join is selective per row rather than a global on/off switch.
+      const unlistedRow = screen.getByText("Unlisted feed").closest(".news-row")!;
+      expect(unlistedRow.querySelector(".news-favicon")).toBeNull();
+    });
+
+    it("renders no icon for a feed with a null favicon or an unlisted feed_id", async () => {
+      const fetchImpl = okFetch(
+        [nullFaviconArticle, unlistedArticle],
+        [{ id: 33, favicon: null }] // feed_id 22 (unlistedArticle's feed) is absent entirely
+      );
+      renderRail({ fetchImpl });
+      await screen.findByText("Null favicon feed");
+      await screen.findByText("Unlisted feed");
+      expect(document.querySelectorAll(".news-favicon")).toHaveLength(0);
+    });
+
+    it("renders no icon when a feed entry omits the favicon field entirely (old backend without the column)", async () => {
+      const fetchImpl = okFetch(
+        [missingFaviconArticle, unlistedArticle],
+        [{ id: 44 }] // no `favicon` key at all — as an old rss-ticker server would send
+      );
+      renderRail({ fetchImpl });
+      await screen.findByText("Missing favicon field");
+      await screen.findByText("Unlisted feed");
+      expect(document.querySelectorAll(".news-favicon")).toHaveLength(0);
+    });
+
+    it("stays fully functional when the feeds fetch fails, logging once and not throwing", async () => {
+      const fetchImpl = vi.fn(async (url: string | URL) => {
+        if (String(url).includes("/api/feeds")) throw new Error("network down");
+        return new Response(JSON.stringify({ articles: SEED, next_cursor: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as unknown as typeof fetch;
+      renderRail({ fetchImpl });
+      // Headlines still work.
+      expect(await screen.findByText("Second headline")).toBeInTheDocument();
+      expect(document.querySelectorAll(".news-favicon")).toHaveLength(0);
+      await waitFor(() => expect(logError).toHaveBeenCalledTimes(1));
+      expect(logError.mock.calls[0][0]).toContain("favicon");
+    });
+
+    it("also logs once (and renders no icon) when the feeds endpoint returns a non-OK status", async () => {
+      const fetchImpl = vi.fn(async (url: string | URL) => {
+        if (String(url).includes("/api/feeds")) {
+          return new Response("", { status: 500 });
+        }
+        return new Response(JSON.stringify({ articles: SEED, next_cursor: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as unknown as typeof fetch;
+      renderRail({ fetchImpl });
+      expect(await screen.findByText("Second headline")).toBeInTheDocument();
+      expect(document.querySelectorAll(".news-favicon")).toHaveLength(0);
+      await waitFor(() => expect(logError).toHaveBeenCalledTimes(1));
+      expect(logError.mock.calls[0][0]).toContain("500");
+    });
   });
 });
