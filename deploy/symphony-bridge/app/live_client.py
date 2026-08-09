@@ -39,6 +39,31 @@ What remains genuinely unverified (no pod to run this against):
   source. There is no argument in this BDK's `send_message` that lets a
   caller override it, so `Attachment.content_type` is accepted (as required
   by the shared protocol) but has no effect against a real pod.
+- `list_conversations`/`search_rooms` return at most 50 items each (the
+  BDK's own `list_streams`/`search_rooms` default `limit`); neither paginates
+  via the BDK's `list_all_streams`/`search_all_rooms` generators. Silent
+  truncation past 50 conversations/matching rooms on a real pod -- see the
+  comments at each call site and the README.
+- The retry budget (`"retry": {"maxAttempts": 2}` in `_session`, below) is
+  deliberately narrower than the BDK's own default (10 attempts, up to ~9
+  minutes of backoff) -- this bounds request latency but makes a
+  send-during-a-transient-failure at-least-once, not exactly-once. See the
+  comment there.
+- `Dockerfile` installs the `live` extra (`pip install ".[live]"`) so the
+  image can actually run live mode -- see the comment in `Dockerfile` for why
+  that extra was previously never installed and the choice made here.
+- Whether `LiveClient.__init__` no longer raising (it only stores `cfg`)
+  changed the operator-facing failure classification for a missing BDK on a
+  real deployment: the `symphony.bdk` import now happens inside
+  `send_message`/`list_conversations`/`search_rooms`/`health` (via
+  `_session`), not at client construction, so a missing BDK install now
+  surfaces as `send_message`'s own `except Exception` in `app/main.py` --
+  502, audited -- rather than `get_client()`'s 503, unaudited. No invariant
+  is broken (the audit record still carries only service-constructed
+  strings), but this is a real classification change from what an earlier
+  version of this code path did, and it is the single most likely first-run
+  failure mode until the `live` extra is actually installed and exercised
+  against a real pod. See `tests/test_messages.py` for the test pinning it.
 """
 
 import base64
@@ -81,6 +106,23 @@ class LiveClient:
                             "username": self._cfg.bot_username,
                             "privateKey": {"path": self._cfg.bot_key_path},
                         },
+                        # BdkRetryConfig's own defaults are max_attempts=10,
+                        # 500ms initial backoff, x2 multiplier, capped at 5
+                        # minutes per attempt -- unbounded enough that a pod
+                        # outage would make a single POST /messages block for
+                        # roughly 8-9 minutes before this bridge ever returns,
+                        # with nothing else here imposing a timeout. Bounded
+                        # to 2 attempts (one retry) instead: worst case adds
+                        # about one initial-interval's worth of latency
+                        # (~500ms) to a failed call, not minutes. Trade-off:
+                        # the BDK's retry -- bounded or not -- resends a
+                        # request that may have already been delivered (e.g.
+                        # the pod accepted it but the response was lost), so
+                        # this keeps send_message at-least-once, not
+                        # exactly-once, on transient failures. That was
+                        # already true with the unbounded default; this only
+                        # bounds how long the caller waits to find out.
+                        "retry": {"maxAttempts": 2},
                     }
                 )
             )
@@ -109,7 +151,14 @@ class LiveClient:
             sent = await self._send_with_attachment(messages, request, request.attachment)
         else:
             sent = await messages.send_message(request.stream_id, request.message_ml)
-        return SendResult(message_id=sent.message_id)
+        # `message_id` is documented `[optional]` on the generated `V4Message`
+        # model, which is deserialized via `_from_openapi_data` -- unlike
+        # `__init__`, that classmethod does not pre-seed absent optional
+        # fields, so a plain `sent.message_id` can raise `ApiAttributeError`
+        # and turn a *successful* send into a 502 (confirmed empirically;
+        # see task-7-report.md). `SendResult.message_id` is already
+        # `str | None`, so getattr(..., None) costs nothing here.
+        return SendResult(message_id=getattr(sent, "message_id", None))
 
     async def _send_with_attachment(self, messages, request: SendRequest, att: Attachment):
         # Attachment.data is base64 with no `data:` prefix (the shared
@@ -134,30 +183,76 @@ class LiveClient:
         # StreamFilter() returns every stream type the bot is a member of,
         # same "no filter configured" default used elsewhere in this
         # service (see Config.allowed_destinations).
+        #
+        # list_streams()'s own default limit=50 applies here -- this bridge
+        # passes neither `skip` nor `limit`, so a bot in more than 50 streams
+        # silently only sees the first 50 (oldest-created-first). The BDK
+        # offers `list_all_streams()`, an async-generator that paginates
+        # automatically; not used here to keep this a single call rather than
+        # an unbounded fetch of a bot's entire stream history. Documented,
+        # not silent -- see README.md's `/conversations` entry.
         result = await bdk.streams().list_streams(StreamFilter())
+        # `value` is genuinely schema-required for `StreamList` (its own
+        # `__init__` raises without it, and its generated docstring carries
+        # no "[optional]" marker, unlike every field read below) -- kept as a
+        # plain attribute access rather than getattr, to keep that
+        # distinction visible instead of blanket-guarding a field the schema
+        # itself guarantees.
         streams = result.value if result is not None else []
         conversations = []
         for s in streams:
-            # Only room-type streams carry room_attributes; IMs/MIMs don't
-            # have a name in this API at all, so those fall back to the
-            # stream id, same fallback shape the brief's sketch used (just
-            # reached through the real field, not a nonexistent flat one).
+            # Generated response models are deserialized via
+            # `_from_openapi_data`, which -- unlike `__init__` -- does not
+            # pre-seed absent optional fields, so reading an absent optional
+            # attribute raises `ApiAttributeError` instead of returning None
+            # (confirmed empirically; see task-7-report.md). `room_attributes`,
+            # its `.name`, and `StreamAttributes.id` are all documented
+            # `[optional]` on their generated models -- getattr(..., None)
+            # at every level one of those is read, not just where it was
+            # originally guarded. Only room-type streams carry
+            # room_attributes at all; IMs/MIMs fall back to the stream id,
+            # same fallback shape the brief's sketch used (just reached
+            # through the real, possibly-absent fields, not flat ones
+            # guaranteed present).
             room = getattr(s, "room_attributes", None)
-            name = room.name if room is not None and room.name else s.id
-            conversations.append(Conversation(stream_id=s.id, name=name))
+            room_name = getattr(room, "name", None) if room is not None else None
+            stream_id = getattr(s, "id", None)
+            conversations.append(
+                Conversation(stream_id=stream_id or "", name=room_name or stream_id or "")
+            )
         return conversations
 
     async def search_rooms(self, query: str) -> list[Room]:
         from symphony.bdk.gen.pod_model.v2_room_search_criteria import V2RoomSearchCriteria
 
         bdk = await self._session()
+        # search_rooms()'s own default limit=50 applies here too (same cap,
+        # same reason, as list_conversations above) -- more than 50 matching
+        # rooms silently truncates. The BDK offers `search_all_rooms()` for
+        # the unbounded case; not used here for the same reason. Documented
+        # in README.md's `/search/rooms` entry.
         result = await bdk.streams().search_rooms(V2RoomSearchCriteria(query=query))
-        rooms = result.rooms if result is not None and result.rooms else []
-        return [
-            Room(
-                stream_id=r.room_system_info.id,
-                name=r.room_attributes.name,
-                description=r.room_attributes.description or "",
+        # Generated response models are deserialized via `_from_openapi_data`,
+        # which -- unlike `__init__` -- does not pre-seed absent optional
+        # fields, so reading an absent optional attribute raises
+        # `ApiAttributeError` instead of returning None (confirmed
+        # empirically; see task-7-report.md). `rooms`, `room_attributes`,
+        # `room_system_info`, and every leaf read off them (`.name`,
+        # `.description`, `.id`) are all documented `[optional]` on their
+        # generated models -- getattr(..., None) at every level, not just the
+        # parts originally guarded. Without this, `GET /search/rooms` (which
+        # has no try/except of its own) 500s on any ordinary room with no
+        # description, not just a malformed response.
+        rooms = getattr(result, "rooms", None) or []
+        out = []
+        for r in rooms:
+            attrs = getattr(r, "room_attributes", None)
+            info = getattr(r, "room_system_info", None)
+            out.append(
+                Room(
+                    stream_id=getattr(info, "id", None) or "",
+                    name=getattr(attrs, "name", None) or "",
+                    description=getattr(attrs, "description", None) or "",
+                )
             )
-            for r in rooms
-        ]
+        return out

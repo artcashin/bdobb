@@ -375,6 +375,41 @@ def test_client_construction_failure_is_503_with_no_audit_record(caplog, monkeyp
     assert "stream=room-1" not in caplog.text
 
 
+# -- Task 7 Fix 7: a missing BDK install in live mode is a *send* failure
+# (502, audited), not a construction failure (503, unaudited) -- pin the
+# classification, since it silently flipped once app/live_client.py started
+# existing (see app/live_client.py's module docstring, last bullet).
+
+
+def test_missing_bdk_in_live_mode_is_502_with_an_audit_record(caplog):
+    # Before app/live_client.py existed, `from app.live_client import
+    # LiveClient` failing inside build_client() with ModuleNotFoundError was
+    # *why* the test above got its 503 -- an accident of the module's
+    # absence, not a deliberate simulation, and it stopped meaning anything
+    # the moment the module was created: LiveClient.__init__ only stores
+    # `cfg` and never raises, live mode or not, BDK installed or not. Now
+    # that the module exists, a missing BDK (this verification venv
+    # genuinely has none installed -- see the task brief) isn't discovered
+    # until the first send actually tries to build a BDK session, inside
+    # LiveClient._session() -- called from send_message(), not from
+    # build_client(). That means it surfaces as send_message's own `except
+    # Exception` in main.py: 502, WITH an audit record -- not get_client()'s
+    # unaudited 503. No invariant is broken (the audit record still carries
+    # only service-constructed strings, never str(exc)), but this is a real
+    # operator-facing classification flip, and -- until the Dockerfile's
+    # `live` extra fix (Fix 3) is actually deployed -- the single most likely
+    # real-world first-run failure.
+    api = TestClient(create_app({}), base_url=_BASE_URL)
+    with caplog.at_level(logging.INFO, logger=AUDIT_LOGGER):
+        res = api.post("/messages", json={"streamId": "room-1", "text": "hi"})
+    assert res.status_code == 502
+    assert "symphony" in res.json()["detail"]  # str(exc): "No module named 'symphony'"
+    records = _audit_records(caplog)
+    assert len(records) == 1
+    assert "result=error: ModuleNotFoundError" in records[0].getMessage()
+    assert "stream=room-1" in records[0].getMessage()
+
+
 # -- Fix 6: a failed send must surface the Symphony error, never a silent
 # success or a bare 500 -- and must not put the message body in the audit log.
 

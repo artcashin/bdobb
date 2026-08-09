@@ -36,14 +36,43 @@ SYMPHONY_TEST_STREAM=... python -m pytest tests/test_live.py -v
 (also requires the `live` extra: `pip install -e ".[live]"`, so
 `app.live_client`'s lazy `symphony.bdk` import succeeds).
 
+## Known limits (live mode)
+
+- **`GET /conversations` and `GET /search/rooms` silently cap at 50 items.**
+  `app/live_client.py` calls the BDK's `list_streams`/`search_rooms` with no
+  `skip`/`limit`, so their default `limit=50` applies — a bot in more than 50
+  streams, or a search matching more than 50 rooms, only gets the first 50
+  back, oldest-created-first for conversations. The BDK offers
+  `list_all_streams`/`search_all_rooms` (async generators that paginate
+  automatically) for the unbounded case; this bridge doesn't use them yet.
+  Documented here rather than left silent — see the comments at each call
+  site in `app/live_client.py`.
+- **The retry budget is bounded to 2 attempts** (`"retry": {"maxAttempts":
+  2}` in `LiveClient._session`), narrower than the BDK's own default (10
+  attempts, backoff up to 5 minutes per attempt — a pod outage could
+  otherwise block a single `POST /messages` for roughly 8–9 minutes). This
+  keeps `send_message` **at-least-once, not exactly-once** on transient
+  failures: a retried send may re-deliver a message the pod already
+  accepted but whose response was lost. That trade-off existed with the
+  unbounded default too; bounding it only changes how long the caller waits
+  to find out.
+- **A missing BDK install now surfaces as a 502, not a 503.** `LiveClient`
+  imports `symphony.bdk.*` lazily inside its methods, not at construction, so
+  a container missing the `live` extra doesn't fail at startup or at
+  `get_client()` — it fails on the first live send, caught by `POST
+  /messages`'s own `except Exception`, as a 502 with an audit record (not
+  `get_client()`'s unaudited 503). The `Dockerfile` installs the `live`
+  extra by default specifically so this is not the first thing a real
+  deployment hits — see its comment for the reasoning.
+
 ## Endpoints
 
 | Method & path | Purpose |
 |---|---|
 | `GET /health` | `{"status": "ok", "fake": bool}`. Always 200 — does not attempt a pod session (that only happens lazily, on first send). |
 | `POST /messages` | Post a message to a Symphony stream. BDOBB's `shareWidgetToSymphony` is the only caller. See body shapes below. |
-| `GET /conversations` | `{"conversations": [{"streamId", "name"}, ...]}` — every stream the bot is a member of. |
-| `GET /search/rooms?q=...` | `{"rooms": [{"streamId", "name", "description"}, ...]}` — substring room search. |
+| `GET /conversations` | `{"conversations": [{"streamId", "name"}, ...]}` — up to the **first 50** streams the bot is a member of (the BDK's `list_streams` default `limit`, not paginated; see below). |
+| `GET /search/rooms?q=...` | `{"rooms": [{"streamId", "name", "description"}, ...]}` — up to the **first 50** matching rooms (same cap, `search_rooms`'s default `limit`, not paginated). |
 | `POST /mcp` (+ session machinery) | Rita's MCP surface — one tool, `post_to_symphony(stream_id, message)`. See below. |
 
 ## `POST /messages` — the pinned contract
