@@ -36,3 +36,5 @@ src-tauri/gen/apple/
 # and its generated bundle output.
 .help-cache/
 src/help/generated/
+
+aggregats/
