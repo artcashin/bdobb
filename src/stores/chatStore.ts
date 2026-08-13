@@ -107,16 +107,33 @@ const confirmationResolvers = new Map<string, (decision: "approved" | "declined"
 let confirmationSeq = 0;
 
 /**
- * Declines every confirmation still awaiting a decision. Called from
- * cancel()/clear() so a confirmation the user never acted on -- because they
- * started clearing the chat, or the turn was aborted -- can never be left
- * hanging forever, and can never be silently treated as approved either;
- * declining is the only safe default when the UI asking for a decision is
- * going away.
+ * Confirmations requested while another one is already pending. Only ever
+ * populated if `requestToolConfirmation` is called again before the current
+ * `pendingToolConfirmation` resolves -- which the agent protocol prevents
+ * today by serialising function calls one at a time. That is an external
+ * invariant this store cannot enforce, so `requestToolConfirmation` below
+ * queues rather than overwriting `pendingToolConfirmation`: without this, a
+ * second call while the first is showing would replace the dialog's only
+ * data (the single `PendingToolConfirmation` the UI reads) out from under
+ * it, while the first call's promise -- and whatever awaited it inside
+ * `runAgentTool` -- never resolves. A silently stalled turn, with the
+ * confirmation dialog showing something the resolved promise no longer
+ * matches.
+ */
+const pendingQueue: PendingToolConfirmation[] = [];
+
+/**
+ * Declines every confirmation still awaiting a decision, queued or visible.
+ * Called from cancel()/clear() so a confirmation the user never acted on --
+ * because they started clearing the chat, or the turn was aborted -- can
+ * never be left hanging forever, and can never be silently treated as
+ * approved either; declining is the only safe default when the UI asking
+ * for a decision is going away.
  */
 function declineAllPendingConfirmations(): void {
   for (const resolve of confirmationResolvers.values()) resolve("declined");
   confirmationResolvers.clear();
+  pendingQueue.length = 0;
 }
 
 export const useChatStore = create<ChatState>()((set, get) => ({
@@ -164,9 +181,18 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   requestToolConfirmation(serverId, toolName, parameters) {
     const id = `confirm-${++confirmationSeq}`;
+    const confirmation: PendingToolConfirmation = { id, serverId, toolName, parameters };
     return new Promise((resolve) => {
       confirmationResolvers.set(id, resolve);
-      set({ pendingToolConfirmation: { id, serverId, toolName, parameters } });
+      // A confirmation is already showing: queue behind it instead of
+      // replacing `pendingToolConfirmation` (see `pendingQueue` above) --
+      // `resolveToolConfirmation` below promotes the next queued entry once
+      // the visible one settles.
+      if (get().pendingToolConfirmation) {
+        pendingQueue.push(confirmation);
+      } else {
+        set({ pendingToolConfirmation: confirmation });
+      }
     });
   },
 
@@ -175,11 +201,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (!resolve) return; // Stale id: already settled (or flushed by cancel()).
     confirmationResolvers.delete(id);
     resolve(decision);
-    // Only clear the visible pending confirmation if it's still this one --
-    // in practice at most one is pending at a time (the agent protocol is one
-    // function call per round), but a stale resolve must never clear a
+    // Only replace the visible pending confirmation if it's still this one --
+    // a stale resolve must never clear (or promote a queued entry over) a
     // newer, still-pending confirmation out from under the UI.
-    set((s) => (s.pendingToolConfirmation?.id === id ? { pendingToolConfirmation: null } : {}));
+    set((s) =>
+      s.pendingToolConfirmation?.id === id
+        ? { pendingToolConfirmation: pendingQueue.shift() ?? null }
+        : {}
+    );
   },
 
   async send(text, deps) {
