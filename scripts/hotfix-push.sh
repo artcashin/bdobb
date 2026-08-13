@@ -36,6 +36,7 @@ CMD=("$@")
 # The steady state is "enforcement on", so that is what we restore to -- even
 # if we found it off, which would mean an earlier run died before its trap.
 rearmed=0
+# shellcheck disable=SC2329  # invoked indirectly, from the trap below
 rearm() {
   if [[ $rearmed -eq 1 ]]; then
     return 0
