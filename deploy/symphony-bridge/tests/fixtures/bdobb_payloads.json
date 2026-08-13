@@ -1,0 +1,27 @@
+{
+  "note": {
+    "streamId": "room-1",
+    "messageML": "<messageML><b>hi</b><br/></messageML>",
+    "sender": "Art Cashin"
+  },
+  "table": {
+    "streamId": "room-1",
+    "messageML": "<messageML>AAPL quotes<br/></messageML>",
+    "attachment": {
+      "filename": "aapl-quotes.csv",
+      "contentType": "text/csv",
+      "data": "c3ltYm9sLHByaWNlDQpBQVBMLDI1MA=="
+    },
+    "sender": "Art Cashin"
+  },
+  "chart": {
+    "streamId": "room-1",
+    "messageML": "<messageML>Price chart<br/></messageML>",
+    "attachment": {
+      "filename": "price-chart.png",
+      "contentType": "image/png",
+      "data": "QUJD"
+    },
+    "sender": "Art Cashin"
+  }
+}

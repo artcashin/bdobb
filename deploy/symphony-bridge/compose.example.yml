@@ -1,0 +1,53 @@
+# Example only. Copy to compose.yml, fill in real values, and never commit
+# that copy (it will hold the bot's key path and possibly stream IDs).
+#
+# BRIDGE_BIND and BRIDGE_ALLOWED_HOSTS below are a matched pair, not two
+# independent settings -- read this before changing either.
+#
+# The app-wide DNS-rebinding guard (app/main.py's _HostOriginGate) checks
+# every request's Host header against an allowlist. When BRIDGE_ALLOWED_HOSTS
+# is unset, that allowlist defaults to loopback plus whatever host
+# BRIDGE_BIND resolves to -- which works for a bind like "10.10.10.5:8099"
+# with no extra config. It does NOT work for "0.0.0.0:8099": binding to
+# 0.0.0.0 tells the OS to listen on every interface, but a client's Host
+# header is never literally "0.0.0.0", so the default has nothing real to
+# add to the allowlist. Ship that combination and every request from another
+# tailnet host gets a 421, which looks like the service is broken on first
+# deploy. This example avoids the trap by binding the tailnet interface
+# directly; the commented alternative shows the other fix, for when the
+# container's tailnet IP isn't known ahead of time (e.g. behind Tailscale
+# serve, or the interface differs per host).
+services:
+  symphony-bridge:
+    build: .
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      SYMPHONY_POD_HOST: pod.example.com
+      SYMPHONY_AGENT_HOST: agent.example.com
+      SYMPHONY_BOT_USERNAME: bdobb-bot
+      SYMPHONY_BOT_KEY_PATH: /run/secrets/bot.pem
+      # Fix #1: bind a real interface (the tailnet IP/hostname), not
+      # 0.0.0.0 -- BRIDGE_ALLOWED_HOSTS then defaults correctly and needs no
+      # further config.
+      BRIDGE_BIND: 100.64.1.23:8099
+      # Fix #2 (use instead of a real-interface bind, e.g. if you must bind
+      # 0.0.0.0 -- multiple interfaces, container networking quirks, etc.):
+      # uncomment both lines below and delete the BRIDGE_BIND value above.
+      # BRIDGE_BIND: 0.0.0.0:8099
+      # BRIDGE_ALLOWED_HOSTS: bridge.your-tailnet.ts.net:*
+      #
+      # Optional: restrict which Symphony stream IDs the bridge will post
+      # to -- a blast-radius limiter, not an auth mechanism.
+      # BRIDGE_ALLOWED_DESTINATIONS: stream-one,stream-two
+      #
+      # Optional: run credential-free against FakeClient -- accepts and
+      # logs every request but never calls Symphony. Useful for standing up
+      # the container and exercising BDOBB's widget-sharing UI before bot
+      # credentials exist. NOTE: the literal string "1" is the only value
+      # that enables it -- BRIDGE_FAKE=true (or "yes", "on", etc.) is NOT
+      # recognized and runs live, against the real pod, with real
+      # credentials. Never set this to anything but "1" or leave it unset.
+      # BRIDGE_FAKE: "1"
+    volumes:
+      - ./secrets/bot.pem:/run/secrets/bot.pem:ro

@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS: Settings = {
   symphonyPodUrl: "",
   symphonyPartnerId: "",
   symphonyBridgeUrl: "",
+  symphonyDisplayName: "",
 };
 
 export const DEFAULT_BACKENDS: BackendConfig[] = [
@@ -104,6 +105,7 @@ function isSettingsShape(v: unknown): v is Partial<Settings> {
   if ("symphonyPodUrl" in v && typeof v.symphonyPodUrl !== "string") return false;
   if ("symphonyPartnerId" in v && typeof v.symphonyPartnerId !== "string") return false;
   if ("symphonyBridgeUrl" in v && typeof v.symphonyBridgeUrl !== "string") return false;
+  if ("symphonyDisplayName" in v && typeof v.symphonyDisplayName !== "string") return false;
   return true;
 }
 

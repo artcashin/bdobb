@@ -43,6 +43,7 @@ vi.mock("../lib/persistence", () => ({
   DEFAULT_SETTINGS: {
     ritaUrl: "", theme: "dark", contextSharing: false, mcpServers: [],
     symphonyPodUrl: "", symphonyPartnerId: "", symphonyBridgeUrl: "",
+    symphonyDisplayName: "",
   },
 }));
 
