@@ -73,7 +73,7 @@ function SelectField({
   labelClasses: string;
   inputId: string;
   description?: string;
-  options: ParamOption[];
+  options: { label: string; value: string | number | boolean | string[] }[];
   value: any;
   onChange: (value: string | number | boolean | string[] | null) => void;
   multiple?: boolean;
@@ -447,7 +447,7 @@ export function ParamControls({
           description={param.description}
           options={paramOptions}
           value={currentValue}
-          onChange={handleParamChange}
+          onChange={(value) => handleParamChange(paramName, value)}
           className={baseClasses}
         />
       );
@@ -468,7 +468,7 @@ export function ParamControls({
             description={param.description}
             type={param.type === "date" ? "date" : "text"}
             value={currentValue}
-            onChange={handleParamChange}
+            onChange={(value) => handleParamChange(paramName, value)}
             className={baseClasses}
             placeholder={param.description}
           />
@@ -529,7 +529,7 @@ export function ParamControls({
               description={param.description}
               options={paramOptions}
               value={currentValue}
-              onChange={handleParamChange}
+              onChange={(value) => handleParamChange(paramName, value)}
               multiple={isMultiSelect}
               className={baseClasses}
             />
@@ -539,12 +539,13 @@ export function ParamControls({
           <TextField
             key={paramName}
             label={param.label}
+            isRequired={false}
             sharedTag={sharedTag}
             labelClasses={labelClasses}
             inputId={inputId(paramName)}
             description={param.description}
             value={currentValue}
-            onChange={handleParamChange}
+            onChange={(value) => handleParamChange(paramName, value)}
             className={baseClasses}
             placeholder={param.description}
           />
@@ -560,12 +561,13 @@ export function ParamControls({
           <TextField
             key={paramName}
             label={param.label}
+            isRequired={false}
             sharedTag={sharedTag}
             labelClasses={labelClasses}
             inputId={inputId(paramName)}
             description={param.description}
             value={currentValue}
-            onChange={handleParamChange}
+            onChange={(value) => handleParamChange(paramName, value)}
             className={baseClasses}
             placeholder={param.description}
           />
