@@ -540,7 +540,12 @@ export function ParamControls({
             key={paramName}
             label={param.label}
             isRequired={false}
-            sharedTag={sharedTag}
+            // Deliberately null, not `sharedTag`: this branch and the default
+            // one below have always rendered a bare label. Extracting TextField
+            // made passing the tag the path of least resistance, which silently
+            // changed what these two rows show. Restored -- change it here on
+            // purpose if grouped endpoint params should be marked.
+            sharedTag={null}
             labelClasses={labelClasses}
             inputId={inputId(paramName)}
             description={param.description}
@@ -562,7 +567,8 @@ export function ParamControls({
             key={paramName}
             label={param.label}
             isRequired={false}
-            sharedTag={sharedTag}
+            // See the endpoint branch above -- bare label by design.
+            sharedTag={null}
             labelClasses={labelClasses}
             inputId={inputId(paramName)}
             description={param.description}
