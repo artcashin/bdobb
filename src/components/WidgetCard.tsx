@@ -279,6 +279,72 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     );
   }, [updateCardView, card.uuid]);
 
+  const renderBuiltin = (widgetDef: WidgetDef, theme: "dark") => {
+    switch (card.widgetId) {
+      case BUILTIN_NOTE_ID:
+        return (
+          <NoteRenderer
+            text={String(card.params[NOTE_TEXT_PARAM] ?? "")}
+            onChange={(text) =>
+              updateCardParams(card.uuid, { ...card.params, [NOTE_TEXT_PARAM]: text }).catch((e) =>
+                logError(`note save failed: ${String(e)}`)
+              )
+            }
+          />
+        );
+      case BUILTIN_WEBSITE_ID:
+        return (
+          <IframeRenderer
+            data={null}
+            widgetDef={widgetDef}
+            theme={theme}
+            src={String(fetchParams[WEBSITE_URL_PARAM] ?? "")}
+            emptyHint="Set a URL in this card's parameters to embed a page."
+          />
+        );
+      case BUILTIN_NEWS_ID:
+        return (
+          <NewsRailRenderer
+            url={String(fetchParams[NEWS_URL_PARAM] ?? "")}
+            user={String(fetchParams[NEWS_USER_PARAM] ?? "")}
+            token={String(fetchParams[NEWS_TOKEN_PARAM] ?? "")}
+            theme={theme}
+          />
+        );
+      case BUILTIN_CLOCK_ID:
+        const raw =
+          String(fetchParams[CLOCK_ZONES_PARAM] ?? "") ||
+          String(fetchParams[CLOCK_TZ_PARAM] ?? "") ||
+          CLOCK_DEFAULT_ZONES;
+        const cycle = String(fetchParams[CLOCK_CYCLE_PARAM] ?? "");
+        const hour12 = cycle ? cycle === "12" : fetchParams[CLOCK_HOUR12_PARAM] === true;
+        return (
+          <ClockRenderer
+            zones={raw.split(",").map((z) => z.trim()).filter(Boolean)}
+            hour12={hour12}
+            face={fetchParams[CLOCK_FACE_PARAM] === "solid" ? "solid" : "dots"}
+            layout={fetchParams[CLOCK_LAYOUT_PARAM] === "horizontal" ? "horizontal" : "vertical"}
+          />
+        );
+      case BUILTIN_SYMPHONY_ID:
+        const cardPod = String(fetchParams[SYMPHONY_POD_URL_PARAM] ?? "");
+        const pod = cardPod || settings.symphonyPodUrl;
+        return (
+          <SymphonyRenderer
+            params={{
+              pod: normalizeSymphonyPod(pod),
+              id: String(fetchParams[SYMPHONY_STREAM_ID_PARAM] ?? ""),
+              partnerId: settings.symphonyPartnerId,
+              mode: String(fetchParams[SYMPHONY_MODE_PARAM] ?? ""),
+              theme: String(fetchParams[SYMPHONY_THEME_PARAM] ?? ""),
+            }}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   const renderContent = () => {
     if (loading) return <div className="loading">Loading...</div>;
     if (error) return <div className="error">{error}</div>;
@@ -287,88 +353,13 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     const theme: "dark" = "dark";
     const widgetDef = widget as WidgetDef;
 
-    if (card.widgetId === BUILTIN_NOTE_ID) {
-      return (
-        <NoteRenderer
-          text={String(card.params[NOTE_TEXT_PARAM] ?? "")}
-          onChange={(text) =>
-            updateCardParams(card.uuid, { ...card.params, [NOTE_TEXT_PARAM]: text }).catch((e) =>
-              logError(`note save failed: ${String(e)}`)
-            )
-          }
-        />
-      );
-    }
-    if (card.widgetId === BUILTIN_WEBSITE_ID) {
-      return (
-        <IframeRenderer
-          data={null}
-          widgetDef={widgetDef}
-          theme={theme}
-          src={String(fetchParams[WEBSITE_URL_PARAM] ?? "")}
-          emptyHint="Set a URL in this card's parameters to embed a page."
-        />
-      );
-    }
-    if (card.widgetId === BUILTIN_NEWS_ID) {
-      return (
-        <NewsRailRenderer
-          url={String(fetchParams[NEWS_URL_PARAM] ?? "")}
-          user={String(fetchParams[NEWS_USER_PARAM] ?? "")}
-          token={String(fetchParams[NEWS_TOKEN_PARAM] ?? "")}
-          theme={theme}
-        />
-      );
-    }
-    if (card.widgetId === BUILTIN_CLOCK_ID) {
-      // `timezone` is the pre-list param. Reading it as a fallback keeps a card
-      // created before the widget became a list showing the zone it was set to.
-      const raw =
-        String(fetchParams[CLOCK_ZONES_PARAM] ?? "") ||
-        String(fetchParams[CLOCK_TZ_PARAM] ?? "") ||
-        CLOCK_DEFAULT_ZONES;
-      // hourCycle replaced a boolean `hour12`; the old value is still read so a
-      // card saved on 12-hour does not silently flip back to 24.
-      const cycle = String(fetchParams[CLOCK_CYCLE_PARAM] ?? "");
-      const hour12 = cycle ? cycle === "12" : fetchParams[CLOCK_HOUR12_PARAM] === true;
-      return (
-        <ClockRenderer
-          zones={raw.split(",").map((z) => z.trim()).filter(Boolean)}
-          hour12={hour12}
-          face={fetchParams[CLOCK_FACE_PARAM] === "solid" ? "solid" : "dots"}
-          layout={fetchParams[CLOCK_LAYOUT_PARAM] === "horizontal" ? "horizontal" : "vertical"}
-        />
-      );
-    }
-    if (card.widgetId === BUILTIN_SYMPHONY_ID) {
-      // The card's own podUrl param wins when set; an app-level default
-      // (settings.symphonyPodUrl) covers the common case of one pod shared
-      // across every Symphony card. Normalization applies to whichever value
-      // wins, so a scheme or trailing slash typed into either source is
-      // stripped the same way.
-      const cardPod = String(fetchParams[SYMPHONY_POD_URL_PARAM] ?? "");
-      const pod = cardPod || settings.symphonyPodUrl;
-      return (
-        <SymphonyRenderer
-          params={{
-            pod: normalizeSymphonyPod(pod),
-            id: String(fetchParams[SYMPHONY_STREAM_ID_PARAM] ?? ""),
-            partnerId: settings.symphonyPartnerId,
-            mode: String(fetchParams[SYMPHONY_MODE_PARAM] ?? ""),
-            theme: String(fetchParams[SYMPHONY_THEME_PARAM] ?? ""),
-          }}
-        />
-      );
-    }
+    const builtinContent = renderBuiltin(widgetDef, theme);
+    if (builtinContent) return builtinContent;
 
-    // An iframe widget loads its endpoint in the frame, so it has no fetched
-    // payload and must not be gated on one.
     if (widget.type === "iframe") {
       return <IframeRenderer data={data} widgetDef={widgetDef} theme={theme} />;
     }
 
-    // A live_chart widget fetches its own per-symbol history and opens its
-    // own websocket, so it has no generic fetched payload to gate on.
     if (widget.type === "live_chart") {
       return (
         <LiveChartRenderer
@@ -382,22 +373,9 @@ export default function WidgetCard({ card }: WidgetCardProps) {
 
     if (data === null) return <div className="renderer-empty">No data loaded</div>;
 
-    // The view the user selected wins over the widget's declared type — that
-    // is the whole point of the toggle. renderContent previously dispatched on
-    // type alone, so switching to "chart" changed nothing on screen.
     if (card.view === "chart") {
       return <ChartRenderer data={data} widgetDef={widgetDef} theme={theme} />;
     }
-    // The raw view fetches with raw=true and shows the JSON directly. It
-    // previously fell through to the type renderer, which showed it only via
-    // that renderer's shape-mismatch fallback.
-    //
-    // A keys widget's rows carry credential values at tier 3; the raw view
-    // would dump them verbatim into the DOM. The server already declares
-    // raw: false for this widget, but a card whose view was persisted as
-    // "raw" before this widget existed (or hand-edited in storage) would
-    // still reach this branch ahead of the type dispatch below, so the
-    // server flag alone is not enough — the client needs its own guard.
     if (card.view === "raw" && widget.type !== "keys") {
       return <RawJsonView data={data} widgetDef={widgetDef} theme={theme} />;
     }
@@ -417,8 +395,6 @@ export default function WidgetCard({ card }: WidgetCardProps) {
       return <TableRenderer data={data} widgetDef={widgetDef} theme={theme} />;
     }
     if (widget.type === "live_grid") {
-      // The GET fetch above seeded `data`; the renderer opens the widget's
-      // wsEndpoint itself and streams row updates into the grid.
       return (
         <LiveGridRenderer
           data={data}

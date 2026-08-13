@@ -361,59 +361,100 @@ export type AgentToolRunner = (
   parameters: Record<string, unknown>
 ) => Promise<{ content: string; isError?: boolean } | null>;
 
+async function handleExecuteAgentTool(
+  call: FunctionCallEvent,
+  runAgentTool?: AgentToolRunner
+): Promise<ToolResultMessage> {
+  const args = call.input_arguments ?? {};
+  const serverId = String(args.server_id ?? "");
+  const toolName = String(args.tool_name ?? "");
+  const parameters =
+    args.parameters && typeof args.parameters === "object"
+      ? (args.parameters as Record<string, unknown>)
+      : {};
+
+  let result: { content: string; isError?: boolean } | null = null;
+  try {
+    result = runAgentTool ? await runAgentTool(serverId, toolName, parameters) : null;
+  } catch (e) {
+    result = { content: `Tool ${toolName} failed: ${String(e)}`, isError: true };
+  }
+
+  if (result === null) {
+    return {
+      role: "tool",
+      function: call.function,
+      input_arguments: call.input_arguments,
+      data: [{
+        error_type: "unsupported",
+        content: `No handler for tool ${toolName} on ${serverId}.`,
+      }],
+      extra_state: call.extra_state ?? {},
+    };
+  }
+
+  return {
+    role: "tool",
+    function: call.function,
+    input_arguments: call.input_arguments,
+    data: result.isError
+      ? [{ error_type: "tool_failed", content: result.content }]
+      : [{
+          items: [{
+            content: result.content,
+            data_format: { data_type: "object", parse_as: "text" },
+            citable: false,
+          }],
+        }],
+    extra_state: call.extra_state ?? {},
+  };
+}
+
+async function handleGetWidgetData(
+  call: FunctionCallEvent,
+  fetchWidgetData: WidgetDataFetcher,
+  signal?: AbortSignal
+): Promise<ToolResultMessage> {
+  const sources = Array.isArray(call.input_arguments?.data_sources)
+    ? (call.input_arguments.data_sources as GetWidgetDataSource[])
+    : [];
+
+  const data: ToolResultMessage["data"] = [];
+  for (const src of sources) {
+    try {
+      const content = signal ? await fetchWidgetData(src, signal) : await fetchWidgetData(src);
+      data.push({
+        items: [{
+          content,
+          data_format: { data_type: "object", parse_as: "table" },
+          citable: true,
+        }],
+      });
+    } catch (e) {
+      data.push({
+        error_type: "fetch_failed",
+        content: `Failed to fetch widget data: ${String(e)}`,
+      });
+    }
+  }
+
+  return {
+    role: "tool",
+    function: "get_widget_data",
+    input_arguments: call.input_arguments,
+    data,
+    extra_state: call.extra_state ?? {},
+  };
+}
+
 async function executeFunction(
   call: FunctionCallEvent,
   fetchWidgetData: WidgetDataFetcher,
   runAgentTool?: AgentToolRunner,
   signal?: AbortSignal
 ): Promise<ToolResultMessage> {
-  // Anything advertised in QueryRequest.tools comes back through here. Before
-  // this existed the client answered "unsupported" to every one of them, so
-  // MCP tools were discovered, sent to Rita, called by Rita — and then refused.
   if (call.function === "execute_agent_tool") {
-    const args = call.input_arguments ?? {};
-    const serverId = String(args.server_id ?? "");
-    const toolName = String(args.tool_name ?? "");
-    const parameters =
-      args.parameters && typeof args.parameters === "object"
-        ? (args.parameters as Record<string, unknown>)
-        : {};
-
-    let result: { content: string; isError?: boolean } | null = null;
-    try {
-      result = runAgentTool ? await runAgentTool(serverId, toolName, parameters) : null;
-    } catch (e) {
-      result = { content: `Tool ${toolName} failed: ${String(e)}`, isError: true };
-    }
-
-    if (result === null) {
-      return {
-        role: "tool",
-        function: call.function,
-        input_arguments: call.input_arguments,
-        data: [{
-          error_type: "unsupported",
-          content: `No handler for tool ${toolName} on ${serverId}.`,
-        }],
-        extra_state: call.extra_state ?? {},
-      };
-    }
-
-    return {
-      role: "tool",
-      function: call.function,
-      input_arguments: call.input_arguments,
-      data: result.isError
-        ? [{ error_type: "tool_failed", content: result.content }]
-        : [{
-            items: [{
-              content: result.content,
-              data_format: { data_type: "object", parse_as: "text" },
-              citable: false,
-            }],
-          }],
-      extra_state: call.extra_state ?? {},
-    };
+    return handleExecuteAgentTool(call, runAgentTool);
   }
 
   if (call.function !== "get_widget_data") {
@@ -429,45 +470,7 @@ async function executeFunction(
     };
   }
 
-  const sources = Array.isArray(call.input_arguments?.data_sources)
-    ? (call.input_arguments.data_sources as GetWidgetDataSource[])
-    : [];
-
-  const data: ToolResultMessage["data"] = [];
-  for (const src of sources) {
-    try {
-      // `signal` threaded through so Stop cancels an in-flight widget fetch
-      // instead of letting it run to completion (desk commit 03c132a). Only
-      // passed on when the caller actually supplied one: WidgetDataFetcher
-      // implementations that don't care about it (e.g. hand-written test
-      // doubles asserting a single-argument call) see the exact call shape
-      // they had before.
-      const content = signal ? await fetchWidgetData(src, signal) : await fetchWidgetData(src);
-      data.push({
-        items: [{
-          content,
-          data_format: { data_type: "object", parse_as: "table" },
-          citable: true,
-        }],
-      });
-    } catch (e) {
-      // A failed source becomes a ToolError in the result rather than an
-      // exception: one unreachable widget must not abort the whole turn.
-      data.push({
-        error_type: "fetch_failed",
-        content: `Failed to fetch widget data: ${String(e)}`,
-      });
-    }
-  }
-
-  return {
-    role: "tool",
-    function: "get_widget_data",
-    input_arguments: call.input_arguments,
-    data,
-    // Round-tripped verbatim — Rita uses it to resume its own trace.
-    extra_state: call.extra_state ?? {},
-  };
+  return handleGetWidgetData(call, fetchWidgetData, signal);
 }
 
 /** Default per-round timeout (desk commit 03c132a): see `RunQueryOptions.timeoutMs`. */
