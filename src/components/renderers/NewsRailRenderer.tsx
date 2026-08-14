@@ -79,7 +79,8 @@ function asArticle(x: unknown): NewsArticle | null {
 function rowTime(a: NewsArticle): string {
   const stamp = a.sort_at ?? a.published_at;
   if (!stamp) return "";
-  const d = new Date(stamp.endsWith("Z") || stamp.includes("+") ? stamp : `${stamp}Z`);
+  const hasOffset = stamp.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(stamp);
+  const d = new Date(hasOffset ? stamp : `${stamp}Z`);
   if (Number.isNaN(d.getTime())) return "";
   const h = String(d.getHours()).padStart(2, "0");
   const m = String(d.getMinutes()).padStart(2, "0");
