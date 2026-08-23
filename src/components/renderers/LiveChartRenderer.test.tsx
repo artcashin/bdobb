@@ -124,8 +124,11 @@ describe("LiveChartRenderer", () => {
     );
     act(() => screen.getByRole("button", { name: /candle/i }).click());
     await waitFor(() => expect(screen.getByText(/HTTP 404/i)).toBeInTheDocument());
-    // AAPL's own mini chart still drew.
-    expect(vi.mocked(Plotly.react)).toHaveBeenCalled();
+    // AAPL's own mini chart still drew. MSFT's 404 and AAPL's draw are
+    // independent async paths, so waiting on the error text above orders
+    // nothing here -- assert synchronously and this passes only while AAPL
+    // happens to win the race, which under CI load it does not.
+    await waitFor(() => expect(vi.mocked(Plotly.react)).toHaveBeenCalled());
   });
 
   it("subscribes over the shared websocket with the joined symbol list", async () => {

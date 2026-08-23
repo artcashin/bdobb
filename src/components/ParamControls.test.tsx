@@ -634,3 +634,44 @@ describe("number param NaN guard", () => {
     expect(input.value).toBe("");
   });
 });
+
+// Which rows carry the "(shared)" marker was never asserted anywhere, so
+// extracting TextField in ef673a4 silently added it to two rows that had
+// always shown a bare label, and nothing caught it. These pin the split.
+describe("ParamControls shared parameter marking", () => {
+  const shared = new Set(["p"]);
+
+  function renderShared(param: ParamDef) {
+    render(
+      <ParamControls
+        params={[param]}
+        values={{ p: "" }}
+        onChange={vi.fn()}
+        sharedParams={shared}
+      />
+    );
+  }
+
+  // The control case. Without it, a typo in the sharedParams prop would make
+  // every "not marked" assertion below pass for the wrong reason.
+  it("marks a text param that the group supplies", () => {
+    renderShared(mkEndpointParam({ paramName: "p", type: "text" }));
+    expect(screen.getByText(/\(shared\)/)).toBeInTheDocument();
+  });
+
+  it("leaves an endpoint param with no options unmarked", () => {
+    renderShared(mkEndpointParam({ paramName: "p", type: "endpoint" }));
+    expect(screen.getByLabelText("p")).toBeInTheDocument();
+    expect(screen.queryByText(/\(shared\)/)).not.toBeInTheDocument();
+  });
+
+  it("leaves an unrecognized param type unmarked", () => {
+    // Reachable only from malformed widgets.json -- ParamType does not admit
+    // this, hence the cast, but the default branch renders it all the same.
+    renderShared(
+      mkEndpointParam({ paramName: "p", type: "wat" as ParamDef["type"] })
+    );
+    expect(screen.getByLabelText("p")).toBeInTheDocument();
+    expect(screen.queryByText(/\(shared\)/)).not.toBeInTheDocument();
+  });
+});

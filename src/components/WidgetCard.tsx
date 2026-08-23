@@ -279,7 +279,7 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     );
   }, [updateCardView, card.uuid]);
 
-  const renderBuiltin = () => {
+  const renderBuiltin = (widgetDef: WidgetDef, theme: "dark") => {
     switch (card.widgetId) {
       case BUILTIN_NOTE_ID:
         return (
@@ -353,7 +353,7 @@ export default function WidgetCard({ card }: WidgetCardProps) {
     const theme: "dark" = "dark";
     const widgetDef = widget as WidgetDef;
 
-    const builtinContent = renderBuiltin();
+    const builtinContent = renderBuiltin(widgetDef, theme);
     if (builtinContent) return builtinContent;
 
     if (widget.type === "iframe") {
