@@ -73,9 +73,11 @@ live server:
 - **Tool calling works**, which matters because the desktop app sends MCP
   descriptors on every request. A `tools` array returns
   `finish_reason: "tool_calls"` with well-formed arguments and no content
-  leak. It depends on the container's `--tool-call-parser` /
-  `--reasoning-parser` flags; if tool calls ever silently stop being
-  emitted, check those first.
+  leak. The container runs `--enable-auto-tool-choice --tool-call-parser
+  qwen3_coder --reasoning-parser qwen3` (read off `docker inspect qwen`,
+  2026-08-23). The parser value is model-specific and does not survive a
+  model swap; if tool calls ever silently stop being emitted, check it
+  first.
 
 What changed for Rita, versus the llama.cpp deployment:
 
@@ -187,12 +189,14 @@ a `/v1/query` carrying one real MCP descriptor produced a clean
     data: {"function":"execute_agent_tool","input_arguments":{"server_id":"openbb","tool_name":"available_categories","parameters":{}}}
 
 with no `copilotStatusUpdate` ERROR event. This depends on the container's
-`--enable-auto-tool-choice` plus a `--tool-call-parser` matching the model
-(the flags moved with the model: `qwen3_xml` served Qwen 3, and the
-Mac's `~/.config/opencode/opencode.jsonc` records `qwen3_coder` /
-`--reasoning-parser qwen3` for Qwen 3.6). If a flag is dropped, tool calls
-silently stop being emitted and the agent answers from the model's own
-knowledge instead — no error, just a worse answer.
+`--enable-auto-tool-choice` plus a `--tool-call-parser` matching the model.
+That value moves with the model and has changed every time: `qwen3_xml`,
+then `hermes` for Qwen 3 14B, now **`qwen3_coder`** for Qwen 3.6 —
+confirmed against the running container, not inferred. Get it wrong and
+there is no error to find: the server returns HTTP 200 with
+`finish_reason: stop` and an empty `tool_calls` array while the call sits
+unparsed in `content`, so the agent just answers from its own knowledge
+and quietly stops using your tools.
 
 ## History: `/v1/query` SSE and the Chat Completions patch
 
