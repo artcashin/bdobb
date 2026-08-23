@@ -33,20 +33,40 @@ Rita's `OPENAI_BASE_URL` points at the box's local model stack, which is
 The stack itself is documented in the DGX Spark local-LLM runbook; only
 what Rita depends on is repeated here.
 
-| | `qwen` | `gemma` |
-|---|---|---|
-| Served id | `qwen3-14b` | `gemma-4-26b` |
-| Weights | `Qwen/Qwen3-14B-FP8` | `RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic` |
-| Local | `http://127.0.0.1:8000/v1` | `http://127.0.0.1:8001/v1` |
-| Tailnet | `https://qwen.<your-tailnet>.ts.net/v1` | `https://gemma.<your-tailnet>.ts.net/v1` |
-| Role label | coding | general |
+| | `qwen` |
+|---|---|
+| Served id | `qwen3.6-35b` |
+| Weights | `Qwen/Qwen3.6-35B-A3B-FP8` (35B total / 3B active MoE) |
+| Local | `http://127.0.0.1:8000/v1` |
+| Tailnet | `https://qwen.<your-tailnet>.ts.net/v1` |
+| Context | 262144 |
+| Role label | coding |
 
-Both run from `ghcr.io/artcashin/dgx-vllm:cu130` with `--network host`,
-`--restart unless-stopped`, and `com.artcashin.*` labels; Gemma
-additionally needs a host-mounted `tool_chat_template_gemma4.jinja`
-because the custom image ships no vLLM examples directory. Start Gemma
-first and let it become healthy before starting Qwen — they share
-unified GPU memory.
+It runs from `ghcr.io/artcashin/dgx-vllm:cu130` with `--network host`,
+`--restart unless-stopped`, and `com.artcashin.*` labels.
+
+**Gemma was retired (2026-08-23)** and `gemma.<your-tailnet>.ts.net` no
+longer answers. Qwen3.6 now holds its share of the unified memory pool and
+serves every role. The weights stay in the host's HF cache
+(`RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic`) and the container config is
+saved at `/root/container-configs/gemma.json`, so it can be brought back —
+but restoring it means lowering Qwen3.6's `--gpu-memory-utilization`
+first, since the two no longer fit as previously sized.
+
+Two model-specific behaviours worth knowing, both verified against the
+live server:
+
+- **Reasoning is on by default**, and this vLLM returns it under
+  `reasoning`, *not* `reasoning_content`. Its tokens bill to completion:
+  a tool-call turn spent 78 completion tokens for an empty `content`.
+  Per-request escape hatch is `chat_template_kwargs: {"enable_thinking":
+  false}`.
+- **Tool calling works**, which matters because the desktop app sends MCP
+  descriptors on every request. A `tools` array returns
+  `finish_reason: "tool_calls"` with well-formed arguments and no content
+  leak. It depends on the container's `--tool-call-parser` /
+  `--reasoning-parser` flags; if tool calls ever silently stop being
+  emitted, check those first.
 
 What changed for Rita, versus the llama.cpp deployment:
 
@@ -56,15 +76,16 @@ What changed for Rita, versus the llama.cpp deployment:
 - **Loopback, not a tailnet IP.** vLLM binds via host networking, and Rita
   is also `--network host`, so `http://127.0.0.1:<port>/v1` is enough. The
   old `<SPARK_TS_IP>` step is obsolete.
-- **Model ids changed.** `qwen3-coder` no longer exists; it is `qwen3-14b`.
+- **Model ids changed.** `qwen3-coder` and `qwen3-14b` are both gone; the
+  served id is now `qwen3.6-35b`.
 - **No startup key reload.** The `docker restart llm` / "~1-2 min of HTTP
   503 while it warms back up" caveat was a llama.cpp key-file behaviour and
   no longer applies.
 
 ### One base URL, one model
 
-Rita reads a single `OPENAI_BASE_URL`, so it can reach exactly **one** of
-the two servers. `DEFAULT_MODEL` must name the model that server serves.
+Rita reads a single `OPENAI_BASE_URL`, so it reaches exactly **one**
+server. `DEFAULT_MODEL` must name the model that server serves.
 Everything else advertised in `agents.json`'s `model` picker — the
 `openai:gpt-*` and `ollama:*` entries, which Rita hardcodes — fails
 against this deployment:
@@ -78,15 +99,12 @@ the comment above `modelFeature` explaining that `default` is both what is
 displayed and what is actually sent. Nothing on the app side needs to
 change when the model here changes — it follows `agents.json`.
 
-To switch Rita between the two, edit `~/rita/rita.env` (`OPENAI_BASE_URL`
-port + `DEFAULT_MODEL`) and `docker restart rita`.
+To repoint Rita, edit `~/rita/rita.env` (`OPENAI_BASE_URL` port +
+`DEFAULT_MODEL`) and `docker restart rita`.
 
-`rita.env.example` ships the **Qwen** pairing, because the model runbook
-names Qwen the primary coding/agent model. The **currently deployed**
-`~/rita/rita.env` is on Gemma (`:8001` / `openai:gemma-4-26b`) — a
-deliberate choice: Gemma's tool calling is verified working (below) and it
-serves the larger context window. Read the live value from the agent
-itself rather than from this file:
+`rita.env.example` matches the live deployment: `:8000` /
+`openai:qwen3.6-35b`. Still read the real value from the agent rather than
+from this file — the model has moved twice, and a doc is not authority:
 
     curl -s http://<agent-host>:8002/agents.json \
       | jq -r '.[].features.model.default'
@@ -114,9 +132,10 @@ that and matches the box's established pattern.
 
 - Rita: `http://<agent-host>:8002` — `GET /agents.json`, `GET /status`,
   `POST /v1/query` (SSE, `event: copilotMessageChunk`).
-- Models: `:8000` (`qwen3-14b`), `:8001` (`gemma-4-26b`) — see
-  [Model host](#model-host). Unauthenticated, so `/v1/models` and
-  `/v1/chat/completions` are both directly curl-able.
+- Model: `:8000` (`qwen3.6-35b`) — see [Model host](#model-host).
+  Unauthenticated, so `/v1/models` and `/v1/chat/completions` are both
+  directly curl-able. `:8001` served Gemma until it was retired and is now
+  closed.
 
 ## MCP (NOT configured in Rita)
 
@@ -147,21 +166,22 @@ fill in `.env.local` and run:
 ### Tool calling
 
 The desktop app sends MCP tool descriptors on **every** request, so tool
-calling is not optional here. Both models were verified against
-`/v1/chat/completions` with a `tools` array: each returned
-`finish_reason: "tool_calls"` with well-formed arguments. End to end
-through Rita, a `/v1/query` carrying one real MCP descriptor produced a
-clean `copilotFunctionCall`:
+calling is not optional here. `qwen3.6-35b` was verified against
+`/v1/chat/completions` with a `tools` array: `finish_reason: "tool_calls"`,
+well-formed arguments, empty `content` (no leak). End to end through Rita,
+a `/v1/query` carrying one real MCP descriptor produced a clean
+`copilotFunctionCall`:
 
     event: copilotFunctionCall
     data: {"function":"execute_agent_tool","input_arguments":{"server_id":"openbb","tool_name":"available_categories","parameters":{}}}
 
-with no `copilotStatusUpdate` ERROR event. Gemma's tool calling depends on
-the mounted `tool_chat_template_gemma4.jinja` plus
-`--enable-auto-tool-choice --tool-call-parser gemma4`; Qwen's on
-`--tool-call-parser qwen3_xml`. If either flag or the template mount is
-dropped, tool calls silently stop being emitted and the agent answers from
-the model's own knowledge instead.
+with no `copilotStatusUpdate` ERROR event. This depends on the container's
+`--enable-auto-tool-choice` plus a `--tool-call-parser` matching the model
+(the flags moved with the model: `qwen3_xml` served Qwen 3, and the
+Mac's `~/.config/opencode/opencode.jsonc` records `qwen3_coder` /
+`--reasoning-parser qwen3` for Qwen 3.6). If a flag is dropped, tool calls
+silently stop being emitted and the agent answers from the model's own
+knowledge instead — no error, just a worse answer.
 
 ## History: `/v1/query` SSE and the Chat Completions patch
 
