@@ -27,14 +27,13 @@ Env file: see `rita.env.example`. The **live** file is `/root/rita.env`,
 root-owned — `dev` cannot read it and has no passwordless sudo, so this
 step needs root.
 
-> **There is a decoy.** `/home/dev/rita/rita.env` also exists (dev-owned,
-> mode 600) and is **not** what the container runs on. It was last touched
-> 2026-08-01 and still carries the llama.cpp-era settings — a tailnet-IP
-> `OPENAI_BASE_URL`, `DEFAULT_MODEL=openai:qwen3-coder`, and a real 64-char
-> `OPENAI_API_KEY` from the retired per-consumer key scheme. Editing it
-> changes nothing. Verified 2026-08-23 by diffing both against the running
-> container's `.Config.Env`, which matches `/root/rita.env`, not this one.
-> It should be deleted once someone confirms nothing else reads it.
+> **Do not recreate `/home/dev/rita/rita.env`.** A dev-owned copy lived
+> there until 2026-08-23, three weeks stale and carrying a live 64-char
+> `OPENAI_API_KEY` from the retired per-consumer key scheme. The container
+> never read it, so editing it silently did nothing — and because `dev` is
+> the documented operator and cannot open `/root` at all, it was the file a
+> reader reached for first. It has been deleted (nothing mounted or
+> referenced it). `~/rita/agent-rita`, the source checkout, is untouched.
 
 ## Model host
 
@@ -110,8 +109,9 @@ displayed and what is actually sent. Nothing on the app side needs to
 change when the model here changes — it follows `agents.json`.
 
 To repoint Rita, edit `/root/rita.env` (`OPENAI_BASE_URL` port +
-`DEFAULT_MODEL`) as root and `docker restart rita` — not the dev-owned
-decoy above.
+`DEFAULT_MODEL`) as root and `docker restart rita`. There is no
+dev-readable copy — if editing an env file appears to change nothing,
+check that you are editing the one under `/root`.
 
 `rita.env.example` matches the live deployment: `:8000` /
 `openai:qwen3.6-35b`. Still read the real value from the agent rather than
