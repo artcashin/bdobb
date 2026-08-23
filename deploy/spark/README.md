@@ -21,10 +21,20 @@ provider").
     docker build --target rita -t agent-rita .
     docker rm -f rita 2>/dev/null || true
     docker run -d --name rita --restart unless-stopped --network host \
-      --env-file ~/rita/rita.env agent-rita
+      --env-file /root/rita.env agent-rita
 
-Env file: see `rita.env.example` (real file at `~/rita/rita.env`,
-mode 600, dev-owned, never committed).
+Env file: see `rita.env.example`. The **live** file is `/root/rita.env`,
+root-owned — `dev` cannot read it and has no passwordless sudo, so this
+step needs root.
+
+> **There is a decoy.** `/home/dev/rita/rita.env` also exists (dev-owned,
+> mode 600) and is **not** what the container runs on. It was last touched
+> 2026-08-01 and still carries the llama.cpp-era settings — a tailnet-IP
+> `OPENAI_BASE_URL`, `DEFAULT_MODEL=openai:qwen3-coder`, and a real 64-char
+> `OPENAI_API_KEY` from the retired per-consumer key scheme. Editing it
+> changes nothing. Verified 2026-08-23 by diffing both against the running
+> container's `.Config.Env`, which matches `/root/rita.env`, not this one.
+> It should be deleted once someone confirms nothing else reads it.
 
 ## Model host
 
@@ -99,8 +109,9 @@ the comment above `modelFeature` explaining that `default` is both what is
 displayed and what is actually sent. Nothing on the app side needs to
 change when the model here changes — it follows `agents.json`.
 
-To repoint Rita, edit `~/rita/rita.env` (`OPENAI_BASE_URL` port +
-`DEFAULT_MODEL`) and `docker restart rita`.
+To repoint Rita, edit `/root/rita.env` (`OPENAI_BASE_URL` port +
+`DEFAULT_MODEL`) as root and `docker restart rita` — not the dev-owned
+decoy above.
 
 `rita.env.example` matches the live deployment: `:8000` /
 `openai:qwen3.6-35b`. Still read the real value from the agent rather than
