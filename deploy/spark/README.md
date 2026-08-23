@@ -21,27 +21,118 @@ provider").
     docker build --target rita -t agent-rita .
     docker rm -f rita 2>/dev/null || true
     docker run -d --name rita --restart unless-stopped --network host \
-      --env-file ~/rita/rita.env agent-rita
+      --env-file /root/rita.env agent-rita
 
-Env file: see `rita.env.example` (real file at `~/rita/rita.env`,
-mode 600, dev-owned, never committed).
+Env file: see `rita.env.example`. The **live** file is `/root/rita.env`,
+root-owned — `dev` cannot read it and has no passwordless sudo, so this
+step needs root.
+
+> **Do not recreate `/home/dev/rita/rita.env`.** A dev-owned copy lived
+> there until 2026-08-23, three weeks stale and carrying a live 64-char
+> `OPENAI_API_KEY` from the retired per-consumer key scheme. The container
+> never read it, so editing it silently did nothing — and because `dev` is
+> the documented operator and cannot open `/root` at all, it was the file a
+> reader reached for first. It has been deleted (nothing mounted or
+> referenced it). `~/rita/agent-rita`, the source checkout, is untouched.
+
+## Model host
+
+Rita's `OPENAI_BASE_URL` points at the box's local model stack, which is
+**vLLM in Docker**, not the llama.cpp servers this file used to describe.
+The stack itself is documented in the DGX Spark local-LLM runbook; only
+what Rita depends on is repeated here.
+
+| | `qwen` |
+|---|---|
+| Served id | `qwen3.6-35b` |
+| Weights | `Qwen/Qwen3.6-35B-A3B-FP8` (35B total / 3B active MoE) |
+| Local | `http://127.0.0.1:8000/v1` |
+| Tailnet | `https://qwen.<your-tailnet>.ts.net/v1` |
+| Context | 262144 |
+| Role label | coding |
+
+It runs from `ghcr.io/artcashin/dgx-vllm:cu130` with `--network host`,
+`--restart unless-stopped`, and `com.artcashin.*` labels.
+
+**Gemma was retired (2026-08-23)** and `gemma.<your-tailnet>.ts.net` no
+longer answers. Qwen3.6 now holds its share of the unified memory pool and
+serves every role. The weights stay in the host's HF cache
+(`RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic`) and the container config is
+saved at `/root/container-configs/gemma.json`, so it can be brought back —
+but restoring it means lowering Qwen3.6's `--gpu-memory-utilization`
+first, since the two no longer fit as previously sized.
+
+Two model-specific behaviours worth knowing, both verified against the
+live server:
+
+- **Reasoning is on by default**, and this vLLM returns it under
+  `reasoning`, *not* `reasoning_content`. Its tokens bill to completion:
+  a tool-call turn spent 78 completion tokens for an empty `content`.
+  Per-request escape hatch is `chat_template_kwargs: {"enable_thinking":
+  false}`.
+- **Tool calling works**, which matters because the desktop app sends MCP
+  descriptors on every request. A `tools` array returns
+  `finish_reason: "tool_calls"` with well-formed arguments and no content
+  leak. It depends on the container's `--tool-call-parser` /
+  `--reasoning-parser` flags; if tool calls ever silently stop being
+  emitted, check those first.
+
+What changed for Rita, versus the llama.cpp deployment:
+
+- **No auth.** The per-consumer key files (`/root/keys/{qwen,gemma}.keys`,
+  `SPARK_KEY_RITA`) are gone. `OPENAI_API_KEY` is now a non-empty
+  placeholder the SDK requires, not a credential.
+- **Loopback, not a tailnet IP.** vLLM binds via host networking, and Rita
+  is also `--network host`, so `http://127.0.0.1:<port>/v1` is enough. The
+  old `<SPARK_TS_IP>` step is obsolete.
+- **Model ids changed.** `qwen3-coder` and `qwen3-14b` are both gone; the
+  served id is now `qwen3.6-35b`.
+- **No startup key reload.** The `docker restart llm` / "~1-2 min of HTTP
+  503 while it warms back up" caveat was a llama.cpp key-file behaviour and
+  no longer applies.
+
+### One base URL, one model
+
+Rita reads a single `OPENAI_BASE_URL`, so it reaches exactly **one**
+server. `DEFAULT_MODEL` must name the model that server serves.
+Everything else advertised in `agents.json`'s `model` picker — the
+`openai:gpt-*` and `ollama:*` entries, which Rita hardcodes — fails
+against this deployment:
+
+    event: copilotStatusUpdate
+    data: {"eventType":"ERROR","message":"Model error: The model `gpt-5.5` does not exist.","group":"reasoning"}
+
+That is why the desktop app renders the model as **read-only text**, not a
+`<select>`: see the `NoteButton` in `src/components/chat/ChatPane.tsx`, and
+the comment above `modelFeature` explaining that `default` is both what is
+displayed and what is actually sent. Nothing on the app side needs to
+change when the model here changes — it follows `agents.json`.
+
+To repoint Rita, edit `/root/rita.env` (`OPENAI_BASE_URL` port +
+`DEFAULT_MODEL`) as root and `docker restart rita`. There is no
+dev-readable copy — if editing an env file appears to change nothing,
+check that you are editing the one under `/root`.
+
+`rita.env.example` matches the live deployment: `:8000` /
+`openai:qwen3.6-35b`. Still read the real value from the agent rather than
+from this file — the model has moved twice, and a doc is not authority:
+
+    curl -s http://<agent-host>:8002/agents.json \
+      | jq -r '.[].features.model.default'
 
 ## Networking
 
-`--network host`, matching the llama.cpp containers' posture (`llm` and
-`gemma` also run `--network host` with an explicit `--host <tailnet-ip>`
-bind). This is the simplest option that satisfies both directions of
-required reachability with no extra config:
+`--network host`, matching the vLLM containers' posture. This is the
+simplest option that satisfies both directions of required reachability
+with no extra config:
 
 - **Inbound**: Rita's Hono server binds `0.0.0.0:8002` (Bun default), so
   with host networking it's immediately reachable at
   `http://<agent-host>:8002` over the tailnet — no port publishing,
   no bridge/NAT hairpin issues.
-- **Outbound**: Rita calls `OPENAI_BASE_URL=http://<llm-host-tailnet-ip>:8000/v1`
-  (the tailnet IP the `llm` container itself binds to, not localhost).
-  With host networking the container shares the host's network stack, so
-  that tailnet IP is directly routable with no extra `--add-host` or
-  Docker bridge-to-host plumbing.
+- **Outbound**: Rita calls `OPENAI_BASE_URL=http://127.0.0.1:8000/v1`,
+  which the vLLM container is already listening on in the same network
+  namespace.
 
 A bridge network would have needed `--add-host=host.docker.internal:...`
 or explicit port publishing plus caring about which interface Tailscale
@@ -52,13 +143,10 @@ that and matches the box's established pattern.
 
 - Rita: `http://<agent-host>:8002` — `GET /agents.json`, `GET /status`,
   `POST /v1/query` (SSE, `event: copilotMessageChunk`).
-- Model: llama.cpp `llm` (Qwen, model id `qwen3-coder`) on :8000, `gemma`
-  on :8001. Auth via per-consumer keys in `/root/keys/{qwen,gemma}.keys`;
-  the Rita key is the `rita` line in `qwen.keys`. Keys load at startup —
-  `docker restart llm` after any change (~40s, drops in-flight requests,
-  then ~1-2 min of HTTP 503 "Loading model" while it warms back up).
-  `/v1/models` is UNAUTHENTICATED; test auth against
-  `/v1/chat/completions` only.
+- Model: `:8000` (`qwen3.6-35b`) — see [Model host](#model-host).
+  Unauthenticated, so `/v1/models` and `/v1/chat/completions` are both
+  directly curl-able. `:8001` served Gemma until it was retired and is now
+  closed.
 
 ## MCP (NOT configured in Rita)
 
@@ -81,15 +169,34 @@ deployed.
       -H 'Content-Type: application/json' \
       -d '{"messages":[{"role":"human","content":"Say hello in five words."}]}'
 
-`/agents.json`, `/status`, and CORS all verified working as of this deploy
-(agent id `openbb_agent_rita`, `200`, `Access-Control-Allow-Origin: *`).
+The repo's own live suite covers the same ground plus MCP discovery —
+fill in `.env.local` and run:
 
-## Fixed: `/v1/query` SSE round trip
+    OPENBB_LIVE=1 pnpm test:run src/test/integration
 
-Previously the SSE round trip errored mid-stream (see history below for the
-full root cause). **Fixed** by pinning the OpenAI-compatible provider to the
-Chat Completions API instead of letting `@ai-sdk/openai@3.0.49` default to
-the Responses API.
+### Tool calling
+
+The desktop app sends MCP tool descriptors on **every** request, so tool
+calling is not optional here. `qwen3.6-35b` was verified against
+`/v1/chat/completions` with a `tools` array: `finish_reason: "tool_calls"`,
+well-formed arguments, empty `content` (no leak). End to end through Rita,
+a `/v1/query` carrying one real MCP descriptor produced a clean
+`copilotFunctionCall`:
+
+    event: copilotFunctionCall
+    data: {"function":"execute_agent_tool","input_arguments":{"server_id":"openbb","tool_name":"available_categories","parameters":{}}}
+
+with no `copilotStatusUpdate` ERROR event. This depends on the container's
+`--enable-auto-tool-choice` plus a `--tool-call-parser` matching the model
+(the flags moved with the model: `qwen3_xml` served Qwen 3, and the
+Mac's `~/.config/opencode/opencode.jsonc` records `qwen3_coder` /
+`--reasoning-parser qwen3` for Qwen 3.6). If a flag is dropped, tool calls
+silently stop being emitted and the agent answers from the model's own
+knowledge instead — no error, just a worse answer.
+
+## History: `/v1/query` SSE and the Chat Completions patch
+
+The Chat Completions patch predates the vLLM migration but stays in place.
 
 `@ai-sdk/openai@3.0.49`'s bare `openai(id)` factory (as used by the
 unpatched `src/lib/providers.ts`) defaults to the OpenAI **Responses API**
@@ -97,29 +204,14 @@ unpatched `src/lib/providers.ts`) defaults to the OpenAI **Responses API**
 `node_modules/@ai-sdk/openai/dist/index.js` inside the built container: the
 default model factory calls `createResponsesModel`; only `openai.chat(id)`
 uses `/chat/completions`. llama.cpp's `/v1/responses` streaming emulation
-reissues/changes the streamed text-part `id` between the reasoning and
-answer segments for `qwen3-coder`, which `ai` v6's `stream-text.ts` state
-machine treats as a fatal "part not found" error (it requires the same `id`
-to open in `text-start` and close in `text-delta`/`text-end`). This is
-consistent with the earlier finding (see `dgx-spark-local-llm` notes) that
-llama.cpp's Responses-API surface works for simpler clients (Codex) but is
-not a byte-for-byte match of OpenAI's actual Responses streaming contract.
-`/v1/chat/completions` streaming against the same model is llama.cpp's
-primary, most-tested surface and was verified clean (proper role/content
-deltas, `finish_reason: "stop"`).
+reissued the streamed text-part `id` between the reasoning and answer
+segments, which `ai` v6's `stream-text.ts` state machine treats as a fatal
+"part not found" error (it requires the same `id` to open in `text-start`
+and close in `text-delta`/`text-end`).
 
 The fix is commit `955e0fc0934a0aaeb9daac43bc7926e16e7c2b04`: change
 `resolve: (id) => openai(id)` to `resolve: (id) => openai.chat(id)` for the
 `openai:` provider entry only (openrouter/groq/ollama untouched).
-
-**Verified end-to-end after the fix**, three separate `/v1/query` requests
-against the redeployed container, all HTTP 200, all completing with no
-`copilotStatusUpdate` ERROR event and no server-side `streamText error part`
-in `docker logs rita`:
-
-    event: copilotMessageChunk
-    data: {"delta":"OK"}
-
-and, for a longer prompt ("Explain in two sentences what a moving
-average is."), a full multi-chunk stream (58 output tokens) that
-concatenates to a coherent, correct two-sentence answer and ends cleanly.
+`/v1/chat/completions` is also vLLM's primary, most-tested surface, so the
+patch remains the right default — it has not been re-tested against vLLM's
+own `/v1/responses` implementation, and there is no reason to.
