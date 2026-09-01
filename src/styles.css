@@ -1684,6 +1684,14 @@ input, select, textarea {
 .news-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .news-row.highlighted .news-title { color: #d9a75f; }
 .news-time { color: var(--text-dim); font-variant-numeric: tabular-nums; flex: none; }
+.cell-logo {
+  width: 16px; height: 16px;
+  border-radius: 2px;
+  object-fit: contain;
+  margin-right: 6px;
+  vertical-align: -3px; /* optically centers against the cell text */
+}
+
 .news-favicon {
   width: 14px; height: 14px; flex: none;
   border-radius: 2px; /* tidies up unusual/non-square favicons */

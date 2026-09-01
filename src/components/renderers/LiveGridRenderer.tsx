@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   BackendConfig, ColumnDef, ParamValues, WidgetDef,
 } from "../../lib/types";
-import { buildWidgetWsUrl, serializeParams } from "../../lib/dataClient";
+import {
+  buildWidgetWsUrl, fetchJson, resolveEndpoint, serializeParams,
+} from "../../lib/dataClient";
 import { formatCell, orderColumns } from "./TableRenderer";
 import RawJsonView from "./RawJsonView";
 import { logError, logOnce } from "../../lib/logger";
@@ -78,6 +80,9 @@ export default function LiveGridRenderer({
   const [rows, setRows] = useState<Row[]>([]);
   const [flashes, setFlashes] = useState<Record<string, Flash>>({});
   const [live, setLive] = useState(false);
+  /** symbol -> absolutized logo URL from /symbol_meta; empty when the
+   * backend has no such endpoint (older live-grid) or the fetch failed. */
+  const [logos, setLogos] = useState<Record<string, string>>({});
   // Mirror of `rows` for the message handler: ws frames arrive outside the
   // render cycle, and computing the merge from a ref keeps the setState
   // updaters pure (no setFlashes from inside setRows).
@@ -102,6 +107,56 @@ export default function LiveGridRenderer({
       setFlashes({});
     }
   }, [data]);
+
+  // The row id values, deduped and order-stable. Rows churn every tick but
+  // the symbol set doesn't, so the joined string keeps the fetch effect
+  // quiet between real membership changes.
+  const symbolsKey = useMemo(() => {
+    if (!idCol) return "";
+    const uniq = Array.from(
+      new Set(rows.map((r) => String(r[idCol] ?? "")).filter(Boolean))
+    );
+    uniq.sort();
+    return uniq.join(",");
+  }, [rows, idCol]);
+
+  // Symbol logos — the News rail's favicon pattern: one best-effort GET per
+  // symbol-set change against the same backend (same auth), and the grid is
+  // complete without it. Older live-grid backends 404 /symbol_meta; that is
+  // one log line, not an error state.
+  useEffect(() => {
+    if (!backend || !symbolsKey) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = resolveEndpoint(backend.baseUrl, "symbol_meta");
+        url.searchParams.set("symbol", symbolsKey);
+        const body = await fetchJson(url.toString(), backend);
+        if (cancelled || !Array.isArray(body)) return;
+        const map: Record<string, string> = {};
+        for (const entry of body) {
+          if (entry === null || typeof entry !== "object") continue;
+          const { symbol, logo_url: logo } = entry as {
+            symbol?: unknown; logo_url?: unknown;
+          };
+          if (typeof symbol === "string" && typeof logo === "string" && logo) {
+            map[symbol] = logo;
+          }
+        }
+        setLogos(map);
+      } catch (e) {
+        if (!cancelled) {
+          logOnce(
+            `live-grid-meta-${widgetDef.id}`,
+            `live_grid ${widgetDef.id}: symbol_meta fetch failed (logos skipped): ${String(e)}`
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [backend, symbolsKey, widgetDef.id]);
 
   const applyUpdate = useCallback(
     (raw: unknown) => {
@@ -286,6 +341,19 @@ export default function LiveGridRenderer({
                   const color = cellColorClass(c, row);
                   return (
                     <td key={c.field} className={color || undefined}>
+                      {c.field === idCol && logos[rowKey] ? (
+                        // Outside the flash span: a re-flash must not remount
+                        // (and so re-request) the image.
+                        <img
+                          className="cell-logo"
+                          src={logos[rowKey]}
+                          alt=""
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : null}
                       <span
                         // Remounting on seq restarts the CSS animation.
                         key={flash?.seq ?? 0}

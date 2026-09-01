@@ -1,8 +1,16 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LiveGridRenderer from "./LiveGridRenderer";
 import { makeWidgetDef } from "../../test/widgetDef";
 import type { BackendConfig } from "../../lib/types";
+
+// Only fetchJson is faked (the /symbol_meta logo lookup); URL builders and
+// serializers stay real. Default: an empty answer, i.e. no logos.
+const fetchJsonMock = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/dataClient", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/dataClient")>()),
+  fetchJson: fetchJsonMock,
+}));
 
 /**
  * Stand-in for the browser WebSocket: records the URL it was given and what
@@ -100,6 +108,8 @@ describe("LiveGridRenderer", () => {
   beforeEach(() => {
     MockWebSocket.instances = [];
     vi.stubGlobal("WebSocket", MockWebSocket);
+    fetchJsonMock.mockReset();
+    fetchJsonMock.mockResolvedValue([]);
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -209,6 +219,33 @@ describe("LiveGridRenderer", () => {
   it("opens no socket when the widget has no wsEndpoint", () => {
     renderGrid({ widgetDef: makeWidgetDef({ type: "live_grid", wsEndpoint: null }) });
     expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it("renders a symbol logo when /symbol_meta has one, none when it doesn't", async () => {
+    fetchJsonMock.mockResolvedValue([
+      { symbol: "AAPL", logo_url: "https://eodhd.com/img/logos/US/aapl.png" },
+      { symbol: "BTC-USD", logo_url: null },
+    ]);
+    const { container } = renderGrid();
+    await waitFor(() => {
+      expect(container.querySelectorAll("img.cell-logo")).toHaveLength(1);
+    });
+    const img = container.querySelector("img.cell-logo") as HTMLImageElement;
+    expect(img.src).toBe("https://eodhd.com/img/logos/US/aapl.png");
+    expect(img.alt).toBe("");
+    // requested from the widget's own backend, deduped symbols comma-joined
+    const [url] = fetchJsonMock.mock.calls[0] as [string];
+    expect(url).toBe(
+      "https://openbb.example.ts.net:6903/symbol_meta?symbol=AAPL%2CBTC-USD"
+    );
+  });
+
+  it("stays logo-free and calm when /symbol_meta fails (older backend)", async () => {
+    fetchJsonMock.mockRejectedValue(new Error("HTTP 404"));
+    const { container } = renderGrid();
+    await waitFor(() => expect(fetchJsonMock).toHaveBeenCalled());
+    expect(container.querySelectorAll("img.cell-logo")).toHaveLength(0);
+    expect(screen.getByText("AAPL")).toBeInTheDocument();
   });
 
   it("shows the raw payload when the seed is not an array", () => {
