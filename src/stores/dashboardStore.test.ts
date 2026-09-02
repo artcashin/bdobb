@@ -225,6 +225,25 @@ describe("useDashboardStore", () => {
       expect(useDashboardStore.getState().saveError).toBeNull();
     });
 
+    it("a later success in a batch does not clear an earlier write's failure banner", async () => {
+      // addDashboards queues one save per incoming dashboard through the shared
+      // write chain. First save fails, second succeeds -- the banner must stay.
+      saveDashboard.mockRejectedValueOnce(new Error("disk full"));
+      await useDashboardStore.getState().addDashboards([
+        { id: "aaaaaaaa-1111-4444-8555-666666666666", name: "First", cards: [] },
+        { id: "bbbbbbbb-2222-4444-8555-666666666666", name: "Second", cards: [] },
+      ]);
+      expect(saveDashboard).toHaveBeenCalledTimes(2);
+      expect(useDashboardStore.getState().saveError).toMatch(/disk full/);
+    });
+
+    it("removeDashboard: a failed delete surfaces in saveError (not swallowed)", async () => {
+      const id = useDashboardStore.getState().dashboards[0].id;
+      deleteDashboard.mockRejectedValueOnce(new Error("delete failed"));
+      await useDashboardStore.getState().removeDashboard(id);
+      expect(useDashboardStore.getState().saveError).toMatch(/delete failed/);
+    });
+
     it("dismissSaveError clears the banner without touching dashboard state", async () => {
       saveDashboard.mockRejectedValueOnce(new Error("disk full"));
       await useDashboardStore.getState().addDashboard("Macro");
@@ -236,11 +255,9 @@ describe("useDashboardStore", () => {
       expect(useDashboardStore.getState().dashboards).toBe(dashboardsBefore);
     });
 
-    it("removeDashboard: a rejected delete is logged (persistence.deleteDashboard never rejects, so saveError is not exercised here)", async () => {
-      // persistence.ts's deleteDashboard (Task 4, unchanged here) swallows
-      // its own failures internally and never rejects, so there is nothing
-      // for saveError to observe on this path -- only the log call, which
-      // deleteDashboard itself already produces.
+    it("removeDashboard: a successful delete leaves saveError null", async () => {
+      // The failure path (deleteDashboard rejecting) is covered above; here the
+      // mock resolves, so a clean delete must not leave a banner behind.
       const id = useDashboardStore.getState().dashboards[0].id;
       await useDashboardStore.getState().removeDashboard(id);
       expect(deleteDashboard).toHaveBeenCalledWith(id);

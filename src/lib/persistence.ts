@@ -320,12 +320,12 @@ export async function saveDashboard(d: Dashboard): Promise<void> {
 }
 
 export async function deleteDashboard(id: string): Promise<void> {
+  // Do NOT swallow: the sole caller (dashboardStore.enqueueDelete) routes this
+  // through trackWrite, which logs and surfaces the failure in the save-error
+  // banner. Swallowing here made every delete look successful, so a failed
+  // delete both went unreported and cleared a live failure banner.
   const path = `${DASHBOARDS_PATH}/${id}.json`;
-  try {
-    if (await exists(path, BASE)) await remove(path, BASE);
-  } catch (e) {
-    logError(`persistence: failed to delete dashboard ${id}: ${String(e)}`);
-  }
+  if (await exists(path, BASE)) await remove(path, BASE);
 }
 
 export async function deleteAllDashboards(): Promise<void> {
