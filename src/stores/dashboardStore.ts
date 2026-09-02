@@ -30,8 +30,12 @@ function trackWrite(
   op: () => Promise<void>,
   logContext: string
 ): Promise<void> {
+  // Failure sets the banner; success does NOT clear it. An action clears the
+  // banner once at its entry (clearSaveError below), so a later write in the
+  // same action -- a batch import, or removeDashboard's reseed after a failed
+  // delete -- can no longer wipe an earlier write's failure.
   return op().then(
-    () => set({ saveError: null }),
+    () => {},
     (e) => {
       const reason = e instanceof Error ? e.message : String(e);
       logError(`dashboardStore: ${logContext}: ${reason}`);
@@ -67,11 +71,13 @@ interface DashboardState {
    * applies to in-memory state optimistically, then awaits the disk write --
    * with no rollback. Before this field existed, a failed write was
    * log-only, so a user's edit could look saved in the UI and be gone on the
-   * next restart with no on-screen indication. Cleared on the next
-   * successful write. The optimistic update itself is intentionally NOT
-   * rolled back on failure -- this field exists to make the failure
-   * visible, not to revert the edit. Read by a DashboardTabs banner (Task
-   * 16 of the reconciliation plan; not wired up yet).
+   * next restart with no on-screen indication. Cleared at the START of the
+   * next user action, not on each successful write -- so a later write in a
+   * multi-write action (batch import, restore, removeDashboard's reseed after
+   * a failed delete) cannot wipe an earlier write's failure. The optimistic
+   * update itself is intentionally NOT rolled back on failure -- this field
+   * exists to make the failure visible, not to revert the edit. Read by the
+   * DashboardTabs banner.
    */
   saveError: string | null;
   /** Dismisses the banner without touching dashboard state -- the NEXT
@@ -96,6 +102,11 @@ interface DashboardState {
 }
 
 export const useDashboardStore = create<DashboardState>()((set, get) => {
+  // Clear the banner once at the start of a user action; writes within the
+  // action only ever SET it on failure. This is what stops a later successful
+  // write from wiping an earlier one's failure inside the same action.
+  const clearSaveError = () => set({ saveError: null });
+
   /**
    * Apply fn to the active dashboard and persist only that dashboard.
    * Every card mutation shares this: rewriting all dashboards on each change
@@ -112,6 +123,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       logError(`dashboardStore: mutation attempted with no active dashboard (activeId=${String(activeId)})`);
       return;
     }
+    clearSaveError();
     const next = fn(dashboards[idx]);
     const nextList = [...dashboards];
     nextList[idx] = next;
@@ -128,6 +140,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async addDashboard(name) {
+      clearSaveError();
       const d: Dashboard = { id: newId(), name, cards: [] };
       // Switch to the new dashboard, or card mutations would target it while
       // the grid still rendered the previous one.
@@ -137,6 +150,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async removeDashboard(id) {
+      clearSaveError();
       const rest = get().dashboards.filter((d) => d.id !== id);
       const activeId = get().activeId === id ? rest[0]?.id ?? null : get().activeId;
       set({ dashboards: rest, activeId });
@@ -159,6 +173,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     async renameDashboard(id, name) {
       const target = get().dashboards.find((d) => d.id === id);
       if (!target) return;
+      clearSaveError();
       const renamed = { ...target, name };
       set({ dashboards: get().dashboards.map((d) => (d.id === id ? renamed : d)) });
       await enqueueSave(set, renamed);
@@ -171,6 +186,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
      */
     async addDashboards(incoming) {
       if (incoming.length === 0) return;
+      clearSaveError();
       set({ dashboards: [...get().dashboards, ...incoming], activeId: incoming[0].id });
       for (const d of incoming) await enqueueSave(set, d);
     },
@@ -183,6 +199,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
      * the next launch and the undo silently comes apart.
      */
     async restore(dashboards, activeId) {
+      clearSaveError();
       const removed = get()
         .dashboards.map((d) => d.id)
         .filter((id) => !dashboards.some((d) => d.id === id));
@@ -196,6 +213,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async setDashboards(dashboards) {
+      clearSaveError();
       set({ dashboards });
       for (const dashboard of dashboards) await enqueueSave(set, dashboard);
     },
