@@ -4,15 +4,15 @@ Stock OpenBB-finance/agent-rita, built from the Gitea fork
 `your git mirror of OpenBB-finance/agent-rita` branch `spark` (patches:
 honor `OPENAI_BASE_URL` in the OpenAI provider, and force the Chat
 Completions API instead of the Responses API for that same provider —
-both in `src/lib/providers.ts`; permissive CORS was already present
-upstream, `app.use("*", cors())` in `src/server.ts`, no patch needed).
+both in `src/lib/providers.ts`; plus an SSE keepalive in
+`src/protocol/stream.ts`, below. Permissive CORS was already present
+upstream, `app.use("*", cors())` in `src/server.ts`, no patch needed.)
 Runs as a Docker container as `dev` (no sudo, docker group) — Docker
 with `--restart unless-stopped` instead of a systemd unit, because `dev`
 has no passwordless sudo on that box.
 
-Pinned commit deployed: **`955e0fc0934a0aaeb9daac43bc7926e16e7c2b04`**
-("spark: force Chat Completions API for the OpenAI-compatible
-provider").
+Pinned commit deployed: **`870f2c8cbc40d3fbae8c56cf5339aaaff3cbc5f8`**
+("spark: SSE comment keepalive so a long think can't idle out").
 
 ## Deploy / update
 
@@ -198,6 +198,31 @@ there is no error to find: the server returns HTTP 200 with
 unparsed in `content`, so the agent just answers from its own knowledge
 and quietly stops using your tools.
 
+## SSE keepalive
+
+`sseResponse()` upstream writes bytes only when the generator yields, so
+the stream is silent for the whole pre-first-token window. On
+`qwen3.6-35b` that window *is* the model's `<think>` phase — reasoning is
+on by default — and it grows with tool chains and context. Any idle read
+timeout between a client and Rita kills the request before a token
+arrives.
+
+The patch emits a `:` comment every 15s while the stream is open. Comment
+lines are ignored by every compliant SSE parser: this app's own parser
+ignores `:` lines and drops dataless blocks as `null`
+(`src/lib/agent/sse.ts`), so nothing changed client-side and the wire
+protocol is unchanged. The timer is cleared on all three terminal paths
+(done, error, cancel) so it cannot outlive the stream.
+
+Verified against the redeployed container: a 24.9s request emitted one
+keepalive at 15.1s alongside 1100 normal events.
+
+**It fixes idle read timeouts only.** A total request-duration cap is
+unaffected, and so is any timeout on Rita's own upstream connection to
+vLLM — that is a separate connection this keepalive never touches. If a
+request still dies at a fixed wall-clock length regardless of traffic,
+this is not the cause.
+
 ## History: `/v1/query` SSE and the Chat Completions patch
 
 The Chat Completions patch predates the vLLM migration but stays in place.
@@ -213,7 +238,8 @@ segments, which `ai` v6's `stream-text.ts` state machine treats as a fatal
 "part not found" error (it requires the same `id` to open in `text-start`
 and close in `text-delta`/`text-end`).
 
-The fix is commit `955e0fc0934a0aaeb9daac43bc7926e16e7c2b04`: change
+The fix is commit `955e0fc0934a0aaeb9daac43bc7926e16e7c2b04` (still in
+place, now an ancestor of the pinned commit above): change
 `resolve: (id) => openai(id)` to `resolve: (id) => openai.chat(id)` for the
 `openai:` provider entry only (openrouter/groq/ollama untouched).
 `/v1/chat/completions` is also vLLM's primary, most-tested surface, so the
