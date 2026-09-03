@@ -136,3 +136,27 @@ jobs:
 
       - name: Check the Rust crate compiles
         run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  bridge:
+    name: symphony-bridge (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/symphony-bridge
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Installs the package plus its dev extras (pytest, ruff, ...) in one
+      # shot, editable, so lint and test below run against this checkout.
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check app tests
+
+      - name: Test
+        run: python -m pytest -q
