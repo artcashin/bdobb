@@ -71,6 +71,10 @@ export default function SymphonyRenderer({ params }: SymphonyRendererProps) {
     // exists.
     if (visible || !configured) return;
     const el = containerRef.current;
+    // Not reachable once `configured` is true -- the container div always
+    // renders before this effect runs, so the ref is always attached. This
+    // is a type-narrowing guard only (`containerRef.current` is typed
+    // `HTMLDivElement | null`), not a defense against a real null case.
     if (!el) return;
     if (typeof IntersectionObserver === "undefined") {
       // No observer support: render rather than never.

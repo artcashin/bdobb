@@ -68,7 +68,19 @@ async fn frame_check(url: String) -> Result<FrameCheck, String> {
     // `framing_refusal` below checks X-Frame-Options first regardless --
     // behavior unchanged from before the extraction, just moved into a pure
     // function so it can be unit-tested without a network layer.
-    let csp = get("content-security-policy");
+    //
+    // `get_all`, not `get`: per spec, a response can carry more than one
+    // Content-Security-Policy header, and all of them apply -- the effective
+    // policy is their intersection. Reading only the first (what `get` -- and
+    // this function, before this fix -- does) fails OPEN: a site sending
+    // `frame-ancestors *` and `frame-ancestors 'none'` as two separate
+    // headers would be reported frameable if only the first is ever seen.
+    let csp: Vec<String> = headers
+        .get_all("content-security-policy")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .map(|v| v.to_ascii_lowercase())
+        .collect();
 
     if let Some(reason) = framing_refusal(&xfo, &csp) {
         return Ok(FrameCheck {
@@ -83,10 +95,34 @@ async fn frame_check(url: String) -> Result<FrameCheck, String> {
     })
 }
 
+/// Finds the `frame-ancestors` directive in one CSP header's value, if any,
+/// matched at a directive boundary rather than anywhere in the string.
+///
+/// `csp.find("frame-ancestors")` (the prior implementation) matched the
+/// token as a plain substring, which can occur inside another directive's
+/// *value* -- a `report-uri` carrying a query string that happens to contain
+/// the text "frame-ancestors" is the plausible shape -- producing a false
+/// refusal for a site that never declared the directive at all. Splitting on
+/// `;` into directives first and comparing the first whitespace token of
+/// each one is what "directive boundary" means here: `frame-ancestors` must
+/// be the directive's own name, not a substring of something else's value.
+fn find_frame_ancestors_directive(csp: &str) -> Option<&str> {
+    csp.split(';')
+        .map(|d| d.trim())
+        .find(|d| d.split_whitespace().next() == Some("frame-ancestors"))
+}
+
 /// Pure verdict: does a site refuse to be framed, given its (already
-/// lowercased) `X-Frame-Options` and `Content-Security-Policy` header
-/// values? `Some(reason)` is a refusal, `None` is permitted. Empty strings
-/// mean the header was absent.
+/// lowercased) `X-Frame-Options` value and every `Content-Security-Policy`
+/// header value it sent? `Some(reason)` is a refusal, `None` is permitted.
+/// An empty `xfo` means that header was absent; an empty `csp` slice means
+/// no CSP header was sent at all.
+///
+/// Per spec, more than one CSP header can be present and all of them apply --
+/// the effective policy is their intersection -- so a refusal in ANY one of
+/// them is a refusal overall; a caller with only the first header's value
+/// (failing open on a second, stricter one) is the bug this signature guards
+/// against structurally rather than by convention.
 ///
 /// Extracted out of `frame_check` (final review, Blocking 3) so the
 /// string→verdict logic -- the part this branch actually changed, by
@@ -94,7 +130,7 @@ async fn frame_check(url: String) -> Result<FrameCheck, String> {
 /// automated coverage. Before this, `src-tauri/` had no `#[cfg(test)]`
 /// anywhere and `cargo check` only proved the parser compiled, not that it
 /// classified a single case correctly.
-fn framing_refusal(xfo: &str, csp: &str) -> Option<String> {
+fn framing_refusal(xfo: &str, csp: &[String]) -> Option<String> {
     if xfo.contains("deny") {
         return Some("X-Frame-Options: DENY".into());
     }
@@ -103,19 +139,20 @@ fn framing_refusal(xfo: &str, csp: &str) -> Option<String> {
         return Some("X-Frame-Options: SAMEORIGIN".into());
     }
 
-    if let Some(idx) = csp.find("frame-ancestors") {
-        let directive = csp[idx..].split(';').next().unwrap_or_default();
-        // Only the CSP wildcard and bare-scheme source forms are actually
-        // permissive. A substring test misreads a host allow-list like
-        // `frame-ancestors 'self' https://*.symphony.com` as permissive because
-        // it *contains* "https:" — tokenize on whitespace instead and require
-        // an exact token match, so `'none'`, `'self'`, and host lists are
-        // correctly read as refusals.
-        let permissive = directive
-            .split_whitespace()
-            .any(|tok| tok == "*" || tok == "https:" || tok == "http:");
-        if !permissive {
-            return Some(format!("Content-Security-Policy {}", directive.trim()));
+    for header in csp {
+        if let Some(directive) = find_frame_ancestors_directive(header) {
+            // Only the CSP wildcard and bare-scheme source forms are actually
+            // permissive. A substring test misreads a host allow-list like
+            // `frame-ancestors 'self' https://*.symphony.com` as permissive because
+            // it *contains* "https:" — tokenize on whitespace instead and require
+            // an exact token match, so `'none'`, `'self'`, and host lists are
+            // correctly read as refusals.
+            let permissive = directive
+                .split_whitespace()
+                .any(|tok| tok == "*" || tok == "https:" || tok == "http:");
+            if !permissive {
+                return Some(format!("Content-Security-Policy {}", directive));
+            }
         }
     }
 
@@ -126,11 +163,17 @@ fn framing_refusal(xfo: &str, csp: &str) -> Option<String> {
 mod tests {
     use super::framing_refusal;
 
+    /// One-header-value convenience, for tests that don't care about the
+    /// multiple-CSP-headers case.
+    fn csp(s: &str) -> Vec<String> {
+        vec![s.to_string()]
+    }
+
     #[test]
     fn host_allow_list_is_a_refusal_not_a_substring_match() {
         // The exact case the fix turned around: a naive substring test on
         // "https:" would misread this as permissive.
-        let reason = framing_refusal("", "frame-ancestors 'self' https://*.symphony.com");
+        let reason = framing_refusal("", &csp("frame-ancestors 'self' https://*.symphony.com"));
         assert_eq!(
             reason,
             Some("Content-Security-Policy frame-ancestors 'self' https://*.symphony.com".into())
@@ -139,17 +182,17 @@ mod tests {
 
     #[test]
     fn wildcard_source_is_permitted() {
-        assert_eq!(framing_refusal("", "frame-ancestors *"), None);
+        assert_eq!(framing_refusal("", &csp("frame-ancestors *")), None);
     }
 
     #[test]
     fn bare_https_scheme_source_is_permitted() {
-        assert_eq!(framing_refusal("", "frame-ancestors https:"), None);
+        assert_eq!(framing_refusal("", &csp("frame-ancestors https:")), None);
     }
 
     #[test]
     fn none_source_is_a_refusal() {
-        let reason = framing_refusal("", "frame-ancestors 'none'");
+        let reason = framing_refusal("", &csp("frame-ancestors 'none'"));
         assert_eq!(
             reason,
             Some("Content-Security-Policy frame-ancestors 'none'".into())
@@ -158,7 +201,7 @@ mod tests {
 
     #[test]
     fn empty_source_list_is_a_refusal() {
-        let reason = framing_refusal("", "frame-ancestors");
+        let reason = framing_refusal("", &csp("frame-ancestors"));
         assert_eq!(
             reason,
             Some("Content-Security-Policy frame-ancestors".into())
@@ -168,7 +211,7 @@ mod tests {
     #[test]
     fn x_frame_options_deny_is_a_refusal_with_its_own_reason() {
         assert_eq!(
-            framing_refusal("deny", ""),
+            framing_refusal("deny", &[]),
             Some("X-Frame-Options: DENY".into())
         );
     }
@@ -176,14 +219,72 @@ mod tests {
     #[test]
     fn x_frame_options_sameorigin_is_a_refusal_with_its_own_reason() {
         assert_eq!(
-            framing_refusal("sameorigin", ""),
+            framing_refusal("sameorigin", &[]),
             Some("X-Frame-Options: SAMEORIGIN".into())
         );
     }
 
     #[test]
     fn no_relevant_headers_is_permitted() {
-        assert_eq!(framing_refusal("", ""), None);
+        assert_eq!(framing_refusal("", &[]), None);
+    }
+
+    // ---- Finding 13: multiple Content-Security-Policy headers must be
+    // intersected, not just the first one read. ----
+
+    #[test]
+    fn a_refusal_in_a_second_csp_header_is_not_missed() {
+        // Per spec, every CSP header sent applies. A naive `headers.get()`
+        // (single value) reads only the first of these and would report this
+        // site frameable -- failing open on the second, stricter header.
+        let headers = vec!["frame-ancestors *".to_string(), "frame-ancestors 'none'".to_string()];
+        let reason = framing_refusal("", &headers);
+        assert_eq!(
+            reason,
+            Some("Content-Security-Policy frame-ancestors 'none'".into())
+        );
+    }
+
+    #[test]
+    fn a_refusal_in_the_first_csp_header_is_not_missed_either() {
+        let headers = vec!["frame-ancestors 'none'".to_string(), "frame-ancestors *".to_string()];
+        let reason = framing_refusal("", &headers);
+        assert_eq!(
+            reason,
+            Some("Content-Security-Policy frame-ancestors 'none'".into())
+        );
+    }
+
+    #[test]
+    fn permissive_in_every_csp_header_is_permitted() {
+        let headers = vec!["frame-ancestors *".to_string(), "frame-ancestors https:".to_string()];
+        assert_eq!(framing_refusal("", &headers), None);
+    }
+
+    // ---- Finding 14: `frame-ancestors` must be matched as a directive name
+    // at a directive boundary, not anywhere in the string. ----
+
+    #[test]
+    fn frame_ancestors_appearing_inside_another_directives_value_is_not_a_false_refusal() {
+        // The plausible real-world shape: a report-uri carrying the literal
+        // text "frame-ancestors" in its query string. An unanchored
+        // `csp.find("frame-ancestors")` would match here and misread the
+        // slice from that point onward as the frame-ancestors directive
+        // itself.
+        let reason = framing_refusal(
+            "",
+            &csp("report-uri /csp-report?ref=frame-ancestors-docs; default-src 'self'"),
+        );
+        assert_eq!(reason, None);
+    }
+
+    #[test]
+    fn frame_ancestors_is_still_found_when_it_is_not_the_first_directive() {
+        let reason = framing_refusal("", &csp("default-src 'self'; frame-ancestors 'none'"));
+        assert_eq!(
+            reason,
+            Some("Content-Security-Policy frame-ancestors 'none'".into())
+        );
     }
 }
 

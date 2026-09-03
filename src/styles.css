@@ -311,9 +311,15 @@ input, select, textarea {
 }
 .card-actions { display: flex; gap: 4px; }
 .card-symphony-status {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-size: 11px; color: var(--text-dim);
   padding: 2px 8px;
+}
+.card-symphony-status span {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card-symphony-status button {
+  border: none; background: none; color: inherit; padding: 0 2px; cursor: pointer; font-size: 11px;
 }
 .card-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
 

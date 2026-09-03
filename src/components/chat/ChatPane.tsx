@@ -564,10 +564,21 @@ export default function ChatPane({ onStickyChange }: ChatPaneProps = {}) {
           .getState()
           .requestToolConfirmation(serverId, toolName, parameters);
         if (decision === "declined") {
+          // Mirrors SymphonyConfirmDialog's own confident-vs-neutral split
+          // (same `toolName.toLowerCase() === SYMPHONY_POST_TOOL` check): the
+          // dialog itself only asserts "this Symphony message" for a genuine
+          // post_to_symphony call. For anything else the broadened gate also
+          // caught -- symphony_list_rooms, a bridge tool named send_message,
+          // ... -- the dialog already uses neutral "run <tool> on <server>"
+          // phrasing, since it doesn't know the call posts a message at all;
+          // this model-facing text must not claim otherwise.
+          const isConfirmedPost = toolName.toLowerCase() === SYMPHONY_POST_TOOL;
           return {
-            content:
-              "The user declined to approve this Symphony message; it was not sent. " +
-              "Do not send it again unless the user explicitly asks.",
+            content: isConfirmedPost
+              ? "The user declined to approve this Symphony message; it was not sent. " +
+                "Do not send it again unless the user explicitly asks."
+              : `The user declined to approve running ${toolName} on ${serverId}. ` +
+                "Do not run it again unless the user explicitly asks.",
             isError: true,
           };
         }

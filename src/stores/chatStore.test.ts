@@ -325,6 +325,53 @@ describe("chatStore", () => {
       await expect(p2).resolves.toBe("approved");
       expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
     });
+
+    it("queues a second confirmation requested while the first is still pending, instead of replacing it", async () => {
+      // Only reachable today if the agent protocol ever parallelises function
+      // calls -- it currently serialises them, so requestToolConfirmation is
+      // never called again before the previous one resolves. Guarded anyway:
+      // without the queue, this second call would overwrite
+      // pendingToolConfirmation (the dialog's only data source) out from
+      // under the first one, permanently stranding its promise.
+      const p1 = useChatStore
+        .getState()
+        .requestToolConfirmation("symphony-bridge", "post_to_symphony", { message: "one" });
+      const pending1 = useChatStore.getState().pendingToolConfirmation!;
+
+      const p2 = useChatStore
+        .getState()
+        .requestToolConfirmation("symphony-bridge", "post_to_symphony", { message: "two" });
+
+      // The first confirmation is still the one visible; the second has not
+      // silently replaced it.
+      expect(useChatStore.getState().pendingToolConfirmation).toEqual(pending1);
+
+      useChatStore.getState().resolveToolConfirmation(pending1.id, "approved");
+      await expect(p1).resolves.toBe("approved");
+
+      // Resolving the first promotes the queued second confirmation to visible.
+      const pending2 = useChatStore.getState().pendingToolConfirmation;
+      expect(pending2).toMatchObject({ parameters: { message: "two" } });
+      expect(pending2!.id).not.toBe(pending1.id);
+
+      useChatStore.getState().resolveToolConfirmation(pending2!.id, "declined");
+      await expect(p2).resolves.toBe("declined");
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+    });
+
+    it("cancel() declines a queued confirmation too, not just the visible one", async () => {
+      useChatStore
+        .getState()
+        .requestToolConfirmation("symphony-bridge", "post_to_symphony", { message: "one" });
+      const p2 = useChatStore
+        .getState()
+        .requestToolConfirmation("symphony-bridge", "post_to_symphony", { message: "two" });
+
+      useChatStore.getState().cancel();
+
+      await expect(p2).resolves.toBe("declined");
+      expect(useChatStore.getState().pendingToolConfirmation).toBeNull();
+    });
   });
 
   it("persists once per turn, not per streamed delta", async () => {
