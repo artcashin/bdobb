@@ -125,7 +125,7 @@ def load_release_gate(app):
     return module
 
 
-def collect(app, target):
+def collect(app, target, auditor=None):
     root = app / "src-tauri/target" / os.environ["BDOBB_RUST_TARGET"] / "release/bundle"
     names = expected_names(target)
     found = []
@@ -149,7 +149,7 @@ def collect(app, target):
             found.append(archive)
     env = os.environ.copy()
     env["BDOBB_ARTIFACT_PATHS"] = json.dumps(list(map(str, found)))
-    run([sys.executable, app / "scripts/public-release.py", "stage"], cwd=app, env=env)
+    run([sys.executable, (auditor or app) / "scripts/public-release.py", "stage"], cwd=app, env=env)
     require_packages(app / "release-stage", names)
 
 
@@ -252,7 +252,7 @@ def native_runtime(executable, package, work, evidence, expected_arch):
             shutil.move(str(data), work / "created-roaming-profile")
 
 
-def qualify(app, target):
+def qualify(app, target, auditor=None):
     if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted":
         raise ValueError("Runtime smoke is restricted to ephemeral GitHub-hosted runners")
     expected_arch = TARGETS[target][0]
@@ -261,7 +261,7 @@ def qualify(app, target):
         raise ValueError("Runner must natively match target architecture")
     if run(["git", "rev-parse", "HEAD"], cwd=app, capture_output=True).stdout.strip() != SOURCE_COMMIT:
         raise ValueError("App checkout is not pinned final V3 source")
-    gate = load_release_gate(app)
+    gate = load_release_gate(auditor or app)
     stage = app / "release-stage"
     require_packages(stage, expected_names(target))
     if json.loads((app / "source-offer.json").read_text())["sourceId"] != SOURCE_ID:
@@ -289,6 +289,8 @@ def qualify(app, target):
             gate.check_frontend(frontend)
             verify_offer(frontend)
             record = {"sha256": digest, "source_commit": SOURCE_COMMIT, "source_id": SOURCE_ID, "embedded_offer": EXPECTED_OFFER, "embedded_defaults": "all six exact empty values verified by app checker", "executable_sha256": sha256(executable), "architecture": expected_arch}
+            if auditor is not None:
+                record["auditor_commit"] = run(["git", "rev-parse", "HEAD"], cwd=auditor, capture_output=True).stdout.strip()
             record["extracted_executable_member"] = member
             record["launch_executable_name"] = executable.name
             if platform.system() == "Darwin":
@@ -329,13 +331,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["collect", "qualify", "aggregate"])
     parser.add_argument("--app", type=Path, default=Path.cwd())
+    parser.add_argument("--auditor", type=Path)
     parser.add_argument("--target", choices=TARGETS)
     parser.add_argument("--root", type=Path)
     args = parser.parse_args()
     if args.mode == "collect":
-        collect(args.app.resolve(), args.target)
+        collect(args.app.resolve(), args.target, args.auditor.resolve() if args.auditor else None)
     elif args.mode == "qualify":
-        qualify(args.app.resolve(), args.target)
+        qualify(args.app.resolve(), args.target, args.auditor.resolve() if args.auditor else None)
     else:
         records = aggregate(args.root)
         output = Path("qualification-all12")

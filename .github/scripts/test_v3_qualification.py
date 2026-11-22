@@ -1,9 +1,43 @@
-import importlib.util, json, struct, tempfile, unittest
+import importlib.util, io, json, struct, tempfile, unittest
 from pathlib import Path
 P = Path(__file__).with_name('v3_qualification.py')
 spec = importlib.util.spec_from_file_location('qualification', P)
 q = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(q)
+control_spec = importlib.util.spec_from_file_location('controls', Path(__file__).with_name('run_auditor_controls.py'))
+controls = importlib.util.module_from_spec(control_spec)
+control_spec.loader.exec_module(controls)
+
+
+def probe(test_id, fail=False):
+    class Probe(unittest.TestCase):
+        def id(self):
+            return test_id
+
+        def runTest(self):
+            if fail:
+                self.fail('Unomitted control failure must remain a failure')
+    return Probe('runTest')
+
+
+class ControlHarnessTest(unittest.TestCase):
+    def test_windows_omissions_do_not_suppress_other_failures(self):
+        suite = unittest.TestSuite([probe(name) for name in controls.WINDOWS_OMISSIONS])
+        suite.addTest(probe('ordinary.native.control', fail=True))
+        result = unittest.TextTestRunner(stream=io.StringIO()).run(controls.scoped_suite(suite, 'Windows'))
+        self.assertEqual(len(result.skipped), 11)
+        self.assertEqual(len(result.failures), 1)
+        self.assertFalse(result.wasSuccessful())
+
+    def test_posix_retains_every_control(self):
+        suite = unittest.TestSuite([probe(name) for name in controls.WINDOWS_OMISSIONS])
+        result = unittest.TextTestRunner(stream=io.StringIO()).run(controls.scoped_suite(suite, 'Linux'))
+        self.assertEqual(result.testsRun, 11)
+        self.assertEqual(result.skipped, [])
+
+    def test_unknown_auditor_omission_cannot_silently_match_nothing(self):
+        with self.assertRaises(ValueError):
+            controls.scoped_suite(unittest.TestSuite([probe('unrelated')]), 'Windows')
 
 class QualificationTest(unittest.TestCase):
 
