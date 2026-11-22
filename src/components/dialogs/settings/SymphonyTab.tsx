@@ -44,6 +44,23 @@ export default function SymphonyTab({ settings, onChange, fieldIds }: SymphonyTa
           </p>
         </div>
         <div className="settings-field">
+          <label className="settings-label" htmlFor={`${fieldIds}-symphonyDisplayName`}>
+            Display Name
+          </label>
+          <input
+            id={`${fieldIds}-symphonyDisplayName`}
+            type="text"
+            value={settings.symphonyDisplayName}
+            onChange={(e) => onChange({ symphonyDisplayName: e.target.value })}
+            className="settings-input"
+            placeholder="Your name"
+          />
+          <p className="settings-hint">
+            Stamped on messages you send as "📤 {"{name}"} via BDOBB". Leave blank to send
+            unattributed.
+          </p>
+        </div>
+        <div className="settings-field">
           <label className="settings-label" htmlFor={`${fieldIds}-symphonyBridgeUrl`}>
             Bridge URL
           </label>

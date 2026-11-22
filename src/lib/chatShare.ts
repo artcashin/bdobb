@@ -161,6 +161,13 @@ export interface SymphonyShareInput {
   data: unknown;
   /** table only: the widget's declared columns, for header labels/order. */
   columns?: ColumnDef[] | null;
+  /**
+   * Display name stamped on the message as "📤 {sender} via BDOBB" by the
+   * bridge. A self-asserted courtesy label, not an identity claim -- the
+   * bridge does not and cannot authenticate it. Omitted from the request
+   * entirely when blank; see the send site below.
+   */
+  sender?: string;
 }
 
 function slugify(title: string): string {
@@ -246,6 +253,10 @@ export async function shareWidgetToSymphony(
       },
     };
   }
+
+  // Blank/whitespace-only names are dropped rather than sent as "" -- the
+  // bridge degrades to an unattributed stamp only when the key is absent.
+  if (input.sender && input.sender.trim()) body.sender = input.sender;
 
   const doFetch = deps.fetchImpl ?? (tauriFetch as unknown as typeof fetch);
   const res = await doFetch(`${input.bridgeUrl.replace(/\/+$/, "")}/messages`, {

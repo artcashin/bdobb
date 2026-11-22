@@ -3,6 +3,12 @@ target/
 dist/
 coverage/
 
+# python (deploy/symphony-bridge)
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/
+
 # Local machine / deployment configuration — never commit real endpoints,
 # hostnames, tailnet names or credentials. Copy .env.example to .env.local.
 .env

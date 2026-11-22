@@ -8,6 +8,7 @@ const baseSettings = {
   symphonyPodUrl: "https://my-pod.symphony.com",
   symphonyPartnerId: "partner-9",
   symphonyBridgeUrl: "http://localhost:9100",
+  symphonyDisplayName: "Art Cashin",
 };
 
 function renderTab(over: Partial<typeof baseSettings> = {}) {
@@ -19,11 +20,12 @@ function renderTab(over: Partial<typeof baseSettings> = {}) {
 }
 
 describe("SymphonyTab", () => {
-  it("renders the three Symphony fields with their current values", () => {
+  it("renders the four Symphony fields with their current values", () => {
     renderTab();
     expect(screen.getByLabelText("Pod URL")).toHaveValue("https://my-pod.symphony.com");
     expect(screen.getByLabelText("Partner ID")).toHaveValue("partner-9");
     expect(screen.getByLabelText("Bridge URL")).toHaveValue("http://localhost:9100");
+    expect(screen.getByLabelText("Display Name")).toHaveValue("Art Cashin");
   });
 
   it("reports a pod URL edit via onChange", () => {
@@ -48,5 +50,13 @@ describe("SymphonyTab", () => {
       target: { value: "http://localhost:9200" },
     });
     expect(onChange).toHaveBeenCalledWith({ symphonyBridgeUrl: "http://localhost:9200" });
+  });
+
+  it("reports a display name edit via onChange", () => {
+    const { onChange } = renderTab();
+    fireEvent.change(screen.getByLabelText("Display Name"), {
+      target: { value: "Rita" },
+    });
+    expect(onChange).toHaveBeenCalledWith({ symphonyDisplayName: "Rita" });
   });
 });
