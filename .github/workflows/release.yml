@@ -1,58 +1,89 @@
-name: Release
+name: Legacy desktop rebuild
+run-name: Legacy desktop rebuild (${{ inputs.version }})
 
-# Vite copies VITE_* into the installer frontend. Explicit empty values
-# take precedence over .env files while users retain their saved settings.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Tag to rebuild
+        type: choice
+        required: true
+        default: all
+        options: [all, v3.0.0, v4.0.0, v5.0.0, v6.0.0, v7.0.0, v8.0.0, v9.0.0]
+
+permissions:
+  contents: read
+
 env:
   VITE_OPENBB_API_URL: ''
   VITE_RITA_URL: ''
   VITE_MCP_SERVERS: ''
   VITE_SHARE_FOLDERS: ''
 
-# Bundling is slow and needs a Rust toolchain per platform, so it runs on a tag
-# rather than on every push.
-#
-# Four desktop targets. Everything is unsigned, so first launch needs
-# right-click-Open on macOS and a SmartScreen dismissal on Windows; Linux
-# AppImage/deb are unaffected.
-#
-# iOS is deliberately absent: it cannot be produced by tauri-action, needs full
-# Xcode and a signing identity, and the touch story is unresolved (see
-# docs/building.md). `pnpm ios:*` covers it locally.
-on:
-  push:
-    tags: ["v*"]
-  workflow_dispatch:
-
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.pick.outputs.versions }}
+      commits: ${{ steps.pick.outputs.commits }}
+    steps:
+      - id: pick
+        shell: bash
+        env:
+          SELECTED_VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+
+          releases = {
+              "v3.0.0": "0eb953effaeedc78c0998f739fdf6f53fac1f36c",
+              "v4.0.0": "7878a924cb4a39b8ed219f5401954c0e849ba39e",
+              "v5.0.0": "dbde9f63753ffe8662e8654b9c38684d331e0091",
+              "v6.0.0": "8bb1b003127636341f5ef9c8b93048ea3079e085",
+              "v7.0.0": "c290511ef64b666fb2f7e05439bac9a7ce71a4c7",
+              "v8.0.0": "ba341837303bc93cdfece868d14e8009c14698d6",
+              "v9.0.0": "7c10ba7efabe0966c9bc0d4bfc91e617cdfeabb5",
+          }
+          chosen = os.environ["SELECTED_VERSION"]
+          versions = list(releases) if chosen == "all" else [chosen]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print("versions=" + json.dumps(versions), file=output)
+              print("commits=" + json.dumps(releases), file=output)
+          PYTHON
+
   bundle:
-    name: ${{ matrix.label }}
+    name: ${{ matrix.version }} ${{ matrix.label }}
+    needs: plan
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
     strategy:
       fail-fast: false
       matrix:
+        version: ${{ fromJSON(needs.plan.outputs.versions) }}
+        target: [mac-arm, mac-intel, windows, linux-x64, linux-arm]
         include:
-          - os: macos-latest
+          - target: mac-arm
+            os: macos-latest
             label: macOS (Apple Silicon)
             args: --target aarch64-apple-darwin
             rust-target: aarch64-apple-darwin
-          - os: macos-latest
+          - target: mac-intel
+            os: macos-latest
             label: macOS (Intel)
             args: --target x86_64-apple-darwin
             rust-target: x86_64-apple-darwin
-          - os: windows-latest
+          - target: windows
+            os: windows-latest
             label: Windows (x64)
             args: ""
             rust-target: x86_64-pc-windows-msvc
-          - os: ubuntu-22.04
+          - target: linux-x64
+            os: ubuntu-22.04
             label: Linux (x86_64)
             args: ""
             rust-target: x86_64-unknown-linux-gnu
-          # DGX Spark is Grace/Blackwell — arm64, not x86. A native arm64
-          # runner avoids cross-compiling a webkit2gtk link, which is the part
-          # that makes Linux cross-builds miserable.
-          - os: ubuntu-22.04-arm
+          - target: linux-arm
+            os: ubuntu-22.04-arm
             label: Linux (arm64 / DGX)
             args: ""
             rust-target: aarch64-unknown-linux-gnu
@@ -61,6 +92,20 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      - name: Check out original release source
+        shell: bash
+        env:
+          SOURCE_COMMIT: ${{ fromJSON(needs.plan.outputs.commits)[matrix.version] }}
+          RELEASE_VERSION: ${{ matrix.version }}
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/bdobb-release-gate"
+          cp scripts/public-release.py scripts/test_public_release.py "$RUNNER_TEMP/bdobb-release-gate/"
+          git fetch --no-tags --depth=1 origin "$SOURCE_COMMIT"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          node -e 'const v=process.env.RELEASE_VERSION.slice(1); for (const p of ["./package.json", "./src-tauri/tauri.conf.json"]) if(require(p).version!==v) process.exit(1)'
 
       - uses: pnpm/action-setup@v6
 
@@ -106,45 +151,19 @@ jobs:
         run: cargo install tauri-dumper --version 0.2.2 --locked
 
       - name: Test the release scanner
-        run: python -m unittest discover -s scripts -p test_public_release.py
+        shell: bash
+        run: python -m unittest discover -s "$RUNNER_TEMP/bdobb-release-gate" -p test_public_release.py
 
       - name: Reject private defaults in the exact installers
         env:
           BDOBB_ARTIFACT_PATHS: ${{ steps.build.outputs.artifactPaths }}
           BDOBB_RUST_TARGET: ${{ matrix.rust-target }}
-        run: python scripts/public-release.py stage
+        shell: bash
+        run: python "$RUNNER_TEMP/bdobb-release-gate/public-release.py" stage
 
       - uses: actions/upload-artifact@v4
         with:
-          name: scanned-${{ matrix.rust-target }}
+          name: scanned-${{ matrix.version }}-${{ matrix.rust-target }}
           path: release-stage/
           if-no-files-found: error
-
-  draft:
-    # Manual dispatches leave scanned artifacts on the run for review.
-    if: github.ref_type == 'tag'
-    needs: bundle
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: scanned-*
-          path: staged
-      - name: Verify the scanned digest of every package
-        run: python scripts/verify-staged.py staged verified
-      - name: Create the draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          [ "$GITHUB_REF_NAME" = "v$(node -p 'require("./package.json").version')" ]
-          gh release create "$GITHUB_REF_NAME" verified/* --verify-tag --draft --title "BDOBB $GITHUB_REF_NAME"
+          retention-days: 7
