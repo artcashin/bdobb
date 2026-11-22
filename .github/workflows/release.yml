@@ -34,7 +34,7 @@ env:
   SOURCE_COMMIT: de25611461ad0559ce237c4f59b812decd91dec1
   SOURCE_REPOSITORY: https://github.com/Adventures-OpenBQ/bdobb.git
   RUSTUP_TOOLCHAIN: 1.99.1
-  AUDITOR_COMMIT: e412f7214c352b211c6da743bf0387631e40fbd2
+  AUDITOR_COMMIT: 60866feb4f0e933f9264628c12911be810516de0
   PYTHONUTF8: '1'
   VITE_OPENBB_API_URL: ''
   VITE_RITA_URL: ''
@@ -271,6 +271,8 @@ jobs:
 
   install:
     needs: plan
+    env:
+      AUDITOR_COMMIT: e412f7214c352b211c6da743bf0387631e40fbd2
     permissions:
       contents: read
       actions: read
