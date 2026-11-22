@@ -341,4 +341,4 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Confirm against the real rss-ticker**
 
-The unit tests are hermetic (injected `fetchImpl`, no network). Before calling this done, ask Art to open a dashboard with the News rail widget pointed at the real backend (`https://rss-feedhandler.tailb9874f.ts.net`, user `art`) and confirm: icons appear next to sources that have one resolved (7 of the 10 configured feeds, per the spec's live check), no icon (and no broken-image glyph) for Bloomberg/WSJ, and the rail's live streaming behavior is unchanged.
+The unit tests are hermetic (injected `fetchImpl`, no network). Before calling this done, ask Art to open a dashboard with the News rail widget pointed at the real backend (`https://rss-feedhandler.<your-tailnet>.ts.net`, user `art`) and confirm: icons appear next to sources that have one resolved (7 of the 10 configured feeds, per the spec's live check), no icon (and no broken-image glyph) for Bloomberg/WSJ, and the rail's live streaming behavior is unchanged.
