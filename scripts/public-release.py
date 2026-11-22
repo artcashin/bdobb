@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Stage desktop release packages only after inspecting their installed bytes."""
-import gzip
 import hashlib
 import json
 import os
@@ -108,14 +107,21 @@ def unpack(source, dest):
 
 def scan_tree(root):
     files = []
-    for path in root.rglob("*"):
-        rel = path.relative_to(root)
-        check_bytes(os.fsencode(str(rel)), "package path")
-        if path.is_symlink():
-            check_bytes(os.fsencode(os.readlink(path)), f"link {rel}")
-        elif path.is_file():
-            check_bytes(path.read_bytes(), str(rel))
-            files.append(path)
+    def unreadable(_error):
+        raise GateError("Unreadable package directory")
+
+    for directory, subdirs, names in os.walk(root, followlinks=False, onerror=unreadable):
+        for name in sorted(subdirs + names):
+            path = Path(directory) / name
+            rel = path.relative_to(root)
+            check_bytes(os.fsencode(str(rel)), "package path")
+            if path.is_symlink():
+                check_bytes(os.fsencode(os.readlink(path)), f"link {rel}")
+            elif path.is_file():
+                check_bytes(path.read_bytes(), str(rel))
+                files.append(path)
+            elif not path.is_dir():
+                raise GateError("Unexpected file type in package")
     return files
 
 

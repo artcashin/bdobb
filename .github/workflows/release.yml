@@ -105,13 +105,14 @@ jobs:
       - name: Install the embedded frontend extractor
         run: cargo install tauri-dumper --version 0.2.2 --locked
 
+      - name: Test the release scanner
+        run: python -m unittest discover -s scripts -p test_public_release.py
+
       - name: Reject private defaults in the exact installers
         env:
           BDOBB_ARTIFACT_PATHS: ${{ steps.build.outputs.artifactPaths }}
           BDOBB_RUST_TARGET: ${{ matrix.rust-target }}
-        run: |
-          python -m unittest discover -s scripts -p test_public_release.py
-          python scripts/public-release.py stage
+        run: python scripts/public-release.py stage
 
       - uses: actions/upload-artifact@v4
         with:
