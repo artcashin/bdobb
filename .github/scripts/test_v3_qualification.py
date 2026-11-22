@@ -7,6 +7,20 @@ spec.loader.exec_module(q)
 
 class QualificationTest(unittest.TestCase):
 
+    def test_msi_path_member_launches_only_as_identical_exe_copy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            unpacked = work / 'unpacked'
+            unpacked.mkdir()
+            payload = unpacked / 'Path'
+            payload.write_bytes(b'exact executable bytes')
+            binary, member = q.locate_executable(unpacked, Path('BDOBB.msi'), work)
+            self.assertEqual(member, 'Path')
+            self.assertEqual(binary.name, 'bdobb.exe')
+            self.assertEqual(binary.read_bytes(), payload.read_bytes())
+            with self.assertRaises(ValueError):
+                q.locate_executable(unpacked, Path('BDOBB.exe'), work)
+
     def test_twelve_original_names(self):
         names = [n for t in q.TARGETS for n in q.expected_names(t)]
         self.assertEqual(len(names), 12)

@@ -97,6 +97,27 @@ def verify_empty_profile(data):
         raise ValueError("Fresh runtime contains Workspace connections")
 
 
+def locate_executable(unpacked, package, work):
+    allowed_names = {"bdobb", "bdobb.exe"}
+    if package.suffix == ".msi":
+        # WiX's CAB file identifier is Path; 7-Zip exposes that identifier.
+        allowed_names.add("path")
+    binaries = [p for p in unpacked.rglob("*") if p.is_file() and p.name.lower() in allowed_names]
+    if len(binaries) != 1:
+        raise ValueError("Expected exactly one final native executable")
+    executable = binaries[0]
+    member = str(executable.relative_to(unpacked))
+    if executable.name.lower() == "path":
+        installed = work / "installed"
+        installed.mkdir()
+        launch_copy = installed / "bdobb.exe"
+        shutil.copy2(executable, launch_copy)
+        if sha256(launch_copy) != sha256(executable):
+            raise ValueError("MSI executable copy changed bytes")
+        executable = launch_copy
+    return executable, member
+
+
 def load_release_gate(app):
     spec = importlib.util.spec_from_file_location("app_release_gate", app / "scripts/public-release.py")
     module = importlib.util.module_from_spec(spec)
@@ -261,16 +282,15 @@ def qualify(app, target):
             unpacked = work / "unpacked"
             unpacked.mkdir()
             gate.unpack(package, unpacked)
-            binaries = [p for p in unpacked.rglob("*") if p.is_file() and p.name.lower() in {"bdobb", "bdobb.exe"}]
-            if len(binaries) != 1:
-                raise ValueError("Expected exactly one final native executable")
-            executable = binaries[0]
+            executable, member = locate_executable(unpacked, package, work)
             require_arch(executable, expected_arch)
             frontend = work / "frontend"
             run(["tauri-dumper", "extract", executable, "-o", frontend, "--json"], capture_output=True)
             gate.check_frontend(frontend)
             verify_offer(frontend)
             record = {"sha256": digest, "source_commit": SOURCE_COMMIT, "source_id": SOURCE_ID, "embedded_offer": EXPECTED_OFFER, "embedded_defaults": "all six exact empty values verified by app checker", "executable_sha256": sha256(executable), "architecture": expected_arch}
+            record["extracted_executable_member"] = member
+            record["launch_executable_name"] = executable.name
             if platform.system() == "Darwin":
                 bundle = executable.parents[2]
                 meta = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
