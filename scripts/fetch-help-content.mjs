@@ -12,7 +12,8 @@ import { fetchRepo } from "./help/fetchRepo.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
-const version = pkg.version;
+// Packaging-only patches can explicitly reuse their release line's help snapshot.
+const version = pkg.helpContentVersion ?? pkg.version;
 
 const REPO_URL = "https://github.com/artcashin/bdobb-help.git";
 const cacheDir = resolve(root, ".help-cache");
