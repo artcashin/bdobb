@@ -1,5 +1,5 @@
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DashboardCard } from "../lib/types";
 import WidgetCard from "./WidgetCard";
 import { fetchWidgetData, fetchWidgetHtml } from "../lib/dataClient";
@@ -188,6 +188,15 @@ beforeEach(() => {
   ]);
   backendsList = [BACKEND];
   settingsFixture = { symphonyPodUrl: "", symphonyPartnerId: "", symphonyBridgeUrl: "" };
+});
+
+// Belt and suspenders alongside the beforeEach reset above: a few tests set
+// backendsList = [] mid-test and restore it inline before the test ends. If
+// an assertion between those two lines throws, the inline restore never
+// runs. beforeEach already re-seeds it before the next test either way, but
+// this removes the dependency on that ordering entirely.
+afterEach(() => {
+  backendsList = [BACKEND];
 });
 
 describe("WidgetCard", () => {
@@ -597,7 +606,6 @@ describe("WidgetCard built-in widgets", () => {
     expect(vi.mocked(fetchWidgetData)).not.toHaveBeenCalled();
     expect(vi.mocked(fetchWidgetHtml)).not.toHaveBeenCalled();
     expect(screen.queryByText(/is not configured/)).not.toBeInTheDocument();
-    backendsList = [BACKEND];
   });
 
   it("persists an edited note onto the card", async () => {
@@ -703,7 +711,6 @@ describe("WidgetCard built-in widgets", () => {
     );
     expect(screen.getByTitle("Website")).toHaveAttribute("src", "https://example.com/page");
     expect(vi.mocked(fetchWidgetData)).not.toHaveBeenCalled();
-    backendsList = [BACKEND];
   });
 
   it("renders a Symphony iframe from card params, mapped to SymphonyRenderer's shape, without fetching", () => {
@@ -727,7 +734,6 @@ describe("WidgetCard built-in widgets", () => {
       "https://my-pod.symphony.com/embed/index.html?streamId=stream-1&partnerId=&mode=focus&theme=dark&condensed=true"
     );
     expect(vi.mocked(fetchWidgetData)).not.toHaveBeenCalled();
-    backendsList = [BACKEND];
   });
 
   it("strips a leading https:// scheme from the pod URL before framing it", () => {
@@ -896,6 +902,24 @@ describe("WidgetCard built-in widgets", () => {
       "src",
       expect.stringMatching(/^https:\/\/settings-pod\.symphony\.com\/embed\//)
     );
+  });
+
+  it("shows the unconfigured hint, not a broken iframe, when neither the card's podUrl nor settings.symphonyPodUrl is set", () => {
+    // The fallback chain is `card podUrl || settings.symphonyPodUrl` -- every
+    // other test here covers one side winning over the other, but not both
+    // being empty at once.
+    settingsFixture = { symphonyPodUrl: "", symphonyPartnerId: "", symphonyBridgeUrl: "" };
+    render(
+      <WidgetCard
+        card={makeCard({
+          widgetId: "builtin:symphony",
+          backendId: "builtin",
+          params: { streamId: "stream-1" },
+        })}
+      />
+    );
+    expect(screen.getByText(/Set a pod and stream ID/)).toBeInTheDocument();
+    expect(screen.queryByTitle("Symphony")).not.toBeInTheDocument();
   });
 
   it("normalizes settings.symphonyPodUrl the same way as a card-supplied pod (strips scheme and trailing slash)", () => {
@@ -1247,6 +1271,21 @@ describe("Send to Symphony", () => {
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByText(/Failed: bot not in room/)).toBeInTheDocument());
     expect(vi.mocked(logError)).toHaveBeenCalledWith(expect.stringContaining("bot not in room"));
+    promptSpy.mockRestore();
+  });
+
+  it("dismisses the status line without waiting for the next send", async () => {
+    // Otherwise a stale "Failed: ..." (or an old success line) sits under the
+    // card forever -- only the NEXT send replaces it.
+    settingsFixture = { ...settingsFixture, symphonyBridgeUrl: "http://localhost:9911" };
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("stream-1");
+    render(<WidgetCard card={makeCard()} />);
+    await waitFor(() => expect(screen.getByText(/Alice/i)).toBeInTheDocument());
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByText(/Symphony: HTTP 200/)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /dismiss symphony status/i }));
+    expect(screen.queryByText(/Symphony: HTTP 200/)).not.toBeInTheDocument();
     promptSpy.mockRestore();
   });
 });

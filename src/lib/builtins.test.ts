@@ -48,6 +48,31 @@ describe("Symphony built-in", () => {
     expect(theme.value).toBe("dark");
   });
 
+  // The doc comment above SYMPHONY_MODE_PARAM/SYMPHONY_THEME_PARAM promises a
+  // closed set ("focus" | "split", "dark" | "light"). Without `options` set,
+  // param() leaves it null and ParamControls falls back to a free-text box,
+  // so a user could type "Focus" or "light-mode" and get it pasted verbatim
+  // into the embed URL. Encoding the real choices here makes the settings UI
+  // offer a dropdown instead (ParamControls renders a <select> whenever a
+  // text-type param has a non-empty `options` list).
+  it("encodes mode as a closed choice of focus/split, not free text", () => {
+    const widget = findBuiltin(BUILTIN_SYMPHONY_ID)!;
+    const mode = widget.params.find((p) => p.paramName === SYMPHONY_MODE_PARAM)!;
+    expect(mode.options).toEqual([
+      { label: "Focus", value: "focus" },
+      { label: "Split", value: "split" },
+    ]);
+  });
+
+  it("encodes theme as a closed choice of dark/light, not free text", () => {
+    const widget = findBuiltin(BUILTIN_SYMPHONY_ID)!;
+    const theme = widget.params.find((p) => p.paramName === SYMPHONY_THEME_PARAM)!;
+    expect(theme.options).toEqual([
+      { label: "Dark", value: "dark" },
+      { label: "Light", value: "light" },
+    ]);
+  });
+
   it("declares podUrl and streamId as plain params with no baked-in default", () => {
     const widget = findBuiltin(BUILTIN_SYMPHONY_ID)!;
     const podUrl = widget.params.find((p) => p.paramName === SYMPHONY_POD_URL_PARAM)!;

@@ -1098,6 +1098,17 @@ describe("ChatPane", () => {
   // send_message, ...) that are not actually posting a message. The dialog
   // must not assert a destination/message it never parsed for those.
   describe("Fix 2: dialog phrasing matches what the gate actually knows", () => {
+    // Several tests below leave a confirmation pending (asserting the dialog
+    // renders, without ever resolving it) -- previously harmless because a
+    // later test's own requestToolConfirmation call would just silently
+    // overwrite whatever was left over. Now that a second call queues behind
+    // an existing pending one instead of overwriting it (chatStore's
+    // requestToolConfirmation), a leftover from the previous test would
+    // starve the next test's own confirmation from ever becoming visible.
+    beforeEach(() => {
+      useChatStore.getState().clear();
+    });
+
     it("uses neutral phrasing naming the tool and server, and claims no message/destination, for a non-post_to_symphony call", async () => {
       const LIST_ROOMS_TOOL: AgentTool = {
         server_id: "symphony-bridge",
@@ -1136,6 +1147,56 @@ describe("ChatPane", () => {
       expect(screen.queryByText(/wants to post this message/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/destination could not be determined/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/no message text found/i)).not.toBeInTheDocument();
+    });
+
+    it("phrases the model-facing decline message to match the dialog's neutral phrasing for a non-post_to_symphony call", async () => {
+      // The dialog itself only asserts "wants to post this message" for a
+      // genuine post_to_symphony call -- for anything else the broadened
+      // gate also catches, it names the tool/server instead. The decline
+      // text handed back to the model must not assert more than the dialog
+      // itself claimed.
+      const LIST_ROOMS_TOOL: AgentTool = {
+        server_id: "symphony-bridge",
+        name: "symphony_list_rooms",
+        url: "https://bridge.test/mcp",
+        endpoint: "",
+        description: "List Symphony rooms",
+        input_schema: {},
+      };
+      vi.spyOn(mcpModule, "assembleTools").mockResolvedValue({
+        tools: [LIST_ROOMS_TOOL],
+        budgetExceeded: [],
+        unreachable: [],
+      });
+      const runQuerySpy = vi.spyOn(agentClientModule, "runAgentQuery").mockResolvedValue([]);
+
+      render(<ChatPane />);
+      const input = screen.getByPlaceholderText("Message Rita...");
+      fireEvent.change(input, { target: { value: "list the rooms" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await waitFor(() => expect(runQuerySpy).toHaveBeenCalled());
+      const runAgentTool = runQuerySpy.mock.calls[0][0].runAgentTool!;
+
+      let outcome: { content: string; isError?: boolean } | null | undefined;
+      act(() => {
+        void runAgentTool("symphony-bridge", "symphony_list_rooms", {}).then((r) => {
+          outcome = r;
+        });
+      });
+
+      const id = useChatStore.getState().pendingToolConfirmation!.id;
+      await act(async () => {
+        useChatStore.getState().resolveToolConfirmation(id, "declined");
+      });
+
+      await waitFor(() => expect(outcome).toBeDefined());
+      expect(outcome!.isError).toBe(true);
+      expect(outcome!.content).not.toMatch(/symphony message/i);
+      expect(outcome!.content).toMatch(/symphony_list_rooms/);
+      expect(outcome!.content).toMatch(/symphony-bridge/);
+      expect(outcome!.content).toMatch(/declined/i);
     });
 
     it("still shows the original confident phrasing for a genuine post_to_symphony call (regression guard)", async () => {

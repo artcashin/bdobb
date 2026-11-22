@@ -187,12 +187,20 @@ export const BUILTIN_WIDGETS: WidgetDef[] = [
         label: "Mode",
         description: "Embed layout.",
         value: "focus",
+        options: [
+          { label: "Focus", value: "focus" },
+          { label: "Split", value: "split" },
+        ],
       }),
       param({
         paramName: SYMPHONY_THEME_PARAM,
         label: "Theme",
         description: "Embed color theme.",
         value: "dark",
+        options: [
+          { label: "Dark", value: "dark" },
+          { label: "Light", value: "light" },
+        ],
       }),
     ],
   }),

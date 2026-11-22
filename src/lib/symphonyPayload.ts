@@ -1,6 +1,13 @@
-import Plotly from "plotly.js-dist-min";
 import type { ColumnDef } from "./types";
 import { buildFigureFromRecords, isPlotlyFigure, type PlotlyFigure } from "./chartShapes";
+
+// `typeof import(...)` is a pure type query -- it never emits a runtime
+// import, unlike `import Plotly from "plotly.js-dist-min"` used to. This
+// module is reached from the settings dialog's module graph (chatShare.ts ->
+// RitaTab.tsx), which never renders a chart, so a static import here pulled
+// the whole Plotly bundle in for no reason. See the dynamic `import()` inside
+// `defaultRenderChartPng` below for where it's actually loaded.
+type PlotlyModule = typeof import("plotly.js-dist-min");
 
 // ---- markdown -> Symphony MessageML ----
 //
@@ -150,6 +157,20 @@ function csvCell(value: unknown): string {
 }
 
 /**
+ * All keys across every row, in first-seen order. Reading `rows[0]` alone
+ * (the prior behavior) silently dropped any column that only appeared on a
+ * later, sparser or differently-shaped record -- common with sparse or
+ * heterogeneous JSON backends.
+ */
+function unionKeys(rows: Record<string, unknown>[]): string[] {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row)) seen.add(key);
+  }
+  return [...seen];
+}
+
+/**
  * Serializes rows to CSV. Declared columns (headerName, order, visibility)
  * are honored when given, matching what the card's table view shows; values
  * are emitted as plain strings/numbers rather than through the on-screen
@@ -166,7 +187,7 @@ export function rowsToCsv(
   );
   const cols: Pick<ColumnDef, "field" | "headerName">[] = declared.length
     ? declared
-    : Object.keys(rows[0]).map((field) => ({ field }));
+    : unionKeys(rows).map((field) => ({ field }));
 
   const header = cols.map((c) => csvEscape(c.headerName || c.field));
   const body = rows.map((row) => cols.map((c) => csvEscape(csvCell(row[c.field]))));
@@ -224,12 +245,12 @@ function toFigure(data: unknown): PlotlyFigure | null {
  */
 export async function defaultRenderChartPng(
   data: unknown,
-  deps: { toImage?: typeof Plotly.toImage } = {}
+  deps: { toImage?: PlotlyModule["default"]["toImage"] } = {}
 ): Promise<ChartPngResult> {
   const figure = toFigure(data);
   if (!figure) throw new Error("No chart data to send");
 
-  const toImage = deps.toImage ?? Plotly.toImage;
+  const toImage = deps.toImage ?? (await import("plotly.js-dist-min")).default.toImage;
   const dataUrl = await toImage(
     { data: figure.data, layout: figure.layout ?? {} },
     { format: "png", width: 900, height: 500 }
