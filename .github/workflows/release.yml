@@ -10,12 +10,18 @@ on:
         type: choice
         default: v3.0.0
         options: [v3.0.0]
+      target:
+        description: Native target to qualify; retry only failed targets
+        required: true
+        type: choice
+        default: all
+        options: [all, mac-arm, mac-intel, windows, linux-x64, linux-arm]
 
 permissions:
   contents: read
 
 concurrency:
-  group: v3-installer-qualification-${{ github.ref }}
+  group: v3-installer-qualification-${{ github.ref }}-${{ inputs.target || 'all' }}
   cancel-in-progress: false
 
 env:
@@ -32,30 +38,42 @@ env:
   PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
+  plan:
+    if: github.repository == 'artcashin/bdobb' && github.event_name == 'workflow_dispatch' && inputs.version == 'v3.0.0'
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - id: pick
+        shell: bash
+        env:
+          SELECTED_TARGET: ${{ inputs.target }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          rows = [
+              {'target':'mac-arm','os':'macos-15','rust-target':'aarch64-apple-darwin'},
+              {'target':'mac-intel','os':'macos-15-intel','rust-target':'x86_64-apple-darwin'},
+              {'target':'windows','os':'windows-2022','rust-target':'x86_64-pc-windows-msvc'},
+              {'target':'linux-x64','os':'ubuntu-22.04','rust-target':'x86_64-unknown-linux-gnu'},
+              {'target':'linux-arm','os':'ubuntu-22.04-arm','rust-target':'aarch64-unknown-linux-gnu'},
+          ]
+          selected = os.environ['SELECTED_TARGET'] or 'all'
+          assert selected == 'all' or selected in {row['target'] for row in rows}
+          matrix = {'include':[row for row in rows if selected == 'all' or row['target'] == selected]}
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print('matrix=' + json.dumps(matrix), file=output)
+          PYTHON
+
   bundle:
+    needs: plan
     if: github.repository == 'artcashin/bdobb' && github.event_name == 'workflow_dispatch' && inputs.version == 'v3.0.0'
     name: V3 ${{ matrix.target }} native qualification
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - target: mac-arm
-            os: macos-15
-            rust-target: aarch64-apple-darwin
-          - target: mac-intel
-            os: macos-15-intel
-            rust-target: x86_64-apple-darwin
-          - target: windows
-            os: windows-2022
-            rust-target: x86_64-pc-windows-msvc
-          - target: linux-x64
-            os: ubuntu-22.04
-            rust-target: x86_64-unknown-linux-gnu
-          - target: linux-arm
-            os: ubuntu-22.04-arm
-            rust-target: aarch64-unknown-linux-gnu
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     defaults:
       run:
         shell: bash
@@ -76,6 +94,7 @@ jobs:
           set -euo pipefail
           mkdir app
           git -C app init
+          git -C app config core.autocrlf false
           git -C app remote add release-source "$SOURCE_REPOSITORY"
           git -C app fetch --no-tags release-source "$SOURCE_COMMIT"
           git -C app checkout --detach FETCH_HEAD
@@ -205,6 +224,7 @@ jobs:
           retention-days: 7
 
   verify-all12:
+    if: inputs.target == 'all' || inputs.target == ''
     name: Verify all twelve original V3 installer bindings
     needs: bundle
     runs-on: ubuntu-22.04
