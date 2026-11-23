@@ -16,6 +16,22 @@ spec.loader.exec_module(t)
 
 
 class ToolTests(unittest.TestCase):
+    def test_nonzero_tool_exit_reports_only_fixed_stage_and_numeric_code(self):
+        failure = type('Process', (), {'returncode': 7, 'stdout': 'PRIVATE_STDOUT', 'stderr': 'PRIVATE_STDERR'})()
+        with mock.patch.object(t.subprocess, 'run', return_value=failure):
+            with self.assertRaises(t.ToolError) as caught:
+                t.execute(['private/executable', 'PRIVATE_ARGUMENT'], stage='BOOTSTRAP_LIST')
+        self.assertEqual(str(caught.exception), 'BOOTSTRAP_LIST_FAILED')
+        self.assertEqual(caught.exception.returncode, 7)
+        self.assertNotIn('PRIVATE', str(caught.exception))
+        stderr = io.StringIO()
+        args = ['--app', '/app', '--auditor', '/auditor', '--controller', '/controller', '--outdir', '/out']
+        with contextlib.redirect_stderr(stderr), mock.patch.object(t, 'install', side_effect=caught.exception):
+            self.assertEqual(t.main(args), 1)
+        self.assertEqual(json.loads(stderr.getvalue()), {'status': 'WINDOWS_SCANNER_TOOLS_FAILED', 'code': 'BOOTSTRAP_LIST_FAILED', 'tool_exit_code': 7})
+        with self.assertRaises(t.ToolError):
+            t.execute(['private/executable'], stage='PRIVATE_COMMAND_UNREVIEWED')
+
     def test_checksum_mismatch_refuses_execution_boundary(self):
         pin = {'size': 7, 'sha256': hashlib.sha256(b'verified').hexdigest()}
         with self.assertRaises(t.ToolError): t.verify_payload(b'changed', pin)

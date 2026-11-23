@@ -105,14 +105,28 @@ def extract_zip(source, destination):
                 with archive.open(entry) as reader, path.open('xb') as output: shutil.copyfileobj(reader, output)
 
 
-def execute(arguments, env=None):
-    process = subprocess.run(list(map(str, arguments)), capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, timeout=180)
-    if process.returncode != 0: raise ToolError('TOOL_EXECUTION_FAILED')
+EXECUTION_STAGES = {'BOOTSTRAP_LIST', 'BOOTSTRAP_EXTRACT', 'TESSERACT_LIST', 'TESSERACT_EXTRACT',
+                    'SEVENZIP_INFO', 'TESSERACT_VERSION', 'PDFINFO_VERSION', 'PDFDETACH_VERSION',
+                    'PDFTOTEXT_VERSION', 'PDFTOPPM_VERSION', 'OCR_LANGUAGES'}
+
+
+def execute(arguments, env=None, *, stage):
+    if stage not in EXECUTION_STAGES: raise ToolError('UNREVIEWED_EXECUTION_STAGE')
+    try:
+        process = subprocess.run(list(map(str, arguments)), capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, timeout=180)
+    except subprocess.TimeoutExpired:
+        raise ToolError(stage + '_TIMEOUT') from None
+    except OSError:
+        raise ToolError(stage + '_START_FAILED') from None
+    if process.returncode != 0:
+        error = ToolError(stage + '_FAILED')
+        error.returncode = process.returncode
+        raise error
     return process.stdout + '\n' + process.stderr
 
 
-def extract_7zip(tool, source, destination):
-    listing = execute([tool, 'l', '-slt', '--', source])
+def extract_7zip(tool, source, destination, *, stage):
+    listing = execute([tool, 'l', '-slt', '--', source], stage=stage + '_LIST')
     listing = listing.split('----------', 1)
     if len(listing) != 2: raise ToolError('ARCHIVE_LISTING_MISSING')
     names = []
@@ -123,7 +137,7 @@ def extract_7zip(tool, source, destination):
     if not names: raise ToolError('ARCHIVE_MEMBERS_MISSING')
     validate_member_names(names)
     destination.mkdir()
-    execute([tool, 'x', '-y', '-o' + str(destination), '--', source])
+    execute([tool, 'x', '-y', '-o' + str(destination), '--', source], stage=stage + '_EXTRACT')
 
 
 def parse_version(name, output):
@@ -179,10 +193,10 @@ def install(args):
         files = {name: download(pin, downloads) for name, pin in ASSETS.items()}
         # The official reduced 7z reader only bootstraps the full official SFX.
         # No installer is run and no registry or system PATH is modified.
-        extract_7zip(files['bootstrap'], files['7zip'], outdir / '7zip')
+        extract_7zip(files['bootstrap'], files['7zip'], outdir / '7zip', stage='BOOTSTRAP')
         for relative in ['7zip/7z.exe', '7zip/7z.dll']: verify_member(outdir / relative, MEMBERS[relative])
         sevenzip = outdir / '7zip/7z.exe'
-        extract_7zip(sevenzip, files['tesseract'], outdir / 'tesseract')
+        extract_7zip(sevenzip, files['tesseract'], outdir / 'tesseract', stage='TESSERACT')
         extract_zip(files['poppler'], outdir / 'poppler')
         tessdata = outdir / 'tesseract/tessdata'
         for model in ['eng', 'osd']:
@@ -200,10 +214,12 @@ def install(args):
             if not relative.endswith('.exe'): continue
             executable = outdir / relative
             name = executable.stem
-            output = execute([executable, 'i' if name == '7z' else '--version' if name == 'tesseract' else '-v'], env)
+            output = execute([executable, 'i' if name == '7z' else '--version' if name == 'tesseract' else '-v'], env,
+                             stage={'7z': 'SEVENZIP_INFO', 'tesseract': 'TESSERACT_VERSION', 'pdfinfo': 'PDFINFO_VERSION',
+                                    'pdfdetach': 'PDFDETACH_VERSION', 'pdftotext': 'PDFTOTEXT_VERSION', 'pdftoppm': 'PDFTOPPM_VERSION'}[name])
             tools[name] = {'version': parse_version(name, output), 'sha256': expected, 'relative_path': relative}
             if name == '7z' and not all(re.search(r'\b' + format + r'\b', output, re.I) for format in ['Nsis', 'Compound']): raise ToolError('REQUIRED_ARCHIVE_FORMAT_MISSING')
-        langs = execute([outdir / 'tesseract/tesseract.exe', '--list-langs'], env)
+        langs = execute([outdir / 'tesseract/tesseract.exe', '--list-langs'], env, stage='OCR_LANGUAGES')
         if not all(re.search(r'(?m)^' + lang + r'\s*$', langs) for lang in ['eng', 'osd']): raise ToolError('REQUIRED_OCR_LANGUAGE_MISSING')
         receipt = {'schema': 1, 'purpose': 'PINNED WINDOWS SCANNER DEPENDENCIES; NO PRODUCT QUALIFICATION CLAIM',
                    'source_commit': SOURCE, 'source_offer_id': OFFER, 'auditor_commit': AUDITOR, 'controller_commit': controller,
@@ -233,7 +249,11 @@ def main(argv=None):
         return 0
     except Exception as error:
         code = str(error) if isinstance(error, ToolError) and re.fullmatch('[A-Z_]+', str(error)) else 'TOOL_SETUP_FAILED'
-        print(json.dumps({'status': 'WINDOWS_SCANNER_TOOLS_FAILED', 'code': code}), file=sys.stderr)
+        diagnostic = {'status': 'WINDOWS_SCANNER_TOOLS_FAILED', 'code': code}
+        returncode = getattr(error, 'returncode', None)
+        if isinstance(error, ToolError) and type(returncode) is int and -(2 ** 63) <= returncode < 2 ** 63:
+            diagnostic['tool_exit_code'] = returncode
+        print(json.dumps(diagnostic), file=sys.stderr)
         return 1
 
 
