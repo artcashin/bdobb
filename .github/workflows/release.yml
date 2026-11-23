@@ -207,14 +207,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build only final V3 installers
+        id: native_build
         env:
           APPLE_SIGNING_IDENTITY: '-'
         run: pnpm tauri build --ci --target "$BDOBB_RUST_TARGET" -- --locked
 
       - name: Stage original filenames and scan exact installed bytes with source policy
+        id: package_scan
         run: python ../controller/.github/scripts/v3_qualification.py collect --target "$BDOBB_TARGET" --auditor ../auditor
 
       - name: Qualify every exact package on native Linux in fresh profiles
+        id: linux_qualification
         if: runner.os == 'Linux'
         run: dbus-run-session -- xvfb-run -a python ../controller/.github/scripts/v3_qualification.py qualify --target "$BDOBB_TARGET" --auditor ../auditor
 
@@ -223,6 +226,7 @@ jobs:
         run: python ../controller/.github/scripts/v3_qualification.py qualify --target "$BDOBB_TARGET" --auditor ../auditor
 
       - name: Check final package binding, checksums, and qualification evidence
+        id: evidence_scan
         run: |
           set -euo pipefail
           # Packages already passed source-owned format-specific unpacking and
@@ -240,6 +244,48 @@ jobs:
             app/qualification-evidence/
           if-no-files-found: error
           retention-days: 7
+
+      - name: Encrypt only blocked Linux candidates for root-held private QA
+        id: encrypted_qa
+        if: failure() && runner.os == 'Linux' && steps.native_build.outcome == 'success' && (steps.package_scan.outcome == 'failure' || steps.linux_qualification.outcome == 'failure' || steps.evidence_scan.outcome == 'failure')
+        working-directory: ${{ github.workspace }}
+        env:
+          PACKAGE_SCAN_OUTCOME: ${{ steps.package_scan.outcome }}
+          NATIVE_QUALIFICATION_OUTCOME: ${{ steps.linux_qualification.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$PACKAGE_SCAN_OUTCOME" = failure ]; then
+            failure_stage=package-scan
+          elif [ "$NATIVE_QUALIFICATION_OUTCOME" = failure ]; then
+            failure_stage=native-qualification
+          else
+            failure_stage=evidence-scan
+          fi
+          python controller/.github/scripts/encrypt_linux_candidates.py \
+            --target "$BDOBB_TARGET" --app app --auditor auditor --controller controller \
+            --recipient age1uxxwajvn8cc73sr6pgzktjjef33mfawxev3w6766a80j5cqupf4s7m0rd8 \
+            --outdir "$RUNNER_TEMP/v3-encrypted-qa-$BDOBB_TARGET" \
+            --failure-stage "$failure_stage" --qualification-outcome failure
+
+      - name: Scan encrypted QA envelope and safe receipt only
+        id: encrypted_qa_outbound
+        if: failure() && steps.encrypted_qa.outcome == 'success'
+        working-directory: ${{ github.workspace }}
+        run: |
+          python auditor/security/gate.py --repo app artifacts \
+            "$RUNNER_TEMP/v3-encrypted-qa-$BDOBB_TARGET/retention.json" \
+            "$RUNNER_TEMP/v3-encrypted-qa-$BDOBB_TARGET/qa-blocked-v3-$BDOBB_TARGET.tar.age"
+
+      - name: Retain encrypted BLOCKED QA only for one day
+        if: failure() && steps.encrypted_qa.outcome == 'success' && steps.encrypted_qa_outbound.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: QA-ENCRYPTED-BLOCKED-v3-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/v3-encrypted-qa-${{ matrix.target }}/qa-blocked-v3-${{ matrix.target }}.tar.age
+            ${{ runner.temp }}/v3-encrypted-qa-${{ matrix.target }}/retention.json
+          if-no-files-found: error
+          retention-days: 1
 
   verify-all12:
     if: inputs.mode != 'install' && (inputs.target == 'all' || inputs.target == '')
