@@ -155,6 +155,7 @@ jobs:
         id: native_build
         env:
           APPLE_SIGNING_IDENTITY: '-'
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm tauri build --ci --target "$BDOBB_RUST_TARGET" -- --locked
       - name: Stage four original names and scan each exact package
         id: package_scan
