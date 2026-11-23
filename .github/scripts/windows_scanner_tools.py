@@ -112,13 +112,20 @@ EXECUTION_STAGES = {'BOOTSTRAP_LIST', 'BOOTSTRAP_EXTRACT', 'TESSERACT_LIST', 'TE
 
 def execute(arguments, env=None, *, stage):
     if stage not in EXECUTION_STAGES: raise ToolError('UNREVIEWED_EXECUTION_STAGE')
+    # Upstream Poppler26.09 pdfdetach.cc deliberately returns99 for -v.
+    # No extraction/other command may use that version-only behavior.
+    expected_exit = 0
+    if stage == 'PDFDETACH_VERSION':
+        if len(arguments) != 2 or PureWindowsPath(str(arguments[0])).name.casefold() != 'pdfdetach.exe' or arguments[1] != '-v':
+            raise ToolError('UNREVIEWED_VERSION_COMMAND')
+        expected_exit = 99
     try:
         process = subprocess.run(list(map(str, arguments)), capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, timeout=180)
     except subprocess.TimeoutExpired:
         raise ToolError(stage + '_TIMEOUT') from None
     except OSError:
         raise ToolError(stage + '_START_FAILED') from None
-    if process.returncode != 0:
+    if process.returncode != expected_exit:
         error = ToolError(stage + '_FAILED')
         error.returncode = process.returncode
         raise error
@@ -217,7 +224,8 @@ def install(args):
             output = execute([executable, 'i' if name == '7z' else '--version' if name == 'tesseract' else '-v'], env,
                              stage={'7z': 'SEVENZIP_INFO', 'tesseract': 'TESSERACT_VERSION', 'pdfinfo': 'PDFINFO_VERSION',
                                     'pdfdetach': 'PDFDETACH_VERSION', 'pdftotext': 'PDFTOTEXT_VERSION', 'pdftoppm': 'PDFTOPPM_VERSION'}[name])
-            tools[name] = {'version': parse_version(name, output), 'sha256': expected, 'relative_path': relative}
+            tools[name] = {'version': parse_version(name, output), 'sha256': expected, 'relative_path': relative,
+                           'version_probe_exit': 99 if name == 'pdfdetach' else 0}
             if name == '7z' and not all(re.search(r'\b' + format + r'\b', output, re.I) for format in ['Nsis', 'Compound']): raise ToolError('REQUIRED_ARCHIVE_FORMAT_MISSING')
         langs = execute([outdir / 'tesseract/tesseract.exe', '--list-langs'], env, stage='OCR_LANGUAGES')
         if not all(re.search(r'(?m)^' + lang + r'\s*$', langs) for lang in ['eng', 'osd']): raise ToolError('REQUIRED_OCR_LANGUAGE_MISSING')

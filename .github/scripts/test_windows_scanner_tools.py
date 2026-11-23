@@ -32,6 +32,23 @@ class ToolTests(unittest.TestCase):
         with self.assertRaises(t.ToolError):
             t.execute(['private/executable'], stage='PRIVATE_COMMAND_UNREVIEWED')
 
+    def test_pdfdetach_version_requires_documented_exit99_and_exact_pinned_version(self):
+        def result(code, version='26.09.0'):
+            return type('Process', (), {'returncode': code, 'stdout': '', 'stderr': 'pdfdetach version ' + version + '\n'})()
+        with mock.patch.object(t.subprocess, 'run', return_value=result(99)):
+            output = t.execute(['pdfdetach.exe', '-v'], stage='PDFDETACH_VERSION')
+            self.assertEqual(t.parse_version('pdfdetach', output), '26.09.0')
+            with self.assertRaises(t.ToolError):
+                t.execute(['pdfdetach.exe', '-list', 'input.pdf'], stage='PDFDETACH_VERSION')
+            with self.assertRaises(t.ToolError):
+                t.execute(['pdfinfo.exe', '-v'], stage='PDFINFO_VERSION')
+        with mock.patch.object(t.subprocess, 'run', return_value=result(0)):
+            with self.assertRaises(t.ToolError):
+                t.execute(['pdfdetach.exe', '-v'], stage='PDFDETACH_VERSION')
+        with mock.patch.object(t.subprocess, 'run', return_value=result(99, '25.09.0')):
+            with self.assertRaises(t.ToolError):
+                t.parse_version('pdfdetach', t.execute(['pdfdetach.exe', '-v'], stage='PDFDETACH_VERSION'))
+
     def test_checksum_mismatch_refuses_execution_boundary(self):
         pin = {'size': 7, 'sha256': hashlib.sha256(b'verified').hexdigest()}
         with self.assertRaises(t.ToolError): t.verify_payload(b'changed', pin)
