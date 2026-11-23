@@ -25,7 +25,7 @@ def validate_api(run,jobs,artifacts):
  if len(rows)!=1:raise ValueError('Prior artifact ambiguous')
  a=rows[0]
  if a.get('id')!=PINS['artifact_id']or a.get('digest')!='sha256:'+PINS['artifact_zip_sha256']or a.get('size_in_bytes')!=PINS['artifact_size']or a.get('expired')is not False or a.get('workflow_run',{}).get('id')!=PINS['run_id']or a.get('workflow_run',{}).get('head_sha')!=PINS['controller']:raise ValueError('Prior artifact mismatch')
- return {'prior_run':PINS['run_id'],'prior_job':PINS['job_id'],'artifact_id':PINS['artifact_id'],'api_declared_zip_sha256':PINS['artifact_zip_sha256'],'prior_controller':PINS['controller'],'prior_result':'PASS_NATIVE_AND_ACTUAL_MSI_INSTALL','scope':'prior package qualification; no displayed-version inference'}
+ return {'prior_run':PINS['run_id'],'prior_job':PINS['job_id'],'artifact_id':PINS['artifact_id'],'artifact_zip_sha256':PINS['artifact_zip_sha256'],'prior_controller':PINS['controller'],'prior_result':'PASS_NATIVE_AND_ACTUAL_MSI_INSTALL','scope':'prior package qualification; no displayed-version inference'}
 class NoRedirect(urllib.request.HTTPRedirectHandler):
  def redirect_request(self,*args):return None
 def api(suffix):
@@ -69,7 +69,7 @@ def verify(args):
 def observe(args):
  transfer=guard(args)
  prior=read(args.evidence/'ui-prior-api.json')
- expected_api={'prior_run':PINS['run_id'],'prior_job':PINS['job_id'],'artifact_id':PINS['artifact_id'],'api_declared_zip_sha256':PINS['artifact_zip_sha256'],'prior_controller':PINS['controller'],'prior_result':'PASS_NATIVE_AND_ACTUAL_MSI_INSTALL','scope':'prior package qualification; no displayed-version inference'}
+ expected_api={'prior_run':PINS['run_id'],'prior_job':PINS['job_id'],'artifact_id':PINS['artifact_id'],'artifact_zip_sha256':PINS['artifact_zip_sha256'],'prior_controller':PINS['controller'],'prior_result':'PASS_NATIVE_AND_ACTUAL_MSI_INSTALL','scope':'prior package qualification; no displayed-version inference'}
  if prior!=expected_api:raise ValueError('API verification missing or altered')
  for path,wanted in [(args.app,SOURCE),(args.auditor,AUDITOR)]:
   if command(['git','-C',path,'rev-parse','HEAD']).stdout.strip()!=wanted:raise ValueError('Checkout mismatch')

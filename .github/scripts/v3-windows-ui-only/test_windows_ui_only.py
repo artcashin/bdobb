@@ -17,6 +17,10 @@ class Tests(unittest.TestCase):
   for key,val in [('id',1),('digest','sha256:'+'0'*64),('expired',True)]:
    bad=copy.deepcopy(a);bad['artifacts'][0][key]=val
    with self.assertRaises(ValueError):u.validate_api(r,j,bad)
+ def test_public_artifact_digest_receipt_uses_noncredential_field_name(self):
+  receipt=u.validate_api(*self.api())
+  self.assertEqual(receipt['artifact_zip_sha256'],u.PINS['artifact_zip_sha256'])
+  self.assertNotIn('api_declared_zip_sha256',receipt)
  def test_pinned_used_files_block_self_reported_tamper(self):
   with tempfile.TemporaryDirectory()as temp:
    root=Path(temp);p=root/'receipt';p.write_bytes(b'reviewed')
