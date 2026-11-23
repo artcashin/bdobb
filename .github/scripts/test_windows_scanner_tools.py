@@ -49,6 +49,17 @@ class ToolTests(unittest.TestCase):
             with self.assertRaises(t.ToolError):
                 t.parse_version('pdfdetach', t.execute(['pdfdetach.exe', '-v'], stage='PDFDETACH_VERSION'))
 
+    def test_post_review_tools_require_one_of_two_exact_reviewed_auditors(self):
+        args=['--app','/app','--auditor','/auditor','--controller','/controller','--outdir','/out','--auditor-commit','87f5f9bf3c0ed1659ba11eb0650b3ca15ddeb81e']
+        stdout=io.StringIO()
+        with contextlib.redirect_stdout(stdout),mock.patch.object(t,'install',return_value=None)as installed:
+            self.assertEqual(t.main(args),0)
+            self.assertEqual(installed.call_args.args[0].auditor_commit,'87f5f9bf3c0ed1659ba11eb0650b3ca15ddeb81e')
+        stderr=io.StringIO()
+        with contextlib.redirect_stderr(stderr),mock.patch.object(t,'install')as installed:
+            self.assertNotEqual(t.main(args[:-1]+['f'*40]),0)
+            installed.assert_not_called()
+
     def test_checksum_mismatch_refuses_execution_boundary(self):
         pin = {'size': 7, 'sha256': hashlib.sha256(b'verified').hexdigest()}
         with self.assertRaises(t.ToolError): t.verify_payload(b'changed', pin)

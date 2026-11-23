@@ -17,6 +17,7 @@ import zipfile
 SOURCE = 'de25611461ad0559ce237c4f59b812decd91dec1'
 OFFER = '19c760a782e0ab84152ee990e8f9014f7e677f448bc58d6a3e548d8f485f1c6b'
 AUDITOR = '36f4c810ecdc8481bc15e2f10a45b3f18b780ddd'
+APPROVED_AUDITORS = {AUDITOR, '87f5f9bf3c0ed1659ba11eb0650b3ca15ddeb81e'}
 MODEL_COMMIT = '87416418657359cb625c412a48b6e1d6d41c29bd'
 ASSETS = {
     'bootstrap': {'filename': '7zr.exe', 'url': 'https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe',
@@ -188,7 +189,9 @@ def install(args):
     require_hosted_windows()
     controller = os.environ.get('GITHUB_SHA', '')
     if not re.fullmatch('[0-9a-f]{40}', controller): raise ToolError('CONTROLLER_PIN_MISSING')
-    for value, commit in [(args.app, SOURCE), (args.auditor, AUDITOR), (args.controller, controller)]: verify_checkout(Path(value).absolute(), commit)
+    expected_auditor = args.auditor_commit
+    if expected_auditor not in APPROVED_AUDITORS: raise ToolError('AUDITOR_NOT_REVIEWED')
+    for value, commit in [(args.app, SOURCE), (args.auditor, expected_auditor), (args.controller, controller)]: verify_checkout(Path(value).absolute(), commit)
     if json.loads((Path(args.app) / 'source-offer.json').read_text(encoding='utf-8'))['sourceId'] != OFFER: raise ToolError('SOURCE_OFFER_MISMATCH')
     runner_temp = Path(os.environ['RUNNER_TEMP']).absolute()
     outdir = Path(args.outdir).absolute()
@@ -230,7 +233,7 @@ def install(args):
         langs = execute([outdir / 'tesseract/tesseract.exe', '--list-langs'], env, stage='OCR_LANGUAGES')
         if not all(re.search(r'(?m)^' + lang + r'\s*$', langs) for lang in ['eng', 'osd']): raise ToolError('REQUIRED_OCR_LANGUAGE_MISSING')
         receipt = {'schema': 1, 'purpose': 'PINNED WINDOWS SCANNER DEPENDENCIES; NO PRODUCT QUALIFICATION CLAIM',
-                   'source_commit': SOURCE, 'source_offer_id': OFFER, 'auditor_commit': AUDITOR, 'controller_commit': controller,
+                   'source_commit': SOURCE, 'source_offer_id': OFFER, 'auditor_commit': expected_auditor, 'controller_commit': controller,
                    'method': 'checksum-verified portable extraction into RUNNER_TEMP; no Chocolatey feed or installer execution',
                    'assets': ASSETS, 'tools': tools, 'traineddata_commit': MODEL_COMMIT, 'languages': ['eng', 'osd'],
                    'recipes': {name: {'commit': commit, 'verification_url': f'https://github.com/{repo}/blob/{commit}/{folder}/legal/VERIFICATION.txt'} for name, (repo, commit, folder) in RECIPES.items()}}
@@ -252,6 +255,7 @@ def main(argv=None):
     try:
         parser = SafeParser(description=__doc__, add_help=False)
         for name in ['app', 'auditor', 'controller', 'outdir']: parser.add_argument('--' + name, required=True)
+        parser.add_argument('--auditor-commit', choices=sorted(APPROVED_AUDITORS), default=AUDITOR)
         install(parser.parse_args(argv))
         print(json.dumps({'status': 'WINDOWS_SCANNER_TOOLS_READY', 'receipt': 'windows-scanner-tools.json'}))
         return 0

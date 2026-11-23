@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "enabled": false,
+  "approval": "BLOCKED_PENDING_ACTUAL_BYTE_PRIVACY_REVIEW",
+  "repository": "artcashin/bdobb",
+  "app_source_repository": "Adventures-OpenBQ/bdobb",
+  "app_source_commit": "de25611461ad0559ce237c4f59b812decd91dec1",
+  "source_offer_id": "19c760a782e0ab84152ee990e8f9014f7e677f448bc58d6a3e548d8f485f1c6b",
+  "qualification_controller_commit": null,
+  "auditor_commit": "87f5f9bf3c0ed1659ba11eb0650b3ca15ddeb81e",
+  "release": {"id": null, "tag_name": null, "target_commitish": null, "draft": true, "prerelease": true},
+  "assets": []
+}

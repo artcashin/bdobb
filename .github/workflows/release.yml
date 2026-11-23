@@ -15,7 +15,7 @@ on:
         required: true
         type: choice
         default: build
-        options: [build, install, retained-linux, retained-ui]
+        options: [build, install, retained-linux, retained-ui, retained-windows]
       retained_manifest_json:
         description: Held until root clears exact retained Linux bytes; external approved manifest
         required: false
@@ -23,6 +23,16 @@ on:
         default: ''
       retained_manifest_sha256:
         description: Independently reviewed SHA256 of exact UTF8 retained manifest input
+        required: false
+        type: string
+        default: ''
+      retained_windows_manifest_json:
+        description: Approved unchanged Windows MSI/NSIS draft asset manifest
+        required: false
+        type: string
+        default: ''
+      retained_windows_manifest_sha256:
+        description: Independent SHA256 of exact Windows manifest UTF8 bytes
         required: false
         type: string
         default: ''
@@ -77,11 +87,13 @@ jobs:
               {'target':'linux-x64','os':'ubuntu-22.04','rust-target':'x86_64-unknown-linux-gnu'},
               {'target':'linux-arm','os':'ubuntu-22.04-arm','rust-target':'aarch64-unknown-linux-gnu'},
           ]
-          assert os.environ['SELECTED_MODE'] in {'build', 'install', 'retained-linux', 'retained-ui'}
+          assert os.environ['SELECTED_MODE'] in {'build', 'install', 'retained-linux', 'retained-ui', 'retained-windows'}
           if os.environ['SELECTED_MODE'] == 'retained-linux':
               rows = [row for row in rows if row['target'].startswith('linux-')]
           if os.environ['SELECTED_MODE'] == 'retained-ui':
               rows = [row for row in rows if row['target'].startswith('linux-')]
+          if os.environ['SELECTED_MODE'] == 'retained-windows':
+              rows = [row for row in rows if row['target'] == 'windows']
           if os.environ['SELECTED_MODE'] == 'install':
               rows = [row for row in rows if row['target'] != 'linux-arm']
           selected = os.environ['SELECTED_TARGET'] or 'all'
@@ -719,3 +731,110 @@ jobs:
           report = json.loads(Path('ui-evidence/ui-supplement.json').read_text())
           assert report['status'] == 'DISPLAYED_VERSION_MATCH' and report['displayed_version_observed'] is True, 'Actual owned visible version remains unobserved; scanned gap diagnostics retained'
           PYTHON
+
+  retained_windows:
+    needs: plan
+    if: inputs.mode == 'retained-windows' && github.repository == 'artcashin/bdobb' && github.event_name == 'workflow_dispatch' && inputs.version == 'v3.0.0'
+    name: Post-review same-byte V3 Windows native and MSI installation
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: write # Required to read the unpublished QA draft; reviewed client uses GET only.
+    defaults:
+      run:
+        shell: bash
+    env:
+      RETAINED_WINDOWS_SHA256: ${{ inputs.retained_windows_manifest_sha256 }}
+    steps:
+      - name: Check out reviewed same-byte qualification controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: controller
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Materialize only root-approved exact two-asset manifest
+        env:
+          RETAINED_MANIFEST_JSON: ${{ inputs.retained_windows_manifest_json }}
+        run: |
+          python controller/.github/scripts/v3-windows-retained/retained_windows.py materialize \
+            --target windows --manifest "$RUNNER_TEMP/v3-retained-input.json" \
+            --manifest-sha256 "$RETAINED_WINDOWS_SHA256" --controller-root controller
+      - name: Validate fixed product, auditor and failed compile origin before network access
+        id: approved
+        run: |
+          python controller/.github/scripts/v3-windows-retained/retained_windows.py preflight \
+            --target windows --manifest "$RUNNER_TEMP/v3-retained-input.json" \
+            --manifest-sha256 "$RETAINED_WINDOWS_SHA256" --controller-root controller --evidence retained-evidence-windows
+      - name: GET only exact unchanged privacy-cleared MSI and NSIS asset IDs
+        env:
+          GH_RETAINED_READ_TOKEN: ${{ github.token }}
+        run: |
+          python controller/.github/scripts/v3-windows-retained/retained_windows.py download \
+            --target windows --manifest "$RUNNER_TEMP/v3-retained-input.json" \
+            --manifest-sha256 "$RETAINED_WINDOWS_SHA256" --controller-root controller --evidence retained-evidence-windows \
+            --output "$RUNNER_TEMP/v3-retained-windows"
+      - name: Fetch unchanged product and exact post-review Windows auditor; no app build
+        env:
+          WINDOWS_AUDITOR: ${{ steps.approved.outputs.auditor_commit }}
+        run: |
+          set -euo pipefail
+          test "$WINDOWS_AUDITOR" = 87f5f9bf3c0ed1659ba11eb0650b3ca15ddeb81e
+          mkdir app auditor
+          git -C app init
+          git -C app config core.autocrlf false
+          git -C app remote add release-source "$SOURCE_REPOSITORY"
+          git -C app fetch --no-tags release-source "$SOURCE_COMMIT"
+          git -C app checkout --detach FETCH_HEAD
+          git -C auditor init
+          git -C auditor config core.autocrlf false
+          git -C auditor remote add release-source "$SOURCE_REPOSITORY"
+          git -C auditor fetch --no-tags release-source "$WINDOWS_AUDITOR"
+          git -C auditor checkout --detach FETCH_HEAD
+          test "$(git -C app rev-parse HEAD)" = "$SOURCE_COMMIT"
+          test "$(git -C auditor rev-parse HEAD)" = "$WINDOWS_AUDITOR"
+      - name: Install pinned scanner and installed-executable decoder only
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo install tauri-dumper --version 0.2.2 --locked --root "$RUNNER_TEMP/v3-tools"
+          python auditor/security/install.py --dir "$RUNNER_TEMP/v3-tools/bin"
+          python -m pip install --require-hashes -r auditor/security/requirements.txt
+          echo "$RUNNER_TEMP/v3-tools/bin" >> "$GITHUB_PATH"
+      - name: Prepare pinned Windows scanner tools for exact post-review auditor
+        run: |
+          python controller/.github/scripts/windows_scanner_tools.py \
+            --app app --auditor auditor --controller controller --outdir "$RUNNER_TEMP/v3-windows-scanner-tools" --auditor-commit 87f5f9bf3c0ed1659ba11eb0650b3ca15ddeb81e
+      - name: Verify all Windows-retained auditor controls, source boundaries and transfer tests
+        run: |
+          set -euo pipefail
+          python auditor/security/sync.py --check
+          python controller/.github/scripts/run_auditor_controls.py --auditor auditor --evidence retained-evidence-windows
+          python -m unittest discover -s controller/.github/scripts -p test_windows_scanner_tools.py -v
+          python -m unittest discover -s controller/.github/scripts/v3-windows-retained -p 'test_*.py' -v
+          powershell -NoProfile -File controller/.github/scripts/test_windows_ui_observation.ps1
+          python auditor/security/gate.py --repo app tree
+          python auditor/security/gate.py --repo app history --revision HEAD
+          python auditor/security/gate.py --repo app artifacts controller/.github/scripts controller/.github/workflows/release.yml
+      - name: Rescan both unchanged packages, launch fresh profiles, actually install and remove MSI
+        run: |
+          python controller/.github/scripts/v3-windows-retained/qualify_windows_retained.py \
+            --manifest "$RUNNER_TEMP/v3-retained-input.json" --manifest-sha256 "$RETAINED_WINDOWS_SHA256" \
+            --controller controller --app app --auditor auditor --downloaded "$RUNNER_TEMP/v3-retained-windows" \
+            --evidence retained-evidence-windows
+      - name: Scan native installation, cleanup, UI and fixed-byte receipt evidence
+        run: |
+          python auditor/security/gate.py --repo app artifacts retained-evidence-windows \
+            app/release-stage/scan.json app/release-stage/qualification.json app/release-stage/SHA256SUMS
+          git -C app diff --exit-code
+          git -C controller diff --exit-code
+      - name: Upload same-byte Windows native and actual MSI qualification only after required gates
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: requalified-retained-v3-windows
+          path: |
+            app/release-stage/
+            retained-evidence-windows/
+          if-no-files-found: error
+          retention-days: 7
