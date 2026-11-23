@@ -1,0 +1,78 @@
+name: V3 retained Intel About observation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: v3-retained-intel-about-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.repository == 'artcashin/bdobb' && github.event_name == 'workflow_dispatch'
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      SOURCE_COMMIT: c141f13d1f653b2b55ead7f2b9692d2efee10165
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: controller
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact public auditor only
+        run: |
+          set -euo pipefail
+          mkdir auditor
+          git -C auditor init
+          git -C auditor remote add release-source https://github.com/Adventures-OpenBQ/bdobb.git
+          git -C auditor fetch --no-tags release-source "$SOURCE_COMMIT"
+          git -C auditor checkout --detach FETCH_HEAD
+          test "$(git -C auditor rev-parse HEAD)" = "$SOURCE_COMMIT"
+          test "$(uname -m)" = x86_64
+      - name: Retrieve only the exact already-qualified Intel artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --method GET repos/artcashin/bdobb/actions/artifacts/14795826748/zip > "$RUNNER_TEMP/retained-intel.zip"
+          python - <<'PYTHON'
+          import hashlib,os
+          from pathlib import Path
+          p=Path(os.environ['RUNNER_TEMP'])/'retained-intel.zip'
+          assert hashlib.file_digest(p.open('rb'),'sha256').hexdigest()=='56a580f9dd0bce62ad998d39e3fae08a18fd8fd83b39ca0f4bd8702dd9758309'
+          PYTHON
+      - name: Run observer controls and install pinned outbound scanner
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s controller/.github/scripts -p test_mac_about_probe.py -v
+          python -m unittest discover -s controller/.github/scripts -p test_v3_intel_about_only.py -v
+          python auditor/security/install.py --dir "$RUNNER_TEMP/observer-tools"
+          echo "$RUNNER_TEMP/observer-tools" >> "$GITHUB_PATH"
+      - name: Observe only privately installed copies of the exact retained pair
+        id: observation
+        run: python controller/.github/scripts/v3_intel_about_only.py --artifact "$RUNNER_TEMP/retained-intel.zip" --auditor auditor --out "$GITHUB_WORKSPACE/safe-receipts"
+      - name: Gate only the two safe receipt files
+        id: outbound
+        if: always() && steps.observation.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          test "$(find safe-receipts -type f | wc -l | tr -d ' ')" = 2
+          python auditor/security/gate.py --repo auditor --report "$RUNNER_TEMP/observer-receipts-gate.json" artifacts safe-receipts/intel-about.json safe-receipts/SHA256SUMS
+      - name: Upload only scanned observation receipts
+        if: always() && steps.outbound.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: v3-retained-intel-about-observation
+          path: |
+            safe-receipts/intel-about.json
+            safe-receipts/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove owned retained input archive
+        if: always()
+        run: rm -f "$RUNNER_TEMP/retained-intel.zip"
