@@ -1,0 +1,48 @@
+{
+  "linux-arm": {
+    "packages": {
+      "BDOBB-3.0.0-1.aarch64.rpm": {
+        "sha256": "2d2feeda06baa05bdad7b5b6ea43e3fb889b6d3de5dc1dcde20fc5d6e602f8bc",
+        "size": 16069160
+      },
+      "BDOBB_3.0.0_aarch64.AppImage": {
+        "sha256": "af2073a2c83b760dad9bc1ee2db7cc0633646681561f55674b065a9bf79e5936",
+        "size": 92015112
+      },
+      "BDOBB_3.0.0_arm64.deb": {
+        "sha256": "394ec01487cd3a9a536aebeb1f4d19e027d4c9d029dd0c21f76666b55ef21c8e",
+        "size": 16064260
+      }
+    },
+    "receipts": {
+      "app/release-stage/scan.json": "346cf0c4dca3374400a2b3341cdc3544414db0ed960feffdf7489babdcd44b5a",
+      "app/release-stage/qualification.json": "6a77a5f083f6f7fa8b0d4682348482928ca8d9602735f6263679a31e4f369bc3",
+      "app/release-stage/SHA256SUMS": "385bb3e417f17de4dd9ff372be1ea002e845606ad998712dc6b23b50e33070cf",
+      "retained-evidence/retained-qualification.json": "3311fa80e7f2deb2bfaeec4c178d47cb875a80b4bf4679de73d8d5004aba89c7",
+      "retained-evidence/installed-deb/install-receipt.json": "55fa17885f29bde85aa7ebacadda18e7235976027522ff1e0778a7cb2d3acc0a"
+    }
+  },
+  "linux-x64": {
+    "packages": {
+      "BDOBB-3.0.0-1.x86_64.rpm": {
+        "sha256": "5042588938945a511c134cb4ad327284e251cd5757780b5becaca60d7d1acdaa",
+        "size": 15890232
+      },
+      "BDOBB_3.0.0_amd64.AppImage": {
+        "sha256": "38f3e6c022f09702d81c0a63519ce9ea15a1298692d6b8b74fdbe4e946f6c263",
+        "size": 93784568
+      },
+      "BDOBB_3.0.0_amd64.deb": {
+        "sha256": "49693afa5de3e72753ca4aae8eef920cb9ffd0ecdb8ca3d0d65a0935fc39f358",
+        "size": 15885706
+      }
+    },
+    "receipts": {
+      "app/release-stage/scan.json": "03d4d9a7891aaa02cc20fb736784399d4412de8cf611c3f46bcf1d1248da76bd",
+      "app/release-stage/qualification.json": "9b1554dc1d82ef528a5b6ef06cea4f693dd86c127d2d2e667c82fd9864a2189b",
+      "app/release-stage/SHA256SUMS": "f00666dede051f48e8f22bf4ed9bfff0b47c76ba421ed1120b6af9df2f9d95e2",
+      "retained-evidence/retained-qualification.json": "fda4ca9c99a81523cc254e2173f5385875fbcd8c45954d70f32e5ad6e409d545",
+      "retained-evidence/installed-deb/install-receipt.json": "66f5f6bafa84a58c328a823465517d0db57cd2381953b59ae82dc225dd061dd7"
+    }
+  }
+}

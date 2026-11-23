@@ -106,6 +106,7 @@ def install_deb(package, original, q, gate, target, evidence, controller):
             receipt['embedded_defaults']='all six exact empty values verified again from installed executable'
             receipt['embedded_offer']=q.EXPECTED_OFFER
             receipt['runtime']=q.native_runtime(executable,package,work,evidence,arch,ui_observer=observe)
+            receipt['runtime']['method']='actual installed DEB executable launched after recorded dpkg installation; installer dialog not exercised'
             receipt['displayed_version_observed']=receipt['runtime'].get('displayed_version_ui',{}).get('displayed_release_observed') is True
             if sha256(package) != original['sha256'] or sha256(executable) != original['executable_sha256']:
                 raise ValueError('Retained installer/executable changed during runtime')

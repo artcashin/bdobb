@@ -5,6 +5,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('linux_probe', Path(__file__).with_name('linux_release_probe.py'))
@@ -16,7 +17,9 @@ class ProbeTests(unittest.TestCase):
     def evidence(self):
         return dict(status='AT_SPI_PROBE_COMPLETE', owned_application=True, source_showing=True,
                     description_exact=False, hovered_owned_window=True, tooltip_showing=True, tooltip_exact=True,
-                    nodes_visited=14, help_cleanup='HELP_TOGGLE_CLOSED', cursor_restored=True, attempt='GAP_OWNED_TOOLTIP_UNAVAILABLE')
+                    nodes_visited=14, help_cleanup='HELP_TOGGLE_CLOSED', cursor_restored=True, attempt='GAP_OWNED_TOOLTIP_UNAVAILABLE',
+                    help_diagnostics=dict(exact_help_candidates=[dict(role_code=43, owned=True, visible=True)], candidates_truncated=False,
+                                          matched_help_role_code=43, foreign_nodes_skipped=0, nodes_visited=14))
 
     def test_only_owned_showing_hovered_exact_tooltip_proves_display(self):
         self.assertEqual(p.classify_observation(self.evidence())['status'], 'OBSERVED_OWNED_TOOLTIP')
@@ -96,6 +99,78 @@ class ProbeTests(unittest.TestCase):
                              '--expected-arch', 'x86_64', '--evidence-dir', '/tmp/evidence'])
         self.assertNotEqual(status, 0)
         self.assertNotIn('PRIVATE_DETAIL', error.getvalue())
+
+
+class HelpRoleTests(unittest.TestCase):
+    def node(self, role, name='Help', visible=True, owned=True, action='click'):
+        calls = []
+        pattern = SimpleNamespace(nActions=1, getName=lambda index: action, doAction=lambda index: calls.append(index) or True)
+        node = SimpleNamespace(name=name, getRole=lambda: role, queryAction=lambda: pattern)
+        api = SimpleNamespace(ROLE_PUSH_BUTTON=43, ROLE_PUSH_BUTTON_MENU=129)
+        tree = SimpleNamespace(api=api, visible=lambda candidate: visible and owned)
+        return node, tree, calls
+
+    def test_real_invoke_path_accepts_optional_menu_button_role(self):
+        node, tree, calls = self.node(129)
+        with patch.object(p, 'validate_process'):
+            role = p.invoke_help(node, tree, SimpleNamespace())
+        self.assertEqual(calls, [0])
+        self.assertEqual(role, 129)
+
+    def test_missing_optional_constant_has_no_numeric_fallback(self):
+        node, tree, calls = self.node(129)
+        del tree.api.ROLE_PUSH_BUTTON_MENU
+        with patch.object(p, 'validate_process'):
+            with self.assertRaises(p.ProbeError): p.invoke_help(node, tree, SimpleNamespace())
+        self.assertEqual(calls, [])
+
+    def test_supported_role_never_bypasses_name_visibility_ownership_or_action_allowlist(self):
+        for change in [dict(name='Source Code…'), dict(visible=False), dict(owned=False), dict(action='open'), dict(role=99)]:
+            values = dict(role=129)
+            values.update(change)
+            node, tree, calls = self.node(**values)
+            with patch.object(p, 'validate_process'):
+                with self.assertRaises(p.ProbeError): p.invoke_help(node, tree, SimpleNamespace())
+            self.assertEqual(calls, [])
+
+    def test_find_and_invoke_share_exact_optional_role_policy_and_filtered_diagnostics(self):
+        api = SimpleNamespace(ROLE_PUSH_BUTTON=43, ROLE_PUSH_BUTTON_MENU=129, STATE_SHOWING=1, STATE_VISIBLE=2)
+        class Node:
+            def __init__(self, name, role, pid=7, children=()):
+                self.name, self.role, self.pid, self.children = name, role, pid, children
+            def get_process_id(self): return self.pid
+            def getRole(self): return self.role
+            def getState(self): return SimpleNamespace(contains=lambda state: True)
+            @property
+            def childCount(self): return len(self.children)
+            def getChildAtIndex(self, index): return self.children[index]
+        class Foreign(Node):
+            @property
+            def name(self): raise AssertionError('Foreign names must never be read')
+            @name.setter
+            def name(self, value): pass
+        menu = Node('Help', 129)
+        root = Node('Unrecorded arbitrary UI title', 1, children=[Foreign('PRIVATE', 1, pid=8), Node('Help', 99), menu])
+        tree = p.Tree(api, 7)
+        found = tree.find(root, lambda node: p.is_help_candidate(node, tree))
+        self.assertIs(found, menu)
+        diagnostic = tree.help_diagnostics()
+        self.assertEqual(diagnostic['exact_help_candidates'], [dict(role_code=99, owned=True, visible=True), dict(role_code=129, owned=True, visible=True)])
+        self.assertEqual(diagnostic['foreign_nodes_skipped'], 1)
+        self.assertNotIn('PRIVATE', json.dumps(diagnostic))
+        self.assertNotIn('arbitrary UI title', json.dumps(diagnostic))
+
+    def test_role_diagnostics_cannot_promote_a_gap_or_leak_unapproved_fields(self):
+        value = ProbeTests().evidence()
+        value.update(description_exact=False, tooltip_exact=False, attempt='GAP_HELP_CONTROL_UNAVAILABLE')
+        self.assertFalse(p.classify_observation(value)['displayed_release_observed'])
+        value['help_diagnostics']['arbitrary_text'] = 'PRIVATE_VALUE'
+        result = p.classify_observation(value)
+        self.assertEqual(result['status'], 'GAP_PROBE_OUTPUT_INVALID')
+        self.assertNotIn('PRIVATE_VALUE', json.dumps(result))
+        value = ProbeTests().evidence()
+        value['help_diagnostics']['matched_help_role_code'] = None
+        self.assertEqual(p.classify_observation(value)['status'], 'GAP_PROBE_OUTPUT_INVALID')
 
 
 if __name__ == '__main__':

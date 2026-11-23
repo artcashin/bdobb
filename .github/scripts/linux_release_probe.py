@@ -20,6 +20,8 @@ SOURCE = 'de25611461ad0559ce237c4f59b812decd91dec1'
 OFFER = '19c760a782e0ab84152ee990e8f9014f7e677f448bc58d6a3e548d8f485f1c6b'
 EXPECTED_TEXT = 'Download the corresponding source for v3.0.0 (GNU AGPL v3).'
 MAX_NODES = 256
+MAX_HELP_CANDIDATES = 8
+MAX_FOREIGN_SKIPS = MAX_NODES * 33
 GAPS = {'GAP_SYSTEM_PYATSPI_UNAVAILABLE', 'GAP_SESSION_UNAVAILABLE', 'GAP_EXISTING_A11Y_BUS_UNAVAILABLE',
         'GAP_EXISTING_ATSPI_REGISTRY_UNAVAILABLE', 'GAP_OWNED_APPLICATION_UNAVAILABLE', 'GAP_HELP_CONTROL_UNAVAILABLE',
         'GAP_HELP_ACTION_UNAVAILABLE', 'GAP_SOURCE_CONTROL_UNAVAILABLE', 'GAP_SOURCE_RELEASE_TEXT_UNAVAILABLE',
@@ -41,20 +43,41 @@ def base_observation(status):
                 native_about='NOT_OBSERVED', scope='Frontend source-offer release text; does not establish native About version')
 
 
+def valid_help_diagnostics(value):
+    if not isinstance(value, dict) or set(value) != {'exact_help_candidates', 'candidates_truncated', 'matched_help_role_code', 'foreign_nodes_skipped', 'nodes_visited'}:
+        return False
+    if type(value['candidates_truncated']) is not bool or type(value['nodes_visited']) is not int or not 0 <= value['nodes_visited'] <= MAX_NODES:
+        return False
+    if type(value['foreign_nodes_skipped']) is not int or not 0 <= value['foreign_nodes_skipped'] <= MAX_FOREIGN_SKIPS:
+        return False
+    matched = value['matched_help_role_code']
+    if matched is not None and (type(matched) is not int or not 0 <= matched <= 4096): return False
+    rows = value['exact_help_candidates']
+    if not isinstance(rows, list) or len(rows) > MAX_HELP_CANDIDATES: return False
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {'role_code', 'owned', 'visible'} or type(row['role_code']) is not int or not 0 <= row['role_code'] <= 4096:
+            return False
+        if row['owned'] is not True or type(row['visible']) is not bool: return False
+    return matched is None or value['candidates_truncated'] or any(row['role_code'] == matched and row['visible'] for row in rows)
+
+
 def classify_observation(value):
     invalid = base_observation('GAP_PROBE_OUTPUT_INVALID')
     if not isinstance(value, dict): return invalid
     status = value.get('status')
     if status in GAPS | ERRORS and set(value) == {'status'}: return base_observation(status)
-    if status != 'AT_SPI_PROBE_COMPLETE' or set(value) != {'status', 'nodes_visited', 'help_cleanup', 'attempt', *FLAGS}: return invalid
+    if status != 'AT_SPI_PROBE_COMPLETE' or set(value) != {'status', 'nodes_visited', 'help_cleanup', 'attempt', 'help_diagnostics', *FLAGS}: return invalid
     if any(type(value[key]) is not bool for key in FLAGS): return invalid
     if type(value['nodes_visited']) is not int or not 0 <= value['nodes_visited'] <= MAX_NODES or value['help_cleanup'] not in CLEANUPS or value['attempt'] not in GAPS: return invalid
+    if not valid_help_diagnostics(value['help_diagnostics']) or value['help_diagnostics']['nodes_visited'] != value['nodes_visited']: return invalid
     accessible = value['owned_application'] and value['source_showing'] and value['description_exact']
     displayed = value['owned_application'] and value['source_showing'] and value['hovered_owned_window'] and value['tooltip_showing'] and value['tooltip_exact']
+    if (accessible or displayed) and value['help_diagnostics']['matched_help_role_code'] is None: return invalid
     result = base_observation('OBSERVED_OWNED_TOOLTIP' if displayed else 'OBSERVED_ATSPI_DESCRIPTION' if accessible else value['attempt'])
     result.update(release='3.0.0' if accessible or displayed else None,
                   accessible_release_observed=accessible, displayed_release_observed=displayed,
-                  nodes_visited=value['nodes_visited'], help_cleanup=value['help_cleanup'], cursor_restored=value['cursor_restored'], attempt=value['attempt'])
+                  nodes_visited=value['nodes_visited'], help_cleanup=value['help_cleanup'], cursor_restored=value['cursor_restored'], attempt=value['attempt'],
+                  help_diagnostics=value['help_diagnostics'])
     return result
 
 
@@ -163,6 +186,17 @@ class Tree:
     def __init__(self, api, pid):
         self.api, self.pid = api, pid
         self.deadline, self.visited = time.monotonic() + 8, 0
+        self.foreign_skipped, self.help_candidates = 0, []
+        self.help_candidates_truncated, self.matched_help_role_code = False, None
+
+    def help_diagnostics(self):
+        return dict(exact_help_candidates=list(self.help_candidates), candidates_truncated=self.help_candidates_truncated,
+                    matched_help_role_code=self.matched_help_role_code, foreign_nodes_skipped=self.foreign_skipped, nodes_visited=self.visited)
+
+    def record_help(self, role, visible):
+        row = dict(role_code=role, owned=True, visible=visible)
+        if len(self.help_candidates) < MAX_HELP_CANDIDATES: self.help_candidates.append(row)
+        else: self.help_candidates_truncated = True
 
     def budget(self):
         if time.monotonic() >= self.deadline: raise ProbeError('GAP_PROBE_TIMEOUT')
@@ -170,7 +204,11 @@ class Tree:
 
     def owned(self, node):
         self.budget()
-        return node is not None and node.get_process_id() == self.pid
+        if node is None: return False
+        if node.get_process_id() == self.pid: return True
+        if self.foreign_skipped >= MAX_FOREIGN_SKIPS: raise ProbeError('GAP_TRAVERSAL_BUDGET')
+        self.foreign_skipped += 1
+        return False
 
     def visible(self, node):
         if not self.owned(node): return False
@@ -245,16 +283,40 @@ def hover_owned(source, tree, args):
     return saved
 
 
+def role_code(value):
+    code = int(value)
+    if not 0 <= code <= 4096: raise ProbeError('GAP_NATIVE_API_UNAVAILABLE')
+    return code
+
+
+def allowed_help_roles(api):
+    roles = {role_code(api.ROLE_PUSH_BUTTON)}
+    menu = getattr(api, 'ROLE_PUSH_BUTTON_MENU', None)
+    if menu is not None: roles.add(role_code(menu))
+    return roles
+
+
+def is_help_candidate(node, tree):
+    # Ownership is checked before name/role reads; only exact Help candidates
+    # contribute filtered numeric diagnostics. Unknown roles are never invoked.
+    if not tree.owned(node) or node.name != 'Help': return False
+    code, visible = role_code(node.getRole()), tree.visible(node)
+    tree.record_help(code, visible)
+    return visible and code in allowed_help_roles(tree.api)
+
+
 def invoke_help(help_button, tree, args):
     # This is the sole actionable element. Never query/invoke Source's Action.
-    if not tree.visible(help_button) or help_button.name != 'Help' or help_button.getRole() != tree.api.ROLE_PUSH_BUTTON:
+    if not tree.visible(help_button) or help_button.name != 'Help':
         raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
+    code = role_code(help_button.getRole())
+    if code not in allowed_help_roles(tree.api): raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
     action = help_button.queryAction()
     if not 0 < action.nActions <= 4: raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
     for index in range(action.nActions):
         if action.getName(index).lower() in {'click', 'press', 'activate'}:
             validate_process(args)
-            if action.doAction(index): return
+            if action.doAction(index): return code
     raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
 
 
@@ -271,13 +333,22 @@ def worker(args):
     applications = tree.children(desktop)
     app = next((node for node in applications if tree.owned(node)), None)
     if app is None: raise ProbeError('GAP_OWNED_APPLICATION_UNAVAILABLE')
-    help_button = tree.find(app, lambda node: tree.visible(node) and node.name == 'Help' and node.getRole() == pyatspi.ROLE_PUSH_BUTTON)
-    if help_button is None: raise ProbeError('GAP_HELP_CONTROL_UNAVAILABLE')
-    result = dict(status='AT_SPI_PROBE_COMPLETE', **{flag: False for flag in FLAGS}, nodes_visited=0, help_cleanup='NOT_OPENED', attempt='GAP_SOURCE_CONTROL_UNAVAILABLE')
+    result = dict(status='AT_SPI_PROBE_COMPLETE', **{flag: False for flag in FLAGS}, nodes_visited=0, help_cleanup='NOT_OPENED', attempt='GAP_HELP_CONTROL_UNAVAILABLE')
     result['owned_application'] = True
+    try:
+        help_button = tree.find(app, lambda node: is_help_candidate(node, tree))
+    except ProbeError as error:
+        if str(error) not in GAPS: raise
+        result['attempt'] = str(error)
+        help_button = None
+    if help_button is None:
+        validate_process(args)
+        result['nodes_visited'], result['help_diagnostics'] = tree.visited, tree.help_diagnostics()
+        return result
+    result['attempt'] = 'GAP_SOURCE_CONTROL_UNAVAILABLE'
     opened, saved = False, None
     try:
-        invoke_help(help_button, tree, args)
+        tree.matched_help_role_code = invoke_help(help_button, tree, args)
         opened = True
         source = None
         until = min(tree.deadline, time.monotonic() + 2)
@@ -306,6 +377,9 @@ def worker(args):
                 result['attempt'] = str(error) if str(error) in GAPS else 'GAP_NATIVE_API_UNAVAILABLE'
                 # Preserve any already observed exact accessible description;
                 # failed hover/traversal cannot promote it to displayed evidence.
+    except ProbeError as error:
+        if str(error) not in GAPS: raise
+        result['attempt'] = str(error)
     finally:
         if saved is not None:
             try:
@@ -322,6 +396,7 @@ def worker(args):
             except Exception: pass
     validate_process(args)
     result['nodes_visited'] = tree.visited
+    result['help_diagnostics'] = tree.help_diagnostics()
     return result
 
 
