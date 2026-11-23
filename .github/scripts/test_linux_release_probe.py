@@ -302,6 +302,29 @@ class HelpPointerTests(unittest.TestCase):
         self.assertEqual(xdo.call_args_list.count(unittest.mock.call('mousemove','--sync',20,11)),1)
         self.assertEqual(xdo.call_args_list[-1],unittest.mock.call('mousemove','--sync',4,5))
 
+    def test_css_transition_settles_before_bounded_recenter_and_fresh_click_proof(self):
+        node,tree,_=self.node(action='unrecognized');state=dict(settled=False,reads=0,x=10,y=11)
+        def extents(coordinate):
+            width=48 if state['settled'] else 40 if state['reads']==0 else 44
+            state['reads']+=1
+            return SimpleNamespace(x=0,y=0,width=width,height=22)
+        node.queryComponent=lambda:SimpleNamespace(getExtents=extents)
+        def xdo(*args):
+            if args[0]=='getmouselocation':return f"X={state['x']}\nY={state['y']}\nWINDOW=12"
+            if args[0]=='getwindowpid':return '7'
+            if args[0]=='mousemove':state.update(x=args[2],y=args[3])
+            return ''
+        def settle(seconds):
+            self.assertGreaterEqual(seconds,0.12)
+            state['settled']=True
+        with patch.dict(os.environ,{'V3_OWNED_QA_SESSION':'1'}),patch.object(p,'validate_process'), \
+             patch.object(p,'hover_owned',return_value=dict(X=4,Y=5,WINDOW=6)),patch.object(p.time,'sleep',side_effect=settle)as sleep,patch.object(p,'xdo',side_effect=xdo)as calls:
+            self.assertEqual(p.activate_help(node,tree,SimpleNamespace(pid=7)),11)
+        sleep.assert_called_once()
+        self.assertEqual(calls.call_args_list.count(unittest.mock.call('mousemove','--sync',24,11)),1)
+        self.assertEqual(calls.call_args_list.count(unittest.mock.call('click','1')),1)
+        self.assertTrue(tree.help_actions[0]['hover']['pointer_matches_help_center'])
+
     def test_action_diagnostics_cannot_leak_names_or_promote_display(self):
         value=ProbeTests().evidence();value.update(tooltip_exact=False,description_exact=False)
         row=dict(count=1,known_names=['click'],unknown_names=True,returned=False,method='OWNED_POINTER_CLICK',pointer_restored=True,hover=p.empty_hover_diagnostics())

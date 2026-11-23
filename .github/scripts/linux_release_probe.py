@@ -624,6 +624,9 @@ def activate_help(help_button, tree, args):
         tree.help_actions[-1]['pointer_restored'] = tree.help_actions[-1]['hover']['cursor_restored']
         raise
     try:
+        # Product CSS animates rail width for 120ms. Let the own hover settle
+        # before deriving the one new center; all live guards still follow.
+        time.sleep(0.2)
         checked_help_role(help_button, tree)
         validate_process(args)
         tree.recheck_owner(help_button, args)
