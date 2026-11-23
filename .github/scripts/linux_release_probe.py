@@ -462,8 +462,11 @@ def role_code(value):
 
 def allowed_help_roles(api):
     roles = {role_code(api.ROLE_PUSH_BUTTON)}
-    menu = getattr(api, 'ROLE_PUSH_BUTTON_MENU', None)
-    if menu is not None: roles.add(role_code(menu))
+    # Native WebKit Help aria-haspopup=menu was observed as COMBO_BOX in
+    # retained ARM run45098712565. Use exported enums, never numeric fallback.
+    for name in ('ROLE_PUSH_BUTTON_MENU', 'ROLE_COMBO_BOX'):
+        optional = getattr(api, name, None)
+        if optional is not None: roles.add(role_code(optional))
     return roles
 
 

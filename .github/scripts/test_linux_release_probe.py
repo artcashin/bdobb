@@ -106,7 +106,7 @@ class HelpRoleTests(unittest.TestCase):
         calls = []
         pattern = SimpleNamespace(nActions=1, getName=lambda index: action, doAction=lambda index: calls.append(index) or True)
         node = SimpleNamespace(name=name, getRole=lambda: role, queryAction=lambda: pattern)
-        api = SimpleNamespace(ROLE_PUSH_BUTTON=43, ROLE_PUSH_BUTTON_MENU=129)
+        api = SimpleNamespace(ROLE_PUSH_BUTTON=43, ROLE_PUSH_BUTTON_MENU=129, ROLE_COMBO_BOX=11)
         tree = SimpleNamespace(api=api, visible=lambda candidate: visible and owned, recheck_owner=lambda candidate, args: None)
         return node, tree, calls
 
@@ -116,6 +116,22 @@ class HelpRoleTests(unittest.TestCase):
             role = p.invoke_help(node, tree, SimpleNamespace())
         self.assertEqual(calls, [0])
         self.assertEqual(role, 129)
+
+    def test_observed_native_combo_box_help_uses_exported_role_and_same_action_guard(self):
+        node, tree, calls = self.node(11)
+        with patch.object(p, 'validate_process'):
+            self.assertEqual(p.invoke_help(node, tree, SimpleNamespace()), 11)
+        self.assertEqual(calls, [0])
+        del tree.api.ROLE_COMBO_BOX
+        with patch.object(p, 'validate_process'):
+            with self.assertRaises(p.ProbeError): p.invoke_help(node, tree, SimpleNamespace())
+        self.assertEqual(calls, [0])
+        for change in [dict(name='Source Code…'), dict(visible=False), dict(owned=False), dict(action='open'), dict(role=99)]:
+            values = dict(role=11); values.update(change)
+            bad, guarded, invoked = self.node(**values)
+            with patch.object(p, 'validate_process'):
+                with self.assertRaises(p.ProbeError): p.invoke_help(bad, guarded, SimpleNamespace())
+            self.assertEqual(invoked, [])
 
     def test_missing_optional_constant_has_no_numeric_fallback(self):
         node, tree, calls = self.node(129)
