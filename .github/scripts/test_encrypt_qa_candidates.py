@@ -5,7 +5,7 @@ spec=importlib.util.spec_from_file_location('qa',Path(__file__).with_name('encry
 qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)
 class RetentionTests(unittest.TestCase):
     def fixture(self,root):
-        bundle=root/'bundle';names=[('dmg','BDOBB_4.0.0_x64.dmg'),('','BDOBB_x64.app.tar.gz')]
+        bundle=root/'bundle';names=[('dmg','BDOBB_3.0.0_x64.dmg'),('','BDOBB_x64.app.tar.gz')]
         for index,(directory,name) in enumerate(names):
             (bundle/directory).mkdir(parents=True,exist_ok=True);(bundle/directory/name).write_bytes(('synthetic package '+str(index)).encode())
         return bundle,names
@@ -70,7 +70,7 @@ class RetentionTests(unittest.TestCase):
     def test_output_directory_is_fresh_exact_runner_temp_child(self):
             with tempfile.TemporaryDirectory() as temporary:
                 runner_temp = Path(temporary).resolve()
-                expected = runner_temp / 'v4-encrypted-qa-mac-intel'
+                expected = runner_temp / 'v3-encrypted-qa-mac-intel'
                 qa.prepare_output(expected, runner_temp, 'mac-intel')
                 self.assertEqual(list(expected.iterdir()), [])
                 with self.assertRaises(qa.RetentionError): qa.prepare_output(expected, runner_temp, 'mac-intel')
@@ -78,6 +78,8 @@ class RetentionTests(unittest.TestCase):
 
     def test_unreviewed_recipient_and_local_execution_rejected(self):
             with self.assertRaises(qa.RetentionError): qa.require_recipient('age1' + 'q' * 58)
+            with self.assertRaises(qa.RetentionError): qa.require_recipient('age160m7enkqn7g3gy9sm66keanjfsnkjfs2u6ce57w3jzz8egvm7erq39zaqx')
+            qa.require_recipient('age1z30a67tzawfug4mjl0dknema7hf7hl42sxle2rx42n0n0tkk39hqvjfsn7')
             with mock.patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'}, clear=False):
                 with self.assertRaises(qa.RetentionError): qa.require_hosted_native('mac-intel')
 
@@ -116,27 +118,17 @@ class RetentionTests(unittest.TestCase):
                 self.assertEqual(json.loads(error.getvalue())['status'], 'QA_RETENTION_FAILED')
 
     def test_targets_and_official_age_pins_are_exact(self):
-        self.assertEqual(set(qa.TARGETS),{'mac-arm','mac-intel','table-amd64'})
-        self.assertEqual(len(qa.TARGETS['mac-arm']['files']),2);self.assertEqual(len(qa.TARGETS['table-amd64']['files']),1)
+        self.assertEqual(set(qa.TARGETS),{'mac-arm','mac-intel'})
+        self.assertEqual(len(qa.TARGETS['mac-arm']['files']),2);self.assertEqual(len(qa.TARGETS['mac-intel']['files']),2)
         self.assertEqual(qa.AGE['darwin-arm64']['binary_size'],6502258)
         self.assertEqual(qa.AGE['darwin-amd64']['binary_size'],6978992)
         self.assertEqual(qa.AGE['linux-amd64']['binary_size'],6977014)
         self.assertEqual(hashlib.sha256(qa.RECIPIENT.encode()).hexdigest(),qa.RECIPIENT_FINGERPRINT)
-    def test_table_selection_and_identity_bind_actual_image_bytes(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary).resolve();candidate=root/'candidate-table-image-amd64.tar.gz';candidate.write_bytes(b'synthetic image')
-            selected=qa.select_candidates(root,'table-amd64');self.assertEqual(selected,[candidate])
-            records=qa.snapshot_candidates(selected,root/'snapshot')
-            identity={'source_revision':qa.TARGETS['table-amd64']['source'],'source_tree':'e8b331b5f813defc34cbbbb7aa6b5b5e0f3a3cb2','architecture':'amd64','candidate_sha256':records[0]['sha256'],'image_id':'sha256:'+'a'*64,'service_tests':79,'core_tests':213,'runtime_passed':True}
-            manifest=root/'candidate-table-image-amd64.identity.json';manifest.write_text(json.dumps(identity));self.assertEqual(qa.image_identity(root,records[0]),identity)
-            for key,value in [('candidate_sha256','f'*64),('service_tests',78),('image_id','unapproved raw text'),('runtime_passed',False)]:
-                bad={**identity,key:value};manifest.write_text(json.dumps(bad))
-                with self.assertRaises(qa.RetentionError):qa.image_identity(root,records[0])
-            extra=root/'candidate-table-image-foreign.tar.gz';extra.write_bytes(b'extra')
-            with self.assertRaises(qa.RetentionError):qa.select_candidates(root,'table-amd64')
+        self.assertEqual(qa.RECIPIENT, 'age1z30a67tzawfug4mjl0dknema7hf7hl42sxle2rx42n0n0tkk39hqvjfsn7')
+        self.assertEqual(qa.RECIPIENT_FINGERPRINT, '8a038fe3030e5ea49b855c0e6a19039b1887e079f1a2d9ce30701899e3d16580')
     def test_receipt_remains_blocked_and_contains_no_payload(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary).resolve();cipher=root/'qa-blocked-v4-mac-intel.tar.age';cipher.write_bytes(b'age-encryption.org/v1\nsynthetic ciphertext')
-            r=qa.make_receipt('mac-intel',[{'filename':'BDOBB_4.0.0_x64.dmg','size':1,'sha256':'a'*64}],cipher,'b'*40,'package-scan')
+            root=Path(temporary).resolve();cipher=root/'qa-blocked-v3-mac-intel.tar.age';cipher.write_bytes(b'age-encryption.org/v1\nsynthetic ciphertext')
+            r=qa.make_receipt('mac-intel',[{'filename':'BDOBB_3.0.0_x64.dmg','size':1,'sha256':'a'*64}],cipher,'b'*40,'package-scan')
             self.assertEqual(r['qualification_state'],'FAILED/BLOCKED');self.assertEqual(r['retention_days'],1);self.assertIsNone(r['image_identity']);self.assertNotIn('synthetic ciphertext',json.dumps(r));self.assertNotIn('AGE-SECRET-KEY',json.dumps(r))
 if __name__=='__main__':unittest.main()

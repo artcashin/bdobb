@@ -1,10 +1,10 @@
-"""Failure-only V4 encrypted QA; reviewed V3 streaming encryption boundary reused."""
+"""Failure-only V3 encrypted QA; reviewed V3 streaming encryption boundary reused."""
 import argparse, hashlib, io, json, os, platform, re, shutil, stat, subprocess, sys, tarfile, tempfile, urllib.request
 from pathlib import Path
 AGE_VERSION='1.3.2'
-RECIPIENT='age160m7enkqn7g3gy9sm66keanjfsnkjfs2u6ce57w3jzz8egvm7erq39zaqx'
-RECIPIENT_FINGERPRINT='f4d0a6118a8a999208d0283df04268e005b0c3ece0871013ce05af7d84200102'
-TARGETS={'mac-arm': {'system': 'Darwin', 'runner_os': 'macOS', 'machine': 'arm64', 'triple': 'aarch64-apple-darwin', 'age_arch': 'darwin-arm64', 'source': 'f3ea816ae66f4e067738e3c8e5004fcac50b7ce6', 'auditor': 'f3ea816ae66f4e067738e3c8e5004fcac50b7ce6', 'offer': '7975463c347bf1c12378f88da7bedbe27a694430fe81a9c29f0546662d9d5609', 'files': {'dmg': 'BDOBB_4.0.0_aarch64.dmg', '': 'BDOBB_aarch64.app.tar.gz'}}, 'mac-intel': {'system': 'Darwin', 'runner_os': 'macOS', 'machine': 'x86_64', 'triple': 'x86_64-apple-darwin', 'age_arch': 'darwin-amd64', 'source': 'f3ea816ae66f4e067738e3c8e5004fcac50b7ce6', 'auditor': 'f3ea816ae66f4e067738e3c8e5004fcac50b7ce6', 'offer': '7975463c347bf1c12378f88da7bedbe27a694430fe81a9c29f0546662d9d5609', 'files': {'dmg': 'BDOBB_4.0.0_x64.dmg', '': 'BDOBB_x64.app.tar.gz'}}, 'table-amd64': {'system': 'Linux', 'runner_os': 'Linux', 'machine': 'x86_64', 'age_arch': 'linux-amd64', 'source': 'b963af1f9be37a1754b7f568403b8c461c5dbc72', 'auditor': 'b963af1f9be37a1754b7f568403b8c461c5dbc72', 'offer': None, 'files': {'': 'candidate-table-image-amd64.tar.gz'}}}
+RECIPIENT='age1z30a67tzawfug4mjl0dknema7hf7hl42sxle2rx42n0n0tkk39hqvjfsn7'
+RECIPIENT_FINGERPRINT='8a038fe3030e5ea49b855c0e6a19039b1887e079f1a2d9ce30701899e3d16580'
+TARGETS={'mac-arm': {'system': 'Darwin', 'runner_os': 'macOS', 'machine': 'arm64', 'triple': 'aarch64-apple-darwin', 'age_arch': 'darwin-arm64', 'source': 'c141f13d1f653b2b55ead7f2b9692d2efee10165', 'auditor': 'c141f13d1f653b2b55ead7f2b9692d2efee10165', 'offer': '0526c7f4503d0997589f1cb8b02142fcc1b010d1abeaae6d73d5fa3cb660e8a7', 'files': {'dmg': 'BDOBB_3.0.0_aarch64.dmg', '': 'BDOBB_aarch64.app.tar.gz'}}, 'mac-intel': {'system': 'Darwin', 'runner_os': 'macOS', 'machine': 'x86_64', 'triple': 'x86_64-apple-darwin', 'age_arch': 'darwin-amd64', 'source': 'c141f13d1f653b2b55ead7f2b9692d2efee10165', 'auditor': 'c141f13d1f653b2b55ead7f2b9692d2efee10165', 'offer': '0526c7f4503d0997589f1cb8b02142fcc1b010d1abeaae6d73d5fa3cb660e8a7', 'files': {'dmg': 'BDOBB_3.0.0_x64.dmg', '': 'BDOBB_x64.app.tar.gz'}}}
 AGE={'darwin-arm64': {'url': 'https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-darwin-arm64.tar.gz', 'archive_sha256': 'e2020b073c44f692685a24d6abc378817eb81ffaaf49fd0531ef8565f767f2f5', 'archive_size': 18106798, 'binary_sha256': '4012dfc2725883beafb710894af4f599b7a94f8c8e0f51f02cc96ab8df33915e', 'binary_size': 6502258}, 'darwin-amd64': {'url': 'https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-darwin-amd64.tar.gz', 'archive_sha256': '1d1e4bc66e1427edad7739ae7616157de0e79db8b6d2a1497d7d9925fb06a539', 'archive_size': 19376787, 'binary_sha256': '0c2fbcffab91d0af398162a8ed792e096916c8c47c3c400e303904431103f492', 'binary_size': 6978992}, 'linux-amd64': {'url': 'https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz', 'archive_sha256': 'cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10', 'archive_size': 19405817, 'binary_sha256': 'eb7dd1b518f0a307c99cd97782623c5321da049154b04acd2d98d21aa7bc9b2c', 'binary_size': 6977014}}
 FAILURE_STAGES=('package-scan','native-qualification','evidence-scan','image-privacy')
 
@@ -86,7 +86,7 @@ def verify_candidates(selected, records):
 
 def prepare_output(outdir, runner_temp, target):
     physical_directory(runner_temp)
-    if outdir != runner_temp / ('v4-encrypted-qa-' + target) or outdir.exists() or outdir.is_symlink():
+    if outdir != runner_temp / ('v3-encrypted-qa-' + target) or outdir.exists() or outdir.is_symlink():
         raise RetentionError('UNSAFE_OUTPUT_DIRECTORY')
     outdir.mkdir(mode=0o700)
 
@@ -110,7 +110,7 @@ def install_age(work, target):
     arch = TARGETS[target]['age_arch']
     pin = AGE[arch]
     url = pin['url']
-    request = urllib.request.Request(url, headers={'User-Agent': 'V4-encrypted-QA-retention'})
+    request = urllib.request.Request(url, headers={'User-Agent': 'V3-encrypted-QA-retention'})
     with urllib.request.urlopen(request, timeout=60) as response:
         data = response.read(pin['archive_size'] + 1)
     if len(data) != pin['archive_size'] or hashlib.sha256(data).hexdigest() != pin['archive_sha256']:
@@ -239,9 +239,9 @@ def retain(args):
     runner_temp=Path(os.environ['RUNNER_TEMP']).absolute()
     bundle=runner_temp if args.target=='table-amd64' else app/'src-tauri/target'/config['triple']/'release/bundle'
     selected=select_candidates(bundle,args.target);outdir=Path(args.outdir).absolute();prepare_output(outdir,runner_temp,args.target)
-    cipher_name='qa-blocked-v4-'+args.target+'.tar.age';partial=outdir/(cipher_name+'.partial');ciphertext=outdir/cipher_name;succeeded=False
+    cipher_name='qa-blocked-v3-'+args.target+'.tar.age';partial=outdir/(cipher_name+'.partial');ciphertext=outdir/cipher_name;succeeded=False
     try:
-        with tempfile.TemporaryDirectory(prefix='v4-qa-private-',dir=runner_temp) as private:
+        with tempfile.TemporaryDirectory(prefix='v3-qa-private-',dir=runner_temp) as private:
             work=Path(private);records=snapshot_candidates(selected,work/'candidates')
             image=image_identity(runner_temp,records[0]) if args.target=='table-amd64' else None
             executable=install_age(work,args.target);encrypt_stream(executable,args.recipient,work/'candidates',records,partial)

@@ -16,19 +16,19 @@ spec.loader.exec_module(p)
 
 
 class AboutTests(unittest.TestCase):
-    def observation(self, version='Version 4.0.0 (4.0.0)'):
+    def observation(self, version='Version 3.0.0 (3.0.0)'):
         return {'status': 'AX_TEXT_OBSERVED', 'origin': 'AX_OWNED_ABOUT_STATIC_TEXT', 'ax_trusted': True,
                 'menu_invoked': True, 'owned_window_focused': True, 'name_text': 'BDOBB', 'version_text': version, 'nodes_visited': 9}
 
     def test_only_owned_visible_about_static_text_proves_displayed_version(self):
         reply = p.classify_observation(self.observation())
         self.assertEqual(reply['status'], 'OBSERVED_VERSION_MATCH')
-        self.assertEqual(reply['version_text'], 'Version 4.0.0 (4.0.0)')
+        self.assertEqual(reply['version_text'], 'Version 3.0.0 (3.0.0)')
         wrong = p.classify_observation(self.observation('Version 3.0.1 (3.0.1)'))
         self.assertEqual(wrong['status'], 'FAIL_DISPLAYED_VERSION_MISMATCH')
 
     def test_metadata_and_unfocused_text_cannot_become_ui_proof(self):
-        metadata = {'status': 'AX_TEXT_OBSERVED', 'bundle_name': 'BDOBB', 'CFBundleShortVersionString': '4.0.0'}
+        metadata = {'status': 'AX_TEXT_OBSERVED', 'bundle_name': 'BDOBB', 'CFBundleShortVersionString': '3.0.0'}
         self.assertEqual(p.classify_observation(metadata)['status'], 'GAP_PROBE_OUTPUT_INVALID')
         reply = self.observation()
         reply['owned_window_focused'] = False

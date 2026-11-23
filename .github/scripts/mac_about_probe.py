@@ -13,8 +13,8 @@ import subprocess
 import sys
 import tempfile
 
-SOURCE = 'f3ea816ae66f4e067738e3c8e5004fcac50b7ce6'
-OFFER = '7975463c347bf1c12378f88da7bedbe27a694430fe81a9c29f0546662d9d5609'
+SOURCE = 'c141f13d1f653b2b55ead7f2b9692d2efee10165'
+OFFER = '0526c7f4503d0997589f1cb8b02142fcc1b010d1abeaae6d73d5fa3cb660e8a7'
 GAPS = {'GAP_AX_NOT_TRUSTED', 'GAP_APP_AX_UNAVAILABLE', 'GAP_APP_MENU_NOT_FOUND', 'GAP_ACTIVATION_UNAVAILABLE',
         'GAP_APP_MENU_ACTION_UNAVAILABLE', 'GAP_ABOUT_MENU_NOT_FOUND', 'GAP_ABOUT_MENU_ACTION_UNAVAILABLE',
         'GAP_ABOUT_WINDOW_NOT_FOUND', 'GAP_ABOUT_VISIBILITY_UNCONFIRMED', 'GAP_ABOUT_STATIC_TEXT_UNAVAILABLE',
@@ -49,7 +49,7 @@ def classify_observation(value):
     if name != 'BDOBB' or not isinstance(version, str) or len(version) > 128: return {'status': 'GAP_ABOUT_STATIC_TEXT_UNAVAILABLE'}
     version = ' '.join(version.split())
     if not re.fullmatch(r'Version [0-9]+(?:\.[0-9]+){1,3} \([0-9]+(?:\.[0-9]+){1,3}\)', version): return {'status': 'GAP_ABOUT_STATIC_TEXT_UNAVAILABLE'}
-    safe.update(status='OBSERVED_VERSION_MATCH' if version == 'Version 4.0.0 (4.0.0)' else 'FAIL_DISPLAYED_VERSION_MISMATCH',
+    safe.update(status='OBSERVED_VERSION_MATCH' if version == 'Version 3.0.0 (3.0.0)' else 'FAIL_DISPLAYED_VERSION_MISMATCH',
                 origin='AX_OWNED_ABOUT_STATIC_TEXT', owned_window_focused=True, name_text=name, version_text=version)
     return safe
 
@@ -103,7 +103,7 @@ def observe(args):
     source = Path(__file__).with_name('mac_about_probe.swift')
     if source.is_symlink() or not source.is_file(): raise ProbeError('ERROR_SWIFT_SOURCE_GUARD')
     result = None
-    with tempfile.TemporaryDirectory(prefix='v4-about-observer-', dir=temp) as private:
+    with tempfile.TemporaryDirectory(prefix='v3-about-observer-', dir=temp) as private:
         work = Path(private)
         probe = work / 'mac-about-observer'
         try:
