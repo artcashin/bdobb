@@ -54,7 +54,7 @@ HOVER_STAGES = {'NOT_ATTEMPTED','COMPONENT_BOUNDS','MAIN_WINDOW_GEOMETRY','SAVE_
 
 def empty_hover_diagnostics():
     return dict(stage='NOT_ATTEMPTED', component_bounds=None, main_windows_count=0, main_window_geometry_matched=False,
-                matched_main_window_id=None, pointer_window_id=None, pointer_pid_available=None, pointer_main_pid_matches=None, pointer_matches_help_center=None, pointer_moved=False, cursor_restored=False)
+                matched_main_window_id=None, pointer_window_id=None, pointer_pid_available=None, pointer_main_pid_matches=None, pointer_matches_help_center=None, pointer_moved=False, cursor_restored=False, native_pointer_window_id=None, native_cursor_matches=None, native_hit_proven=None)
 
 
 def valid_hover_diagnostics(value):
@@ -63,8 +63,8 @@ def valid_hover_diagnostics(value):
     box = value['component_bounds']
     if box is not None and (not isinstance(box,list) or len(box) != 4 or any(type(n) is not int or not -(2**31) <= n < 2**31 for n in box)): return False
     if any(type(value[k]) is not bool for k in ['main_window_geometry_matched','pointer_moved','cursor_restored']): return False
-    if any(value[k] is not None and (type(value[k]) is not int or not 0 <= value[k] < 2**63) for k in ['matched_main_window_id','pointer_window_id']): return False
-    return all(value[k] is None or type(value[k]) is bool for k in ['pointer_pid_available','pointer_main_pid_matches','pointer_matches_help_center'])
+    if any(value[k] is not None and (type(value[k]) is not int or not 0 <= value[k] < 2**63) for k in ['matched_main_window_id','pointer_window_id','native_pointer_window_id']): return False
+    return all(value[k] is None or type(value[k]) is bool for k in ['pointer_pid_available','pointer_main_pid_matches','pointer_matches_help_center','native_cursor_matches','native_hit_proven'])
 
 
 def valid_help_actions(rows):
@@ -503,8 +503,43 @@ def hover_owned(source, tree, args, *, diagnostic=None):
     return saved
 
 
+def native_x11_pointer():
+    # Read the actual root child directly; xdotool's client-window lookup may
+    # report zero without a window manager. No zero-ID ownership is inferred.
+    local_display(os.environ.get('DISPLAY',''))
+    xlib = ctypes.CDLL(ctypes.util.find_library('X11') or 'libX11.so.6')
+    xlib.XOpenDisplay.argtypes, xlib.XOpenDisplay.restype = [ctypes.c_char_p], ctypes.c_void_p
+    xlib.XDefaultRootWindow.argtypes, xlib.XDefaultRootWindow.restype = [ctypes.c_void_p], ctypes.c_ulong
+    xlib.XQueryPointer.argtypes = [ctypes.c_void_p,ctypes.c_ulong,ctypes.POINTER(ctypes.c_ulong),ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.c_int),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(ctypes.c_uint)]
+    xlib.XQueryPointer.restype = ctypes.c_int
+    xlib.XCloseDisplay.argtypes, xlib.XCloseDisplay.restype = [ctypes.c_void_p], ctypes.c_int
+    display = xlib.XOpenDisplay(None)
+    if not display: raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+    try:
+        root = xlib.XDefaultRootWindow(display)
+        returned,child = ctypes.c_ulong(),ctypes.c_ulong()
+        x,y,wx,wy,mask = ctypes.c_int(),ctypes.c_int(),ctypes.c_int(),ctypes.c_int(),ctypes.c_uint()
+        if not root or not xlib.XQueryPointer(display,root,ctypes.byref(returned),ctypes.byref(child),ctypes.byref(x),ctypes.byref(y),ctypes.byref(wx),ctypes.byref(wy),ctypes.byref(mask)) or returned.value != root:
+            raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+        return dict(X=x.value,Y=y.value,WINDOW=child.value,ROOT=root)
+    finally: xlib.XCloseDisplay(display)
+
+
 def check_pointer_main_pid(actual, args, diagnostic):
-    diagnostic.update(pointer_window_id=actual['WINDOW'],pointer_pid_available=False,pointer_main_pid_matches=None)
+    diagnostic.update(pointer_window_id=actual['WINDOW'],pointer_pid_available=False,pointer_main_pid_matches=None,native_pointer_window_id=None,native_cursor_matches=None,native_hit_proven=None)
+    if actual['WINDOW'] == 0:
+        diagnostic.update(native_pointer_window_id=None,native_cursor_matches=None,native_hit_proven=False)
+        native = native_x11_pointer()
+        diagnostic['native_pointer_window_id'] = native['WINDOW']
+        diagnostic['native_cursor_matches'] = (native['X'],native['Y']) == (actual['X'],actual['Y'])
+        # Exact equality to the already verified containing main window is
+        # required; foreign/root/unknown windows remain blocked. No tree waiver.
+        if native['WINDOW'] in (0,native['ROOT']) or not diagnostic['main_window_geometry_matched'] or not diagnostic['matched_main_window_id'] or native['WINDOW'] != diagnostic['matched_main_window_id'] or not diagnostic['native_cursor_matches']:
+            raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+        if xdo('getwindowpid',native['WINDOW']).strip() != str(args.pid): raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+        diagnostic['native_hit_proven'] = True
+        return
     under_pid = xdo('getwindowpid', actual['WINDOW']).strip()
     diagnostic['pointer_pid_available'] = bool(re.fullmatch('[0-9]{1,10}',under_pid))
     diagnostic['pointer_main_pid_matches'] = under_pid == str(args.pid)

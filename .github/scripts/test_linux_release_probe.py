@@ -325,6 +325,49 @@ class HelpPointerTests(unittest.TestCase):
         self.assertEqual(xdo.call_args_list[-1],unittest.mock.call('mousemove','--sync',4,5))
 
 
+class NativeX11HitTests(unittest.TestCase):
+    def diagnostic(self):
+        d=p.empty_hover_diagnostics();d.update(matched_main_window_id=55,main_window_geometry_matched=True)
+        return d
+
+    def test_zero_tool_window_requires_positive_actual_native_hit_and_matching_coordinates(self):
+        d=self.diagnostic()
+        def xdo(*args):
+            if args==('getwindowpid',55):return '7'
+            raise p.ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+        with patch.object(p,'native_x11_pointer',return_value=dict(X=10,Y=11,WINDOW=55,ROOT=1),create=True),patch.object(p,'xdo',side_effect=xdo):
+            p.check_pointer_main_pid(dict(X=10,Y=11,WINDOW=0),SimpleNamespace(pid=7),d)
+        self.assertTrue(d['native_hit_proven'])
+        self.assertFalse(d['pointer_pid_available'])
+        self.assertEqual(d['pointer_window_id'],0)
+        self.assertEqual(d['native_pointer_window_id'],55)
+
+    def test_unknown_foreign_or_coordinate_drift_native_hit_stays_blocked(self):
+        for native in [dict(X=10,Y=11,WINDOW=0,ROOT=1),dict(X=10,Y=11,WINDOW=99,ROOT=1),dict(X=12,Y=11,WINDOW=55,ROOT=1),dict(X=10,Y=11,WINDOW=55,ROOT=55)]:
+            with patch.object(p,'native_x11_pointer',return_value=native,create=True),patch.object(p,'xdo',return_value='7'):
+                with self.assertRaises(p.ProbeError):p.check_pointer_main_pid(dict(X=10,Y=11,WINDOW=0),SimpleNamespace(pid=7),self.diagnostic())
+
+    def test_xquerypointer_abi_reads_actual_root_child_and_closes_connection(self):
+        from unittest.mock import Mock
+        library=SimpleNamespace(XOpenDisplay=Mock(return_value=42),XDefaultRootWindow=Mock(return_value=1),XCloseDisplay=Mock(return_value=0),XQueryPointer=Mock())
+        def query(display,root,returned,child,x,y,wx,wy,mask):
+            self.assertEqual((display,root),(42,1))
+            returned._obj.value=1;child._obj.value=55;x._obj.value=10;y._obj.value=11
+            return 1
+        library.XQueryPointer.side_effect=query
+        with patch.dict(os.environ,{'DISPLAY':':99'}),patch.object(p.ctypes,'CDLL',return_value=library),patch.object(p.ctypes.util,'find_library',return_value='X11'):
+            self.assertEqual(p.native_x11_pointer(),dict(X=10,Y=11,WINDOW=55,ROOT=1))
+            library.XCloseDisplay.assert_called_once_with(42)
+            library.XQueryPointer.side_effect=None;library.XQueryPointer.return_value=0
+            with self.assertRaises(p.ProbeError):p.native_x11_pointer()
+        self.assertEqual(library.XCloseDisplay.call_count,2)
+
+    def test_native_hit_needs_previously_verified_main_geometry_and_current_main_pid(self):
+        for d,pid in [(p.empty_hover_diagnostics(),'7'),(self.diagnostic(),'99')]:
+            with patch.object(p,'native_x11_pointer',return_value=dict(X=10,Y=11,WINDOW=55,ROOT=1),create=True),patch.object(p,'xdo',return_value=pid):
+                with self.assertRaises(p.ProbeError):p.check_pointer_main_pid(dict(X=10,Y=11,WINDOW=0),SimpleNamespace(pid=7),d)
+
+
 class WebKitOwnershipTests(unittest.TestCase):
     def records(self):
         def row(pid, ppid, exe, uid=1001):
