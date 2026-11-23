@@ -666,6 +666,53 @@ def activate_help(help_button, tree, args):
         tree.help_actions[-1]['pointer_restored'] = True
 
 
+def tooltip_positive_visible(node, tree):
+    if not tree.visible(node): return False
+    try: owned_component_center(node,tree)
+    except ProbeError as error:
+        if str(error).startswith('ERROR_') or str(error) == 'GAP_TRAVERSAL_BUDGET': raise
+        return False
+    return True
+
+
+def tooltip_witness(container, rendered, tree, args):
+    if not tooltip_positive_visible(container,tree) or container.getRole() != tree.api.ROLE_TOOL_TIP: return False
+    if not tooltip_positive_visible(rendered,tree) or rendered.name != EXPECTED_TEXT: return False
+    if rendered != container:
+        roles={getattr(tree.api,name,None)for name in ['ROLE_LABEL','ROLE_TEXT']}
+        roles.discard(None)
+        if rendered.getRole() not in roles: return False
+        parent=rendered.parent
+        seen=set()
+        for _ in range(16):
+            if parent is None or parent in seen or not tree.owned(parent): return False
+            if parent == container: break
+            seen.add(parent);parent=parent.parent
+        else: return False
+    tree.recheck_owner(container,args)
+    if rendered != container: tree.recheck_owner(rendered,args)
+    # Re-read visibility, actual rendered name and positive bounds after proof.
+    return tooltip_positive_visible(container,tree) and tooltip_positive_visible(rendered,tree) and rendered.name == EXPECTED_TEXT
+
+
+def tooltip_after_hover(app, tree, args):
+    # One native hover settle and one app traversal, rather than full-tree
+    # polling exhausting the unchanged 256-node/8-second budget.
+    time.sleep(0.8)
+    found=[]
+    def candidate(node):
+        if node.getRole() != tree.api.ROLE_TOOL_TIP or not tooltip_positive_visible(node,tree): return False
+        if node.name == EXPECTED_TEXT: rendered=node
+        else:
+            roles={getattr(tree.api,name,None)for name in ['ROLE_LABEL','ROLE_TEXT']};roles.discard(None)
+            rendered=tree.find(node,lambda child: child.getRole() in roles and tooltip_positive_visible(child,tree) and child.name == EXPECTED_TEXT)
+        if rendered is not None and tooltip_witness(node,rendered,tree,args):
+            found.append((node,rendered));return True
+        return False
+    tree.find(app,candidate)
+    return found[0]if found else None
+
+
 def worker(args):
     validate_process(args)
     keepalive = existing_accessibility_bus()
@@ -714,16 +761,12 @@ def worker(args):
                 saved = hover_owned(source, tree, args)
                 result['hovered_owned_window'] = True
                 result['attempt'] = 'GAP_OWNED_TOOLTIP_UNAVAILABLE'
-                time.sleep(0.8)
-                until = min(tree.deadline, time.monotonic() + 3)
-                while time.monotonic() < until:
-                    tooltip = tree.find(app, lambda node: tree.visible(node) and node.getRole() == pyatspi.ROLE_TOOL_TIP and node.name == EXPECTED_TEXT)
-                    if tooltip is not None:
-                        tree.recheck_owner(tooltip, args)
-                        result['tooltip_showing'] = tree.visible(tooltip)
-                        result['tooltip_exact'] = tooltip.name == EXPECTED_TEXT
-                        break
-                    time.sleep(0.3)
+                witness = tooltip_after_hover(app,tree,args)
+                if witness is not None:
+                    container,rendered = witness
+                    if tooltip_witness(container,rendered,tree,args):
+                        result['tooltip_showing'] = True
+                        result['tooltip_exact'] = rendered.name == EXPECTED_TEXT
             except ProbeError as error:
                 if str(error).startswith('ERROR_'): raise
                 result['attempt'] = str(error) if str(error) in GAPS else 'GAP_NATIVE_API_UNAVAILABLE'

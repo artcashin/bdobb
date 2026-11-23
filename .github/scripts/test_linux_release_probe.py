@@ -415,6 +415,47 @@ class NativeX11HitTests(unittest.TestCase):
                 with self.assertRaises(p.ProbeError):p.check_pointer_main_pid(dict(X=10,Y=11,WINDOW=0),SimpleNamespace(pid=7),d)
 
 
+class TooltipLabelTests(unittest.TestCase):
+    def fixture(self, *, label_visible=True, label_width=40, foreign=False, wrong_parent=False):
+        api=SimpleNamespace(ROLE_TOOL_TIP=63,ROLE_LABEL=29,ROLE_TEXT=61,XY_SCREEN=0,STATE_SHOWING=1,STATE_VISIBLE=2)
+        class Node:
+            def __init__(self,name,role,pid=7,visible=True,width=100):self.name,self.role,self.pid,self.visible,self.width=name,role,pid,visible,width;self.children=[];self.parent=None
+            def get_process_id(self):return self.pid
+            def getRole(self):return self.role
+            def getState(self):return SimpleNamespace(contains=lambda state:self.visible)
+            def queryComponent(self):return SimpleNamespace(getExtents=lambda coordinate:SimpleNamespace(x=10,y=10,width=self.width,height=20))
+            @property
+            def childCount(self):return len(self.children)
+            def getChildAtIndex(self,index):return self.children[index]
+        root=Node('Main',1);container=Node('',63,pid=8 if foreign else 7);label=Node(p.EXPECTED_TEXT,29,visible=label_visible,width=label_width)
+        root.children=[container];container.parent=root;container.children=[label];label.parent=root if wrong_parent else container
+        tree=p.Tree(api,7,SimpleNamespace(pid=7));return root,container,label,tree
+
+    def test_visible_exact_label_under_owned_tooltip_proves_rendered_text(self):
+        root,container,label,tree=self.fixture()
+        with patch.object(p,'validate_process'),patch.object(p.time,'sleep')as settle:
+            result=p.tooltip_after_hover(root,tree,SimpleNamespace(pid=7))
+        self.assertEqual(result,(container,label))
+        settle.assert_called_once_with(0.8)
+
+    def test_delayed_tooltip_search_waits_once_and_does_not_poll_whole_application(self):
+        root,container,label,tree=self.fixture(label_visible=False);calls=[];find=tree.find
+        def searched(node,predicate):calls.append(node);return find(node,predicate)
+        with patch.object(p,'validate_process'),patch.object(p.time,'sleep',side_effect=lambda seconds:setattr(label,'visible',True)),patch.object(tree,'find',side_effect=searched):
+            self.assertEqual(p.tooltip_after_hover(root,tree,SimpleNamespace(pid=7)),(container,label))
+        self.assertEqual(sum(node is root for node in calls),1)
+
+    def test_hidden_zero_bounds_wrong_parent_or_foreign_tooltip_never_proves_display(self):
+        for changes in [dict(label_visible=False),dict(label_width=0),dict(wrong_parent=True),dict(foreign=True)]:
+            root,container,label,tree=self.fixture(**changes)
+            with patch.object(p,'validate_process'),patch.object(p.time,'sleep'):
+                self.assertIsNone(p.tooltip_after_hover(root,tree,SimpleNamespace(pid=7)))
+
+    def test_description_or_plain_label_without_tooltip_parent_is_not_display(self):
+        root,container,label,tree=self.fixture();container.role=1;root.description=p.EXPECTED_TEXT
+        with patch.object(p,'validate_process'),patch.object(p.time,'sleep'):
+            self.assertIsNone(p.tooltip_after_hover(root,tree,SimpleNamespace(pid=7)))
+
 class WebKitOwnershipTests(unittest.TestCase):
     def records(self):
         def row(pid, ppid, exe, uid=1001):
