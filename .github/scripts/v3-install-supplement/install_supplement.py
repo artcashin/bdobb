@@ -112,6 +112,20 @@ def load_controller(path):
     return module
 
 
+def load_supplement_runtime():
+    root = Path(__file__).resolve().parents[3]
+    expected = os.environ.get('GITHUB_SHA', '')
+    if not re.fullmatch('[0-9a-f]{40}', expected) or command(['git', '-C', root, 'rev-parse', 'HEAD'], capture_output=True).stdout.strip() != expected:
+        raise ValueError('Supplement runtime must match owned dispatched controller')
+    command(['git', '-C', root, 'diff', '--quiet', 'HEAD', '--'], capture_output=True)
+    spec = importlib.util.spec_from_file_location('v3_supplement_runtime', root / '.github/scripts/v3_qualification.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if module.SOURCE_COMMIT != SOURCE or module.SOURCE_ID != OFFER:
+        raise ValueError('Supplement runtime product binding mismatch')
+    return module
+
+
 def preflight(target, q):
     if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
         raise ValueError('Installation restricted to fresh GitHub-hosted runners')
@@ -131,6 +145,7 @@ def windows(args, mode, package, evidence):
 
 def install_and_launch(args):
     q = load_controller(args.controller)
+    runtime_q = load_supplement_runtime()
     if command(['git', '-C', args.auditor, 'rev-parse', 'HEAD'], capture_output=True).stdout.strip() != AUDITOR:
         raise ValueError('Independent auditor is not exactly pinned')
     preflight(args.target, q)
@@ -149,7 +164,7 @@ def install_and_launch(args):
     gate = q.load_release_gate(args.auditor)
     expected_arch = q.TARGETS[args.target][0]
     receipt = {'original_run': BUILDS[args.target]['run'], 'original_run_attempt': RUN_ATTEMPT, 'controller_commit': BUILDS[args.target]['controller'],
-               'runtime_reference_controller': CONTROLLER, 'auditor_commit': AUDITOR, 'original_artifact_id': provenance['artifact_id'],
+               'artifact_validation_controller': CONTROLLER, 'runtime_controller': os.environ['GITHUB_SHA'], 'auditor_commit': AUDITOR, 'original_artifact_id': provenance['artifact_id'],
                'source_commit': SOURCE, 'source_id': OFFER, 'package': package.name, 'sha256': original['sha256'],
                'target': args.target, 'architecture': expected_arch, 'status': 'INCOMPLETE'}
     installed = False
@@ -221,7 +236,7 @@ def install_and_launch(args):
             receipt['installed_executable_sha256'] = digest(executable)
             receipt['embedded_defaults'] = 'all six exact empty values verified again from installed executable'
             receipt['embedded_offer'] = q.EXPECTED_OFFER
-            runtime = q.native_runtime(executable, package, work, evidence, expected_arch)
+            runtime = runtime_q.native_runtime(executable, package, work, evidence, expected_arch)
             runtime['method'] = 'actual installed executable launched after recorded platform installation; installer dialog not exercised'
             receipt['runtime'] = runtime
             if digest(package) != original['sha256'] or digest(executable) != original['executable_sha256']:

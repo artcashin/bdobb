@@ -410,8 +410,13 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s ../supplement-controller/.github/scripts/v3-install-supplement -p test_install_supplement.py -v
+          python -m unittest discover -s ../supplement-controller/.github/scripts -p test_mac_about_probe.py -v
           python ../auditor/security/sync.py --check
-          python ../auditor/security/gate.py --repo . artifacts ../supplement-controller/.github/scripts/v3-install-supplement ../supplement-controller/.github/workflows/release.yml
+          python ../auditor/security/gate.py --repo . artifacts ../supplement-controller/.github/scripts ../supplement-controller/.github/workflows/release.yml
+      - name: Verify Windows displayed-release observation classifier
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: powershell -NoProfile -File supplement-controller/.github/scripts/test_windows_ui_observation.ps1
       - name: Actually install and launch exact DEB using private runtime profile
         if: runner.os == 'Linux'
         env:

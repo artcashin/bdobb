@@ -197,7 +197,7 @@ def native_runtime(executable, package, work, evidence, expected_arch):
         raise ValueError("Native data directory existed before launch; refusing to read or reset it")
     if (data.parent / "com.artcashin.bdobb.clean.v3.repair").exists():
         raise ValueError("Migration profile exists before launch; refusing to read it")
-    receipt = {"method": "exact package extraction and native executable launch; installer UI/system registration not exercised", "data_preflight_absent": True, "expected_arch": expected_arch, "host_arch": platform.machine(), "data_directory": str(data), "displayed_about": "not observed remotely; version 3.0.0 asserted from pinned Tauri config and package metadata; prior local ARM About proof is separate"}
+    receipt = {"method": "exact package extraction and native executable launch; installer UI/system registration not exercised", "data_preflight_absent": True, "expected_arch": expected_arch, "host_arch": platform.machine(), "data_directory": str(data), "displayed_about": {"status": "NOT_OBSERVED", "scope": "package metadata is recorded separately"}}
     process = None
     try:
         with (evidence / "runtime.log").open("w") as log:
@@ -223,6 +223,15 @@ def native_runtime(executable, package, work, evidence, expected_arch):
                 if "Translated" in line or actual_code_type != expected_arch:
                     raise ValueError("Native process architecture proof failed")
                 receipt["native_process_code_type"] = line
+                from types import SimpleNamespace
+                probe_spec = importlib.util.spec_from_file_location("v3_mac_about_probe", Path(__file__).with_name("mac_about_probe.py"))
+                probe = importlib.util.module_from_spec(probe_spec)
+                probe_spec.loader.exec_module(probe)
+                observation = probe.observe(SimpleNamespace(pid=process.pid, executable=str(executable), sha256=sha256(executable),
+                                                         expected_arch=expected_arch, evidence_dir=str(evidence), temp_dir=str(work)))
+                receipt["displayed_about"] = observation
+                if observation["status"].startswith(("ERROR_", "FAIL_")):
+                    raise ValueError("Owned native About observer rejected application identity or displayed version")
             elif system == "Windows":
                 run(["powershell", "-NoProfile", "-File", Path(__file__).with_name("v3_windows_uia.ps1"), "-AppPid", process.pid, "-Evidence", evidence, "-Executable", executable])
                 receipt["ui"] = json.loads((evidence / "windows-ui.json").read_text(encoding="utf-8-sig"))

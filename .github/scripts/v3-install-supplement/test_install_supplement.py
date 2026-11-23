@@ -3,8 +3,10 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import types
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('supplement', Path(__file__).with_name('install_supplement.py'))
 s = importlib.util.module_from_spec(spec)
@@ -12,6 +14,22 @@ spec.loader.exec_module(s)
 
 
 class ValidationTest(unittest.TestCase):
+    def test_supplement_runtime_is_bound_to_owned_current_controller(self):
+        head = 'f' * 40
+        with patch.dict(s.os.environ, {'GITHUB_SHA': head}), patch.object(s, 'command', return_value=types.SimpleNamespace(stdout=head + '\n')):
+            current = s.load_supplement_runtime()
+            self.assertEqual(current.SOURCE_COMMIT, s.SOURCE)
+            self.assertEqual(current.SOURCE_ID, s.OFFER)
+        with patch.dict(s.os.environ, {'GITHUB_SHA': head}), patch.object(s, 'command', return_value=types.SimpleNamespace(stdout='0' * 40 + '\n')):
+            with self.assertRaises(ValueError):
+                s.load_supplement_runtime()
+        with patch.dict(s.os.environ, {'GITHUB_SHA': head}), patch.object(s, 'command', side_effect=[types.SimpleNamespace(stdout=head + '\n'), subprocess.CalledProcessError(1, 'git')]):
+            with self.assertRaises(subprocess.CalledProcessError):
+                s.load_supplement_runtime()
+        with patch.dict(s.os.environ, {'GITHUB_SHA': 'not-a-sha'}):
+            with self.assertRaises(ValueError):
+                s.load_supplement_runtime()
+
     def test_wrong_run_or_failed_target_job_refuses_artifacts(self):
         run = {'id': 45082804450, 'run_attempt': 1, 'head_sha': '205d83afce56d13dfdc8d91ec3e311c977b33bd4',
                'repository': {'full_name': 'artcashin/bdobb'}, 'event': 'workflow_dispatch',
