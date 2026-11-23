@@ -64,6 +64,32 @@ function New-V3UiObservation([bool]$SourceShowing,[bool]$TooltipShowing,[bool]$T
 function Test-V3HelpClickProof([bool]$OwnerFresh,[bool]$Visible,[bool]$PointUnchanged,[bool]$CursorMatches,[bool]$RootWindowHit,[bool]$ExactHelpHit) {
     return $OwnerFresh -and $Visible -and $PointUnchanged -and $CursorMatches -and $RootWindowHit -and $ExactHelpHit
 }
+function ConvertTo-V3WindowRectangle($Value) {
+    if($Value -isnot [Collections.IDictionary] -or $Value.Count -ne 4){throw 'GAP_WINDOW_RECTANGLE_INVALID'}
+    $rect=@{}
+    foreach($key in @('left','top','right','bottom')) {
+        if(-not $Value.Contains($key) -or $null -eq $Value[$key] -or $Value[$key].GetType() -notin @([int],[long]) -or
+            [Math]::Abs([long]$Value[$key]) -gt 1000000){throw 'GAP_WINDOW_RECTANGLE_INVALID'}
+        $rect[$key]=[long]$Value[$key]
+    }
+    if($rect.right -le $rect.left -or $rect.bottom -le $rect.top -or
+        $rect.right-$rect.left -gt 20000 -or $rect.bottom-$rect.top -gt 20000){throw 'GAP_WINDOW_RECTANGLE_INVALID'}
+    return $rect
+}
+function Test-V3WindowContained($Rectangle,$WorkArea) {
+    $r=ConvertTo-V3WindowRectangle $Rectangle;$w=ConvertTo-V3WindowRectangle $WorkArea
+    return $r.left -ge $w.left -and $r.top -ge $w.top -and $r.right -le $w.right -and $r.bottom -le $w.bottom
+}
+function Get-V3WindowFitPlan($Rectangle,$WorkArea,[bool]$Owned) {
+    if(-not $Owned){throw 'ERROR_MAIN_IDENTITY'}
+    $r=ConvertTo-V3WindowRectangle $Rectangle;$w=ConvertTo-V3WindowRectangle $WorkArea
+    if(Test-V3WindowContained $r $w){return @{action='ALREADY_FITS';target=$r}}
+    $width=[Math]::Min($r.right-$r.left,$w.right-$w.left);$height=[Math]::Min($r.bottom-$r.top,$w.bottom-$w.top)
+    $left=[Math]::Max($w.left,[Math]::Min($r.left,$w.right-$width));$top=[Math]::Max($w.top,[Math]::Min($r.top,$w.bottom-$height))
+    $target=@{left=$left;top=$top;right=$left+$width;bottom=$top+$height}
+    if(-not (Test-V3WindowContained $target $w)){throw 'GAP_WINDOW_CLAMP_REFUSED'}
+    return @{action='FIT_REQUIRED';target=$target}
+}
 function Test-V3TooltipTextProof([bool]$ContainerOwned,[bool]$ContainerVisible,[bool]$ContainerBounds,[bool]$ContainerExact,
     [bool]$LabelOwned,[bool]$LabelVisible,[bool]$LabelBounds,[bool]$LabelText,[bool]$LabelDescendant,[bool]$LabelExact) {
     return $ContainerOwned -and $ContainerVisible -and $ContainerBounds -and

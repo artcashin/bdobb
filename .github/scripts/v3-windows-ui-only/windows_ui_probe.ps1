@@ -9,6 +9,12 @@ Add-Type @'
 using System;using System.Runtime.InteropServices;
 public static class V3Pointer {
  [StructLayout(LayoutKind.Sequential)]public struct Point{public int X,Y;}
+ [StructLayout(LayoutKind.Sequential)]public struct Rect{public int Left,Top,Right,Bottom;}
+ [StructLayout(LayoutKind.Sequential)]public struct MonitorInfo{public int Size;public Rect Monitor,Work;public uint Flags;}
+ [DllImport("user32.dll")]public static extern bool GetWindowRect(IntPtr w,out Rect rect);
+ [DllImport("user32.dll")]public static extern IntPtr MonitorFromWindow(IntPtr w,uint flags);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern bool GetMonitorInfoW(IntPtr monitor,ref MonitorInfo info);
+ [DllImport("user32.dll",SetLastError=true)]public static extern bool SetWindowPos(IntPtr w,IntPtr after,int x,int y,int width,int height,uint flags);
  [DllImport("user32.dll")]public static extern bool GetCursorPos(out Point p);
  [DllImport("user32.dll")]public static extern bool SetCursorPos(int x,int y);
  [DllImport("user32.dll")]public static extern IntPtr WindowFromPoint(Point p);
@@ -42,7 +48,55 @@ function Assert-V3Window {
 }
 Assert-V3Window
 $script:Deadline=[DateTime]::UtcNow.AddSeconds(12)
-$script:Visited=0;$script:Proofs=@{};$script:HelpFacts=@();$script:PopupFacts=@();$script:AcceptedPopup=$null;$script:Attempt='HELP_CONTROL_UNAVAILABLE';$script:Stage='HELP_FIND';$script:Activation='NONE'
+$script:Visited=0;$script:Proofs=@{};$script:HelpFacts=@();$script:PopupFacts=@();$script:AcceptedPopup=$null;$script:Attempt='HELP_CONTROL_UNAVAILABLE';$script:Stage='WINDOW_FIT';$script:Activation='NONE'
+$script:WindowFit=@{status='NOT_ATTEMPTED';attempted=$false;before=$null;work_area=$null;target=$null;after=$null;native_return=$null;settle_ms=0}
+function Read-V3WindowGeometry {
+    Assert-V3Window
+    $rect=New-Object V3Pointer+Rect;$info=New-Object V3Pointer+MonitorInfo
+    $info.Size=[Runtime.InteropServices.Marshal]::SizeOf($info)
+    $monitor=[V3Pointer]::MonitorFromWindow($script:RootHandle,2)
+    if($monitor -eq [IntPtr]::Zero -or -not [V3Pointer]::GetWindowRect($script:RootHandle,[ref]$rect) -or
+        -not [V3Pointer]::GetMonitorInfoW($monitor,[ref]$info)){throw 'GAP_WINDOW_GEOMETRY_UNAVAILABLE'}
+    Assert-V3Window
+    return @{rectangle=(ConvertTo-V3WindowRectangle @{left=$rect.Left;top=$rect.Top;right=$rect.Right;bottom=$rect.Bottom});
+        work_area=(ConvertTo-V3WindowRectangle @{left=$info.Work.Left;top=$info.Work.Top;right=$info.Work.Right;bottom=$info.Work.Bottom})}
+}
+function Set-V3OwnedWindowFit {
+    $before=Read-V3WindowGeometry
+    $script:WindowFit.before=$before.rectangle;$script:WindowFit.work_area=$before.work_area
+    $plan=Get-V3WindowFitPlan $before.rectangle $before.work_area $true
+    $script:WindowFit.target=$plan.target;$script:WindowFit.status=$plan.action
+    if($plan.action -eq 'ALREADY_FITS'){$script:WindowFit.after=$before.rectangle;return}
+    $fresh=Read-V3WindowGeometry
+    foreach($key in @('left','top','right','bottom')) {
+        if($fresh.rectangle[$key] -ne $before.rectangle[$key] -or $fresh.work_area[$key] -ne $before.work_area[$key]){
+            $script:WindowFit.status='GEOMETRY_CHANGED_REFUSED';throw 'GAP_WINDOW_GEOMETRY_CHANGED'
+        }
+    }
+    Assert-V3Window
+    $t=$plan.target;$script:WindowFit.attempted=$true
+    # NOZORDER | NOACTIVATE | NOOWNERZORDER | ASYNCWINDOWPOS. The async
+    # request is checked by bounded polling; no focus/display settings change.
+    $script:WindowFit.native_return=[V3Pointer]::SetWindowPos($script:RootHandle,[IntPtr]::Zero,[int]$t.left,[int]$t.top,[int]($t.right-$t.left),[int]($t.bottom-$t.top),0x4214)
+    if(-not $script:WindowFit.native_return){$script:WindowFit.status='SET_WINDOW_POS_REFUSED';throw 'GAP_WINDOW_FIT_REFUSED'}
+    $contained=$false
+    for($poll=0;$poll -lt 5;$poll++) {
+        Start-Sleep -Milliseconds 100
+        $after=Read-V3WindowGeometry;$script:WindowFit.after=$after.rectangle
+        $sameArea=$true
+        foreach($key in @('left','top','right','bottom')){if($after.work_area[$key] -ne $before.work_area[$key]){$sameArea=$false}}
+        if(-not $sameArea){$script:WindowFit.status='WORK_AREA_CHANGED_REFUSED';throw 'GAP_WINDOW_WORK_AREA_CHANGED'}
+        if(Test-V3WindowContained $after.rectangle $after.work_area){$contained=$true;break}
+    }
+    if(-not $contained){$script:WindowFit.status='ACTUAL_RECT_NOT_CONTAINED';throw 'GAP_WINDOW_FIT_NOT_APPLIED'}
+    Start-Sleep -Milliseconds 200;$script:WindowFit.settle_ms=200
+    $settled=Read-V3WindowGeometry;$script:WindowFit.after=$settled.rectangle
+    foreach($key in @('left','top','right','bottom')) {
+        if($settled.work_area[$key] -ne $before.work_area[$key]){$script:WindowFit.status='WORK_AREA_CHANGED_REFUSED';throw 'GAP_WINDOW_WORK_AREA_CHANGED'}
+    }
+    if(-not (Test-V3WindowContained $settled.rectangle $settled.work_area)){$script:WindowFit.status='SETTLED_RECT_NOT_CONTAINED';throw 'GAP_WINDOW_FIT_NOT_APPLIED'}
+    $script:WindowFit.status='FITTED_OWNED_WINDOW'
+}
 function Test-V3PidOwner([int]$id,[switch]$Fresh) {
     if([DateTime]::UtcNow -gt $script:Deadline){throw 'GAP_UI_BUDGET'}
     if($id -eq $AppPid){return $true}
@@ -112,8 +166,17 @@ function Find-V3Owned([string[]]$Names,[switch]$Tooltip,$SearchRoot=$window) {
                 if($node.Current.Name -cne $script:V3ExactSourceText){$result.Label=Find-V3TooltipLabel $node}
                 if(Test-V3TooltipResult $result){return $result}
             }
-        } elseif($Names -ccontains $node.Current.Name -and -not $node.Current.IsOffscreen) {
-            return $node
+        } elseif($Names -ccontains $node.Current.Name) {
+            if($node.Current.Name -ceq 'Help' -and (Test-V3ElementOwner $node -Fresh) -and $script:HelpFacts.Count -lt 8) {
+                $bounds=$node.Current.BoundingRectangle
+                $valid=-not $bounds.IsEmpty -and -not [double]::IsNaN($bounds.Left) -and -not [double]::IsNaN($bounds.Top) -and
+                    -not [double]::IsInfinity($bounds.Left) -and -not [double]::IsInfinity($bounds.Top) -and
+                    $bounds.Width -gt 0 -and $bounds.Height -gt 0 -and $bounds.Width -le 20000 -and $bounds.Height -le 20000
+                $numericBounds=$null
+                if($valid){$numericBounds=@{left=$bounds.Left;top=$bounds.Top;width=$bounds.Width;height=$bounds.Height}}
+                $script:HelpFacts+=@{phase='EXACT_NAME_BEFORE_VISIBILITY_FILTER';pid=[int]$node.Current.ProcessId;control_type=[int]$node.Current.ControlType.Id;is_offscreen=[bool]$node.Current.IsOffscreen;bounds_valid=[bool]$valid;bounds=$numericBounds;owned=$true}
+            }
+            if(-not $node.Current.IsOffscreen){return $node}
         }
         $child=$walker.GetFirstChild($node);$count=0
         while($child) {if($count++ -ge 32){throw 'GAP_UI_BUDGET'};$queue.Enqueue($child);$child=$walker.GetNextSibling($child)}
@@ -161,6 +224,15 @@ function Get-V3OwnedPoint($Element) {
 }
 $saved=New-Object V3Pointer+Point;$savedOk=$false;$opened=$false;$help=$null;$sourceShowing=$false;$description=$false;$tipShowing=$false;$tipExact=$false;$cleanup='NOT_OPENED'
 try {
+    try {Set-V3OwnedWindowFit} catch {
+        if($_.Exception.Message -ceq 'ERROR_MAIN_IDENTITY'){throw 'ERROR_MAIN_IDENTITY'}
+        # A refused fit permits one read-only Help diagnostic scan, never an
+        # activation. Exact owned candidates are still recorded offscreen.
+        $script:Stage='WINDOW_FIT_DIAGNOSTIC'
+        [void](Find-V3Owned 'Help')
+        throw 'GAP_WINDOW_FIT_UNAVAILABLE'
+    }
+    $script:Stage='HELP_FIND'
     $help=Find-V3Owned 'Help'
     if($help) {
         $script:Stage='HELP_ACTIVATION'
@@ -214,7 +286,7 @@ try {
 Assert-V3Window
 $observation=New-V3UiObservation -SourceShowing $sourceShowing -TooltipShowing $tipShowing -TooltipExact $tipExact -DescriptionExact $description
 $observation.attempt=$script:Attempt;$observation.help_cleanup=$cleanup
-$observation.diagnostics=@{nodes_visited=$script:Visited;attempt_stage=$script:Stage;activation=$script:Activation;help_candidates=$script:HelpFacts;popup_candidates=$script:PopupFacts;foreign_processes=@($script:Proofs.Values|ForEach-Object{$_.Diagnostic})}
+$observation.diagnostics=@{nodes_visited=$script:Visited;attempt_stage=$script:Stage;activation=$script:Activation;window_fit=$script:WindowFit;help_candidates=$script:HelpFacts;popup_candidates=$script:PopupFacts;foreign_processes=@($script:Proofs.Values|ForEach-Object{$_.Diagnostic})}
 $observation.source_commit='de25611461ad0559ce237c4f59b812decd91dec1';$observation.source_offer_id='19c760a782e0ab84152ee990e8f9014f7e677f448bc58d6a3e548d8f485f1c6b';$observation.executable_sha256=$ExpectedSha256
 $output=Join-Path $Evidence 'windows-ui-only.json'
 if(Test-Path -LiteralPath $output){throw 'ERROR_EVIDENCE_EXISTS'}

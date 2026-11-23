@@ -70,3 +70,41 @@ Assert-True (Test-V3TooltipTextProof $true $true $true $true $false $false $fals
 # Source HelpText alone supplies no ToolTip container or child proof.
 Assert-True (-not (Test-V3TooltipTextProof $false $false $false $false $false $false $false $false $false $false))
 'PASS: child ownership, identity changes, Help pointer guards, owned-popup chains, actual-tooltip classification'
+
+# Window-fit controls run in the existing mandatory portable ownership suite.
+function Assert-Fit($Value){if(-not $Value){throw 'WINDOW_FIT_CONTROL_FAILED'}}
+function Rectangle([long]$L,[long]$T,[long]$R,[long]$B){return @{left=$L;top=$T;right=$R;bottom=$B}}
+$work=Rectangle 0 0 1280 720
+$small=Rectangle 100 80 1000 680
+$fit=Get-V3WindowFitPlan $small $work $true
+Assert-Fit ($fit.action -ceq 'ALREADY_FITS')
+Assert-Fit ($fit.target.left -eq 100 -and $fit.target.bottom -eq 680)
+$large=Rectangle 100 100 1300 1000
+$fit=Get-V3WindowFitPlan $large $work $true
+Assert-Fit ($fit.action -ceq 'FIT_REQUIRED')
+Assert-Fit ($fit.target.left -eq 80 -and $fit.target.top -eq 0 -and $fit.target.right -eq 1280 -and $fit.target.bottom -eq 720)
+$outside=Get-V3WindowFitPlan (Rectangle -500 -100 -100 200) $work $true
+Assert-Fit ($outside.target.left -eq 0 -and $outside.target.top -eq 0 -and $outside.target.right -eq 400 -and $outside.target.bottom -eq 300)
+$negative=Get-V3WindowFitPlan (Rectangle -2200 20 -1000 920) (Rectangle -1920 0 0 1080) $true
+Assert-Fit ($negative.target.left -eq -1920 -and $negative.target.right -eq -720 -and $negative.target.bottom -eq 920)
+foreach($case in @('Foreign','ZeroWindow','InvertedWork','MissingEdge','StringEdge','Excessive','Fractional')){
+ $rect=Rectangle 0 0 500 500;$area=$work.Clone();$owned=$true
+ switch($case){
+  Foreign {$owned=$false}
+  ZeroWindow {$rect.right=0}
+  InvertedWork {$area.bottom=-1}
+  MissingEdge {$rect.Remove('left')}
+  StringEdge {$rect.left='0'}
+  Excessive {$rect.right=20001}
+  Fractional {$rect.left=0.5}
+ }
+ $rejected=$false
+ try{[void](Get-V3WindowFitPlan $rect $area $owned)}catch{$rejected=$true}
+ Assert-Fit $rejected
+}
+Assert-Fit (Test-V3WindowContained (Rectangle 0 0 1280 720) $work)
+# Simulate the application's minimum-size refusal: the requested fit target
+# is safe, but the actual returned 900px-tall window must remain rejected.
+Assert-Fit (-not (Test-V3WindowContained (Rectangle 0 0 1200 900) $work))
+Assert-Fit (-not (Test-V3WindowContained $large $work))
+'PASS: bounded same-window fit, containment, foreign and malformed refusal'
