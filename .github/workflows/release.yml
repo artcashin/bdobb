@@ -152,16 +152,13 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install tesseract poppler sevenzip
 
-      - name: Install Windows OCR and extraction tools
+      - name: Prepare pinned Windows scanner tools without Chocolatey
         if: runner.os == 'Windows'
-        shell: pwsh
+        working-directory: ${{ github.workspace }}
         run: |
-          choco install --yes --no-progress tesseract poppler 7zip
-          if ($LASTEXITCODE -ne 0) { throw 'Required publication extractor installation failed' }
-          @('C:\Program Files\7-Zip', 'C:\Program Files\Tesseract-OCR') | Add-Content $env:GITHUB_PATH
-          $pdf = Get-ChildItem 'C:\ProgramData\chocolatey\lib\poppler' -Recurse -Filter pdfinfo.exe | Select-Object -First 1
-          if (-not $pdf) { throw 'Poppler executable not found' }
-          $pdf.Directory.FullName | Add-Content $env:GITHUB_PATH
+          python controller/.github/scripts/windows_scanner_tools.py \
+            --app app --auditor auditor --controller controller \
+            --outdir "$RUNNER_TEMP/v3-windows-scanner-tools"
 
       - name: Verify exact source, toolchain, and empty build defaults
         run: |
@@ -191,6 +188,9 @@ jobs:
               'gitleaks':subprocess.check_output(['gitleaks','version'],text=True).strip(),
               'runner_image':os.environ.get('ImageVersion'), 'signing':'ad hoc/unsigned; no notarization or Gatekeeper qualification'}
           Path('qualification-evidence/build-identity.json').write_text(json.dumps(receipt,indent=2))
+          if os.name == 'nt':
+              import shutil
+              shutil.copyfile(Path(os.environ['RUNNER_TEMP'])/'v3-windows-scanner-tools/windows-scanner-tools.json', 'qualification-evidence/windows-scanner-tools.json')
           PYTHON
 
       - name: Verify source-owned security policy and scanner failure controls
@@ -199,6 +199,7 @@ jobs:
           python ../auditor/security/sync.py --check
           python ../controller/.github/scripts/run_auditor_controls.py --auditor ../auditor --evidence qualification-evidence
           python -m unittest discover -s ../controller/.github/scripts -p test_v3_qualification.py -v
+          python -m unittest discover -s ../controller/.github/scripts -p test_windows_scanner_tools.py -v
           python ../auditor/security/gate.py --repo . tree
           python ../auditor/security/gate.py --repo . history --revision HEAD
           python ../auditor/security/gate.py --repo . artifacts ../controller/.github/workflows/release.yml ../controller/.github/scripts
@@ -317,8 +318,6 @@ jobs:
 
   install:
     needs: plan
-    env:
-      AUDITOR_COMMIT: e412f7214c352b211c6da743bf0387631e40fbd2
     permissions:
       contents: read
       actions: read
@@ -397,16 +396,15 @@ jobs:
       - name: Install macOS scanner tools
         if: runner.os == 'macOS'
         run: brew install tesseract poppler sevenzip
-      - name: Install Windows scanner tools
+      - name: Prepare pinned Windows scanner tools without Chocolatey
         if: runner.os == 'Windows'
-        shell: pwsh
+        working-directory: ${{ github.workspace }}
         run: |
-          choco install --yes --no-progress tesseract poppler 7zip
-          if ($LASTEXITCODE -ne 0) { throw 'Scanner extractor installation failed' }
-          @('C:\Program Files\7-Zip', 'C:\Program Files\Tesseract-OCR') | Add-Content $env:GITHUB_PATH
-          $pdf = Get-ChildItem 'C:\ProgramData\chocolatey\lib\poppler' -Recurse -Filter pdfinfo.exe | Select-Object -First 1
-          if (-not $pdf) { throw 'Poppler executable not found' }
-          $pdf.Directory.FullName | Add-Content $env:GITHUB_PATH
+          python supplement-controller/.github/scripts/windows_scanner_tools.py \
+            --app app --auditor auditor --controller supplement-controller \
+            --outdir "$RUNNER_TEMP/v3-windows-scanner-tools"
+          cp "$RUNNER_TEMP/v3-windows-scanner-tools/windows-scanner-tools.json" install-evidence/windows-scanner-tools.json
+
       - name: Verify supplement tests and source-owned scanning policy
         working-directory: app
         run: |

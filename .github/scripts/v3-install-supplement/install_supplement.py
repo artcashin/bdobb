@@ -23,7 +23,7 @@ BUILDS = {target: {'run': 45082804450, 'controller': CONTROLLER} for target in T
 BUILDS['windows'] = {'run': 45083124393, 'controller': '1d315d088377948219c440b56f230fb70ffbe273'}
 BUILDS['mac-arm']['artifact_id'] = 14778397164
 BUILDS['mac-intel']['artifact_id'] = 14778680808
-AUDITOR = 'e412f7214c352b211c6da743bf0387631e40fbd2'
+AUDITOR = '60866feb4f0e933f9264628c12911be810516de0'
 
 
 def digest(path):
