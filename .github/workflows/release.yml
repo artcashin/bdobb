@@ -21,8 +21,8 @@ concurrency:
   group: v4-mac-installer-${{ github.ref }}-${{ inputs.target }}
   cancel-in-progress: false
 env:
-  SOURCE_COMMIT: 6876caa667d6f123ab3f35ebb2424212c5591532
-  AUDITOR_COMMIT: 6876caa667d6f123ab3f35ebb2424212c5591532
+  SOURCE_COMMIT: 6c17f0f31af8dedd8ecf903719f8c8953035e43a
+  AUDITOR_COMMIT: 6c17f0f31af8dedd8ecf903719f8c8953035e43a
   SOURCE_REPOSITORY: https://github.com/Adventures-OpenBQ/bdobb.git
   RUSTUP_TOOLCHAIN: 1.99.1
   PYTHONUTF8: '1'
@@ -124,7 +124,7 @@ jobs:
               assert json.loads(Path(file).read_text())['version']=='4.0.0'
           assert json.loads(Path('package.json').read_text())['packageManager']=='pnpm@10.34.4'
           offer=json.loads(Path('source-offer.json').read_text())
-          assert offer['sourceId']=='9a1a020e5be53c2279ef2e98fc48d12e87cbbaf987342d77a715e1cd3fbbd798'
+          assert offer['sourceId']=='a2520b860843e562ad9357ad3f7506ee216913f940aabe49875d024bfecce3ba'
           for key in ['VITE_OPENBB_API_URL','VITE_RITA_URL','VITE_MCP_SERVERS','VITE_SHARE_FOLDERS','VITE_DEFAULT_BACKEND_URL','VITE_DEFAULT_BACKEND_AUTH']:
               assert os.environ.get(key)=='',key
           Path('qualification-evidence').mkdir()

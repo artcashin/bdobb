@@ -124,6 +124,18 @@ private func aboutTexts(_ window: AXUIElement) throws -> (Set<String>, Set<Strin
     return (names, versions)
 }
 
+// Activation and menu population are asynchronous; share the original deadline/node budget.
+private func pollOwned(_ executable: String, condition: () throws -> Bool) throws -> Bool {
+    while ProcessInfo.processInfo.systemUptime < deadline {
+        guard processPath(targetPID) == executable else { emit("ERROR_PID_PATH_MISMATCH") }
+        try budget()
+        if try condition() { return true }
+        let remaining = deadline - ProcessInfo.processInfo.systemUptime
+        if remaining > 0 { Thread.sleep(forTimeInterval: min(0.12, remaining)) }
+    }
+    return false
+}
+
 private func main() {
     let environment = ProcessInfo.processInfo.environment
     guard environment["GITHUB_ACTIONS"] == "true", environment["RUNNER_ENVIRONMENT"] == "github-hosted",
@@ -154,13 +166,17 @@ private func main() {
         }
         guard let appMenu else { emit("GAP_APP_MENU_NOT_FOUND") }
         try prepare(app)
-        guard AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue) == .success,
-              try boolean(app, kAXFrontmostAttribute) == true else { emit("GAP_ACTIVATION_UNAVAILABLE") }
+        guard AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue) == .success else { emit("GAP_ACTIVATION_UNAVAILABLE") }
+        guard try pollOwned(executable, condition: { try boolean(app, kAXFrontmostAttribute) == true }) else { emit("GAP_ACTIVATION_UNAVAILABLE") }
         try prepare(appMenu)
         guard AXUIElementPerformAction(appMenu, kAXPressAction as CFString) == .success else { emit("GAP_APP_MENU_ACTION_UNAVAILABLE") }
-        guard let about = try walk(appMenu, visitor: { node in
-            try string(node, kAXRoleAttribute) == kAXMenuItemRole && string(node, kAXTitleAttribute) == "About BDOBB"
-        }) else { emit("GAP_ABOUT_MENU_NOT_FOUND") }
+        var populatedAbout: AXUIElement?
+        guard try pollOwned(executable, condition: {
+            populatedAbout = try walk(appMenu, visitor: { node in
+                try string(node, kAXRoleAttribute) == kAXMenuItemRole && string(node, kAXTitleAttribute) == "About BDOBB"
+            })
+            return populatedAbout != nil
+        }), let about = populatedAbout else { emit("GAP_ABOUT_MENU_NOT_FOUND") }
         guard processPath(pid) == executable else { emit("ERROR_PID_PATH_MISMATCH") }
         try prepare(about)
         guard AXUIElementPerformAction(about, kAXPressAction as CFString) == .success else { emit("GAP_ABOUT_MENU_ACTION_UNAVAILABLE") }

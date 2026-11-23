@@ -2,12 +2,12 @@
 """V4 Mac-only controller reusing the reviewed V3 package/runtime boundaries."""
 import argparse, hashlib, importlib.util, json, os, platform, plistlib, shutil, signal, struct, subprocess, sys, tempfile, time
 from pathlib import Path
-SOURCE_COMMIT='6876caa667d6f123ab3f35ebb2424212c5591532'
-SOURCE_ID='9a1a020e5be53c2279ef2e98fc48d12e87cbbaf987342d77a715e1cd3fbbd798'
+SOURCE_COMMIT='6c17f0f31af8dedd8ecf903719f8c8953035e43a'
+SOURCE_ID='a2520b860843e562ad9357ad3f7506ee216913f940aabe49875d024bfecce3ba'
 EXPECTED_OFFER={
- 'sourceId':SOURCE_ID,'baseCommit':'67e328a7958d512110bb0e81dc197ec5b3536fb1',
- 'archiveFilename':'bdobb-v4.0.0-agpl-9a1a020e5be5-source.tar.gz',
- 'archiveUrl':'https://github.com/Adventures-OpenBQ/bdobb/releases/download/agpl-v4.0.0-9a1a020e5be5/bdobb-v4.0.0-agpl-9a1a020e5be5-source.tar.gz'}
+ 'sourceId':SOURCE_ID,'baseCommit':'11a54b338930f9429c5e35c2c0bc572e5853780e',
+ 'archiveFilename':'bdobb-v4.0.0-agpl-a2520b860843-source.tar.gz',
+ 'archiveUrl':'https://github.com/Adventures-OpenBQ/bdobb/releases/download/agpl-v4.0.0-a2520b860843/bdobb-v4.0.0-agpl-a2520b860843-source.tar.gz'}
 TARGETS={'mac-arm':('aarch64',['BDOBB_4.0.0_aarch64.dmg','BDOBB_aarch64.app.tar.gz']),
  'mac-intel':('x86_64',['BDOBB_4.0.0_x64.dmg','BDOBB_x64.app.tar.gz'])}
 
