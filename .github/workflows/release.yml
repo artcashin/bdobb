@@ -103,6 +103,7 @@ jobs:
         shell: bash
         working-directory: app
     env:
+      AUDITOR_COMMIT: ${{ matrix.target == 'windows' && '36f4c810ecdc8481bc15e2f10a45b3f18b780ddd' || '60866feb4f0e933f9264628c12911be810516de0' }}
       BDOBB_RUST_TARGET: ${{ matrix.rust-target }}
       BDOBB_TARGET: ${{ matrix.target }}
     steps:
@@ -213,6 +214,7 @@ jobs:
           python ../controller/.github/scripts/run_auditor_controls.py --auditor ../auditor --evidence qualification-evidence
           python -m unittest discover -s ../controller/.github/scripts -p test_v3_qualification.py -v
           python -m unittest discover -s ../controller/.github/scripts -p test_windows_scanner_tools.py -v
+          python -m unittest discover -s ../controller/.github/scripts -p test_encrypt_windows_candidates.py -v
           python ../auditor/security/gate.py --repo . tree
           python ../auditor/security/gate.py --repo . history --revision HEAD
           python ../auditor/security/gate.py --repo . artifacts ../controller/.github/workflows/release.yml ../controller/.github/scripts
@@ -236,6 +238,7 @@ jobs:
         run: dbus-run-session -- xvfb-run -a python ../controller/.github/scripts/v3_qualification.py qualify --target "$BDOBB_TARGET" --auditor ../auditor
 
       - name: Qualify every exact package on native macOS or Windows in fresh profiles
+        id: nonlinux_qualification
         if: runner.os != 'Linux'
         run: python ../controller/.github/scripts/v3_qualification.py qualify --target "$BDOBB_TARGET" --auditor ../auditor
 
@@ -298,6 +301,48 @@ jobs:
           path: |
             ${{ runner.temp }}/v3-encrypted-qa-${{ matrix.target }}/qa-blocked-v3-${{ matrix.target }}.tar.age
             ${{ runner.temp }}/v3-encrypted-qa-${{ matrix.target }}/retention.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Encrypt only blocked Windows MSI and NSIS for root-held private QA
+        id: windows_encrypted_qa
+        if: failure() && runner.os == 'Windows' && steps.native_build.outcome == 'success' && (steps.package_scan.outcome == 'failure' || steps.nonlinux_qualification.outcome == 'failure' || steps.evidence_scan.outcome == 'failure')
+        working-directory: ${{ github.workspace }}
+        env:
+          PACKAGE_SCAN_OUTCOME: ${{ steps.package_scan.outcome }}
+          NATIVE_QUALIFICATION_OUTCOME: ${{ steps.nonlinux_qualification.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$PACKAGE_SCAN_OUTCOME" = failure ]; then
+            failure_stage=package-scan
+          elif [ "$NATIVE_QUALIFICATION_OUTCOME" = failure ]; then
+            failure_stage=native-qualification
+          else
+            failure_stage=evidence-scan
+          fi
+          python controller/.github/scripts/encrypt_windows_candidates.py \
+            --target windows --app app --auditor auditor --controller controller \
+            --recipient age10ds3n8f25h5uvjzza4eluvwt7xp43eqjwdhmdm9haduyrxctwevqt4r7rr \
+            --outdir "$RUNNER_TEMP/v3-encrypted-qa-windows" \
+            --failure-stage "$failure_stage" --qualification-outcome failure
+
+      - name: Scan only encrypted Windows QA envelope and safe receipt
+        id: windows_encrypted_qa_outbound
+        if: failure() && steps.windows_encrypted_qa.outcome == 'success'
+        working-directory: ${{ github.workspace }}
+        run: |
+          python auditor/security/gate.py --repo app artifacts \
+            "$RUNNER_TEMP/v3-encrypted-qa-windows/retention.json" \
+            "$RUNNER_TEMP/v3-encrypted-qa-windows/qa-blocked-v3-windows.tar.age"
+
+      - name: Retain encrypted BLOCKED Windows QA only for one day
+        if: failure() && steps.windows_encrypted_qa.outcome == 'success' && steps.windows_encrypted_qa_outbound.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: QA-ENCRYPTED-BLOCKED-v3-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/v3-encrypted-qa-windows/qa-blocked-v3-windows.tar.age
+            ${{ runner.temp }}/v3-encrypted-qa-windows/retention.json
           if-no-files-found: error
           retention-days: 1
 

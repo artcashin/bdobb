@@ -16,7 +16,7 @@ import zipfile
 
 SOURCE = 'de25611461ad0559ce237c4f59b812decd91dec1'
 OFFER = '19c760a782e0ab84152ee990e8f9014f7e677f448bc58d6a3e548d8f485f1c6b'
-AUDITOR = '60866feb4f0e933f9264628c12911be810516de0'
+AUDITOR = '36f4c810ecdc8481bc15e2f10a45b3f18b780ddd'
 MODEL_COMMIT = '87416418657359cb625c412a48b6e1d6d41c29bd'
 ASSETS = {
     'bootstrap': {'filename': '7zr.exe', 'url': 'https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe',
