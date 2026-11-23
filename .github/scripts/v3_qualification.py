@@ -161,7 +161,7 @@ def windows_roaming():
     return Path(buffer.value)
 
 
-def native_runtime(executable, package, work, evidence, expected_arch):
+def native_runtime(executable, package, work, evidence, expected_arch, *, ui_observer=None):
     home = work / "home"
     home.mkdir()
     env = os.environ.copy()
@@ -240,6 +240,13 @@ def native_runtime(executable, package, work, evidence, expected_arch):
                 receipt["visible_windows"] = result.stdout.splitlines()
                 if not receipt["visible_windows"]:
                     raise ValueError("Native Linux process has no visible window")
+            if ui_observer is not None:
+                observation = ui_observer(process.pid, executable, work, evidence, expected_arch)
+                if not isinstance(observation, dict) or not isinstance(observation.get("status"), str):
+                    raise ValueError("Owned UI observer returned invalid evidence")
+                receipt["displayed_version_ui"] = observation
+                if observation["status"].startswith(("ERROR_", "FAIL_")):
+                    raise ValueError("Owned UI observer rejected process identity or displayed version")
             receipt["status"] = "PASS"
             return receipt
     finally:
