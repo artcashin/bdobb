@@ -156,7 +156,12 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: '-'
           NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm tauri build --ci --target "$BDOBB_RUST_TARGET" -- --locked
+        run: |
+          node - <<'JAVASCRIPT'
+          const fs=require('node:fs'),v8=require('node:v8');
+          fs.writeFileSync('qualification-evidence/build-node.json',JSON.stringify({scope:'Build process only; no product runtime setting',node:process.versions.node,node_options:process.env.NODE_OPTIONS,heap_limit_bytes:v8.getHeapStatistics().heap_size_limit},null,2)+'\n');
+          JAVASCRIPT
+          pnpm tauri build --ci --target "$BDOBB_RUST_TARGET" -- --locked
       - name: Stage four original names and scan each exact package
         id: package_scan
         run: python ../controller/.github/scripts/v4_mac_qualification.py collect --target "$BDOBB_TARGET" --auditor ../auditor
