@@ -278,6 +278,30 @@ class HelpPointerTests(unittest.TestCase):
         self.assertNotIn(unittest.mock.call('click','1'),xdo.call_args_list)
         self.assertTrue(tree.help_actions[0]['pointer_restored'])
 
+    def test_one_recenter_handles_hover_expansion_only_when_cursor_stays_inside_help(self):
+        node,tree,_=self.node(action='unrecognized')
+        node.queryComponent=lambda:SimpleNamespace(getExtents=lambda coordinate:SimpleNamespace(x=0,y=0,width=40,height=22))
+        replies=['X=10\nY=11\nWINDOW=12','7','','X=20\nY=11\nWINDOW=12','7','','']
+        with patch.dict(os.environ,{'V3_OWNED_QA_SESSION':'1'}),patch.object(p,'validate_process'), \
+             patch.object(p,'hover_owned',return_value=dict(X=4,Y=5,WINDOW=6)),patch.object(p,'xdo',side_effect=replies)as xdo:
+            self.assertEqual(p.activate_help(node,tree,SimpleNamespace(pid=7)),11)
+        self.assertEqual(xdo.call_args_list.count(unittest.mock.call('mousemove','--sync',20,11)),1)
+        self.assertEqual(xdo.call_args_list.count(unittest.mock.call('click','1')),1)
+        self.assertTrue(tree.help_actions[0]['hover']['recentered'])
+        self.assertTrue(tree.help_actions[0]['hover']['pointer_matches_help_center'])
+        self.assertEqual(xdo.call_args_list[-1],unittest.mock.call('mousemove','--sync',4,5))
+
+    def test_recenter_does_not_repeat_if_control_expands_again(self):
+        node,tree,_=self.node(action='unrecognized');widths=iter([40,60])
+        node.queryComponent=lambda:SimpleNamespace(getExtents=lambda coordinate:SimpleNamespace(x=0,y=0,width=next(widths),height=22))
+        replies=['X=10\nY=11\nWINDOW=12','7','','X=20\nY=11\nWINDOW=12','7','']
+        with patch.dict(os.environ,{'V3_OWNED_QA_SESSION':'1'}),patch.object(p,'validate_process'), \
+             patch.object(p,'hover_owned',return_value=dict(X=4,Y=5,WINDOW=6)),patch.object(p,'xdo',side_effect=replies)as xdo:
+            with self.assertRaises(p.ProbeError):p.activate_help(node,tree,SimpleNamespace(pid=7))
+        self.assertNotIn(unittest.mock.call('click','1'),xdo.call_args_list)
+        self.assertEqual(xdo.call_args_list.count(unittest.mock.call('mousemove','--sync',20,11)),1)
+        self.assertEqual(xdo.call_args_list[-1],unittest.mock.call('mousemove','--sync',4,5))
+
     def test_action_diagnostics_cannot_leak_names_or_promote_display(self):
         value=ProbeTests().evidence();value.update(tooltip_exact=False,description_exact=False)
         row=dict(count=1,known_names=['click'],unknown_names=True,returned=False,method='OWNED_POINTER_CLICK',pointer_restored=True,hover=p.empty_hover_diagnostics())

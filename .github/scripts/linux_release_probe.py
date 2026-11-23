@@ -54,7 +54,7 @@ HOVER_STAGES = {'NOT_ATTEMPTED','COMPONENT_BOUNDS','MAIN_WINDOW_GEOMETRY','SAVE_
 
 def empty_hover_diagnostics():
     return dict(stage='NOT_ATTEMPTED', component_bounds=None, main_windows_count=0, main_window_geometry_matched=False,
-                matched_main_window_id=None, pointer_window_id=None, pointer_pid_available=None, pointer_main_pid_matches=None, pointer_matches_help_center=None, pointer_moved=False, cursor_restored=False, native_pointer_window_id=None, native_cursor_matches=None, native_hit_proven=None)
+                matched_main_window_id=None, pointer_window_id=None, pointer_pid_available=None, pointer_main_pid_matches=None, pointer_matches_help_center=None, pointer_moved=False, cursor_restored=False, native_pointer_window_id=None, native_cursor_matches=None, native_hit_proven=None, recentered=False)
 
 
 def valid_hover_diagnostics(value):
@@ -62,7 +62,7 @@ def valid_hover_diagnostics(value):
     if value['stage'] not in HOVER_STAGES or type(value['main_windows_count']) is not int or not 0 <= value['main_windows_count'] <= 16: return False
     box = value['component_bounds']
     if box is not None and (not isinstance(box,list) or len(box) != 4 or any(type(n) is not int or not -(2**31) <= n < 2**31 for n in box)): return False
-    if any(type(value[k]) is not bool for k in ['main_window_geometry_matched','pointer_moved','cursor_restored']): return False
+    if any(type(value[k]) is not bool for k in ['main_window_geometry_matched','pointer_moved','cursor_restored','recentered']): return False
     if any(value[k] is not None and (type(value[k]) is not int or not 0 <= value[k] < 2**63) for k in ['matched_main_window_id','pointer_window_id','native_pointer_window_id']): return False
     return all(value[k] is None or type(value[k]) is bool for k in ['pointer_pid_available','pointer_main_pid_matches','pointer_matches_help_center','native_cursor_matches','native_hit_proven'])
 
@@ -634,7 +634,25 @@ def activate_help(help_button, tree, args):
         # A pointer/control move within this app must not redirect the click.
         checked_help_role(help_button, tree)
         hover['stage'] = 'FINAL_HELP_CENTER'
-        hover['pointer_matches_help_center'] = (actual['X'],actual['Y']) == owned_component_center(help_button, tree, hover)
+        center = owned_component_center(help_button, tree, hover)
+        if (actual['X'],actual['Y']) != center:
+            box = hover['component_bounds']
+            # Hover can expand the same Help element. Recenter once only while
+            # the current cursor still lies inside its fresh exact bounds.
+            if box is None or not (box[0] <= actual['X'] < box[0]+box[2] and box[1] <= actual['Y'] < box[1]+box[3]):
+                hover['pointer_matches_help_center'] = False
+                raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+            xdo('mousemove','--sync',*center)
+            hover['recentered'] = True
+            validate_process(args)
+            tree.recheck_owner(help_button, args)
+            actual = numeric_fields(xdo('getmouselocation','--shell'), {'X','Y','WINDOW'})
+            hover['stage'] = 'FINAL_POINTER_MAIN_PID'
+            check_pointer_main_pid(actual,args,hover)
+            checked_help_role(help_button,tree)
+            hover['stage'] = 'FINAL_HELP_CENTER'
+            center = owned_component_center(help_button,tree,hover)
+        hover['pointer_matches_help_center'] = (actual['X'],actual['Y']) == center
         if not hover['pointer_matches_help_center']: raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
         xdo('click','1')
         hover['stage'] = 'CLICKED'
