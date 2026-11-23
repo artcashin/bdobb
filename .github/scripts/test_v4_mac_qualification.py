@@ -7,8 +7,8 @@ class QualificationTest(unittest.TestCase):
     def test_only_four_original_v4_mac_names_and_final_offer(self):
         self.assertEqual(set(q.TARGETS),{'mac-arm','mac-intel'})
         self.assertEqual({name for target in q.TARGETS for name in q.expected_names(target)}, {'BDOBB_4.0.0_aarch64.dmg','BDOBB_4.0.0_x64.dmg','BDOBB_aarch64.app.tar.gz','BDOBB_x64.app.tar.gz'})
-        self.assertEqual(q.SOURCE_COMMIT,'6c17f0f31af8dedd8ecf903719f8c8953035e43a')
-        self.assertEqual(q.SOURCE_ID,'a2520b860843e562ad9357ad3f7506ee216913f940aabe49875d024bfecce3ba')
+        self.assertEqual(q.SOURCE_COMMIT,'fecff636e2389d417a320b66c9264d612ebb3a64')
+        self.assertEqual(q.SOURCE_ID,'00b661cf92ed7bebfa52a104b99ed5e9cb52e0873a2370fad1b22a07fe58633c')
     def test_native_mach_architectures_refuse_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'bdobb'
