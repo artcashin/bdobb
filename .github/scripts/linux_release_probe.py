@@ -49,9 +49,22 @@ def base_observation(status):
                 native_about='NOT_OBSERVED', scope='Frontend source-offer release text; does not establish native About version')
 
 
+def valid_help_actions(rows):
+    if not isinstance(rows, list) or len(rows) > 2: return False
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {'count', 'known_names', 'unknown_names', 'returned', 'method', 'pointer_restored'}: return False
+        if row['count'] is not None and (type(row['count']) is not int or not 0 <= row['count'] <= 4): return False
+        if not isinstance(row['known_names'], list) or len(row['known_names']) > 3 or any(name not in {'click','press','activate'} for name in row['known_names']): return False
+        if type(row['unknown_names']) is not bool or type(row['pointer_restored']) is not bool: return False
+        if row['returned'] is not None and type(row['returned']) is not bool: return False
+        if row['method'] not in {'NOT_OPENED','AT_SPI_ACTION','OWNED_POINTER_CLICK'}: return False
+    return True
+
+
 def valid_help_diagnostics(value):
-    if not isinstance(value, dict) or set(value) != {'exact_help_candidates', 'candidates_truncated', 'matched_help_role_code', 'foreign_nodes_skipped', 'nodes_visited', 'foreign_processes', 'foreign_processes_truncated'}:
+    if not isinstance(value, dict) or set(value) != {'exact_help_candidates', 'candidates_truncated', 'matched_help_role_code', 'foreign_nodes_skipped', 'nodes_visited', 'foreign_processes', 'foreign_processes_truncated', 'help_actions'}:
         return False
+    if not valid_help_actions(value['help_actions']): return False
     if not valid_foreign_diagnostics(value['foreign_processes']) or type(value['foreign_processes_truncated']) is not bool: return False
     if type(value['candidates_truncated']) is not bool or type(value['nodes_visited']) is not int or not 0 <= value['nodes_visited'] <= MAX_NODES:
         return False
@@ -326,13 +339,13 @@ class Tree:
         self.api, self.pid = api, pid
         self.args, self.foreign_processes, self.foreign_processes_truncated = args, {}, False
         self.deadline, self.visited = time.monotonic() + 8, 0
-        self.foreign_skipped, self.help_candidates = 0, []
+        self.foreign_skipped, self.help_candidates, self.help_actions = 0, [], []
         self.help_candidates_truncated, self.matched_help_role_code = False, None
 
     def help_diagnostics(self):
         return dict(exact_help_candidates=list(self.help_candidates), candidates_truncated=self.help_candidates_truncated,
                     matched_help_role_code=self.matched_help_role_code, foreign_nodes_skipped=self.foreign_skipped, nodes_visited=self.visited,
-                    foreign_processes=[dict(proof['diagnostic']) for proof in self.foreign_processes.values()], foreign_processes_truncated=self.foreign_processes_truncated)
+                    foreign_processes=[dict(proof['diagnostic']) for proof in self.foreign_processes.values()], foreign_processes_truncated=self.foreign_processes_truncated, help_actions=list(self.help_actions))
 
     def record_help(self, role, visible):
         row = dict(role_code=role, owned=True, visible=visible)
@@ -426,11 +439,15 @@ def numeric_fields(text, required):
     return values
 
 
-def hover_owned(source, tree, args):
-    if not tree.visible(source): raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
-    box = source.queryComponent().getExtents(tree.api.XY_SCREEN)
+def owned_component_center(node, tree):
+    if not tree.visible(node): raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+    box = node.queryComponent().getExtents(tree.api.XY_SCREEN)
     if not 0 < box.width <= 20000 or not 0 < box.height <= 20000: raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
-    x, y = box.x + box.width // 2, box.y + box.height // 2
+    return box.x + box.width // 2, box.y + box.height // 2
+
+
+def hover_owned(source, tree, args):
+    x, y = owned_component_center(source, tree)
     windows = xdo('search', '--onlyvisible', '--pid', args.pid).splitlines()
     matched = False
     for window in windows[:16]:
@@ -479,20 +496,70 @@ def is_help_candidate(node, tree):
     return visible and code in allowed_help_roles(tree.api)
 
 
-def invoke_help(help_button, tree, args):
-    # This is the sole actionable element. Never query/invoke Source's Action.
+def checked_help_role(help_button, tree):
     if not tree.visible(help_button) or help_button.name != 'Help':
         raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
     code = role_code(help_button.getRole())
     if code not in allowed_help_roles(tree.api): raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
-    action = help_button.queryAction()
-    if not 0 < action.nActions <= 4: raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
-    for index in range(action.nActions):
-        if action.getName(index).lower() in {'click', 'press', 'activate'}:
+    return code
+
+
+def invoke_help(help_button, tree, args):
+    # The only actionable element is exact owned visible Help. Source is never invoked.
+    code = checked_help_role(help_button, tree)
+    if not hasattr(tree, 'help_actions'): tree.help_actions = []
+    if len(tree.help_actions) >= 2: raise ProbeError('GAP_TRAVERSAL_BUDGET')
+    row = dict(count=None, known_names=[], unknown_names=False, returned=None, method='NOT_OPENED', pointer_restored=False)
+    tree.help_actions.append(row)
+    try:
+        action = help_button.queryAction()
+        raw_count = action.nActions
+        if isinstance(raw_count, bool): raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
+        count = int(raw_count)
+        if not 0 <= count <= 4: raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
+        row['count'] = count
+        names = [action.getName(index).lower() for index in range(count)]
+        row['known_names'] = sorted(set(names) & {'click','press','activate'})
+        row['unknown_names'] = any(name not in {'click','press','activate'} for name in names)
+    except Exception:
+        raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE') from None
+    for index,name in enumerate(names):
+        if name in {'click','press','activate'}:
             validate_process(args)
             tree.recheck_owner(help_button, args)
-            if action.doAction(index): return code
+            try: returned = bool(action.doAction(index))
+            except Exception: raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE') from None
+            row['returned'] = returned
+            if returned:
+                row['method'] = 'AT_SPI_ACTION'
+                return code
     raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
+
+
+def activate_help(help_button, tree, args):
+    code = checked_help_role(help_button, tree)
+    try: return invoke_help(help_button, tree, args)
+    except ProbeError as error:
+        if str(error) != 'GAP_HELP_ACTION_UNAVAILABLE': raise
+    if os.environ.get('V3_OWNED_QA_SESSION') != '1': raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
+    # Only this exact Help control may be clicked, in the own ephemeral Xvfb.
+    # hover_owned derives actual accessible bounds and verifies main-window PID.
+    saved = hover_owned(help_button, tree, args)
+    try:
+        checked_help_role(help_button, tree)
+        validate_process(args)
+        tree.recheck_owner(help_button, args)
+        actual = numeric_fields(xdo('getmouselocation','--shell'), {'X','Y','WINDOW'})
+        if xdo('getwindowpid',actual['WINDOW']).strip() != str(args.pid): raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+        # A pointer/control move within this app must not redirect the click.
+        checked_help_role(help_button, tree)
+        if (actual['X'],actual['Y']) != owned_component_center(help_button, tree): raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+        xdo('click','1')
+        tree.help_actions[-1]['method'] = 'OWNED_POINTER_CLICK'
+        return code
+    finally:
+        xdo('mousemove','--sync',saved['X'],saved['Y'])
+        tree.help_actions[-1]['pointer_restored'] = True
 
 
 def worker(args):
@@ -528,7 +595,7 @@ def worker(args):
     result['attempt'] = 'GAP_SOURCE_CONTROL_UNAVAILABLE'
     opened, saved = False, None
     try:
-        tree.matched_help_role_code = invoke_help(help_button, tree, args)
+        tree.matched_help_role_code = activate_help(help_button, tree, args)
         opened = True
         source = None
         until = min(tree.deadline, time.monotonic() + 2)
@@ -570,7 +637,7 @@ def worker(args):
         if opened:
             result['help_cleanup'] = 'HELP_CLOSE_UNAVAILABLE'
             try:
-                invoke_help(help_button, tree, args)
+                activate_help(help_button, tree, args)
                 result['help_cleanup'] = 'HELP_TOGGLE_CLOSED'
             except ProbeError as error:
                 if str(error).startswith('ERROR_'): raise

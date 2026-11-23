@@ -19,7 +19,7 @@ class ProbeTests(unittest.TestCase):
                     description_exact=False, hovered_owned_window=True, tooltip_showing=True, tooltip_exact=True,
                     nodes_visited=14, help_cleanup='HELP_TOGGLE_CLOSED', cursor_restored=True, attempt='GAP_OWNED_TOOLTIP_UNAVAILABLE',
                     help_diagnostics=dict(exact_help_candidates=[dict(role_code=43, owned=True, visible=True)], candidates_truncated=False,
-                                          matched_help_role_code=43, foreign_nodes_skipped=0, nodes_visited=14, foreign_processes=[], foreign_processes_truncated=False))
+                                          matched_help_role_code=43, foreign_nodes_skipped=0, nodes_visited=14, foreign_processes=[], foreign_processes_truncated=False, help_actions=[]))
 
     def test_only_owned_showing_hovered_exact_tooltip_proves_display(self):
         self.assertEqual(p.classify_observation(self.evidence())['status'], 'OBSERVED_OWNED_TOOLTIP')
@@ -187,6 +187,97 @@ class HelpRoleTests(unittest.TestCase):
         value = ProbeTests().evidence()
         value['help_diagnostics']['matched_help_role_code'] = None
         self.assertEqual(p.classify_observation(value)['status'], 'GAP_PROBE_OUTPUT_INVALID')
+
+
+class HelpPointerTests(unittest.TestCase):
+    def node(self, **values):
+        node, tree, calls = HelpRoleTests().node(11, **values)
+        tree.api.XY_SCREEN=0
+        node.queryComponent=lambda:SimpleNamespace(getExtents=lambda coordinate:SimpleNamespace(x=0,y=0,width=20,height=22))
+        return node, tree, calls
+
+    def test_only_exact_owned_help_can_use_pointer_after_action_unavailable(self):
+        node, tree, calls = self.node(action='unrecognized')
+        args = SimpleNamespace(pid=7)
+        with patch.dict(os.environ, {'V3_OWNED_QA_SESSION':'1'}), patch.object(p, 'validate_process'), \
+             patch.object(p, 'hover_owned', return_value=dict(X=4,Y=5,WINDOW=6)) as hover, \
+             patch.object(p, 'xdo', side_effect=['X=10\nY=11\nWINDOW=12', '7', '', '']) as xdo:
+            self.assertEqual(p.activate_help(node, tree, args), 11)
+        self.assertEqual(calls, [])
+        hover.assert_called_once_with(node, tree, args)
+        self.assertIn(unittest.mock.call('click','1'), xdo.call_args_list)
+        self.assertEqual(xdo.call_args_list[-1], unittest.mock.call('mousemove','--sync',4,5))
+        self.assertEqual(tree.help_actions[0]['method'],'OWNED_POINTER_CLICK')
+        self.assertTrue(tree.help_actions[0]['pointer_restored'])
+        self.assertNotIn('unrecognized', json.dumps(tree.help_actions))
+
+    def test_false_known_action_is_recorded_before_owned_pointer_click(self):
+        node,tree,_=self.node()
+        node.queryAction=lambda:SimpleNamespace(nActions=1,getName=lambda index:'click',doAction=lambda index:False)
+        with patch.dict(os.environ,{'V3_OWNED_QA_SESSION':'1'}),patch.object(p,'validate_process'), \
+             patch.object(p,'hover_owned',return_value=dict(X=4,Y=5,WINDOW=6)), \
+             patch.object(p,'xdo',side_effect=['X=10\nY=11\nWINDOW=12','7','','']):
+            self.assertEqual(p.activate_help(node,tree,SimpleNamespace(pid=7)),11)
+        self.assertEqual(tree.help_actions[0]['count'],1)
+        self.assertEqual(tree.help_actions[0]['known_names'],['click'])
+        self.assertIs(tree.help_actions[0]['returned'],False)
+        self.assertTrue(p.valid_help_actions(tree.help_actions))
+
+    def test_hover_uses_actual_accessible_bounds_and_both_main_window_pid_checks(self):
+        node,tree,_=self.node(action='unrecognized')
+        tree.api.XY_SCREEN=0
+        node.queryComponent=lambda:SimpleNamespace(getExtents=lambda coordinate:SimpleNamespace(x=100,y=200,width=20,height=10))
+        replies=['55','7','X=0\nY=0\nWIDTH=500\nHEIGHT=500','X=4\nY=5\nWINDOW=9','','X=110\nY=205\nWINDOW=55','7']
+        with patch.object(p,'validate_process'),patch.object(p,'xdo',side_effect=replies)as xdo:
+            self.assertEqual(p.hover_owned(node,tree,SimpleNamespace(pid=7)),dict(X=4,Y=5,WINDOW=9))
+        self.assertIn(unittest.mock.call('mousemove','--sync',110,205),xdo.call_args_list)
+        self.assertEqual(xdo.call_args_list[-1],unittest.mock.call('getwindowpid',55))
+
+    def test_action_diagnostics_cannot_leak_names_or_promote_display(self):
+        value=ProbeTests().evidence();value.update(tooltip_exact=False,description_exact=False)
+        row=dict(count=1,known_names=['click'],unknown_names=True,returned=False,method='OWNED_POINTER_CLICK',pointer_restored=True)
+        value['help_diagnostics']['help_actions']=[row]
+        self.assertFalse(p.classify_observation(value)['displayed_release_observed'])
+        row['known_names']=['PRIVATE_ACTION']
+        self.assertEqual(p.classify_observation(value)['status'],'GAP_PROBE_OUTPUT_INVALID')
+        self.assertNotIn('PRIVATE_ACTION',json.dumps(p.classify_observation(value)))
+
+    def test_pointer_requires_owned_session_and_main_window_under_cursor(self):
+        for environment,owner in [({},'7'),({'V3_OWNED_QA_SESSION':'1'},'99')]:
+            node, tree, _ = self.node(action='unrecognized')
+            with patch.dict(os.environ,environment,clear=True), patch.object(p, 'validate_process'), \
+                 patch.object(p, 'hover_owned', return_value=dict(X=4,Y=5,WINDOW=6)), \
+                 patch.object(p, 'xdo', side_effect=['X=10\nY=11\nWINDOW=12',owner,'']) as xdo:
+                with self.assertRaises(p.ProbeError):p.activate_help(node,tree,SimpleNamespace(pid=7))
+            self.assertNotIn(unittest.mock.call('click','1'),xdo.call_args_list)
+            if environment:self.assertEqual(xdo.call_args_list[-1],unittest.mock.call('mousemove','--sync',4,5))
+
+    def test_source_hidden_foreign_or_unknown_role_never_uses_pointer(self):
+        for change in [dict(name='Source Code…'),dict(visible=False),dict(owned=False),dict(role=99)]:
+            values=dict(role=11,action='unrecognized');values.update(change)
+            node,tree,_=HelpRoleTests().node(**values)
+            with patch.dict(os.environ,{'V3_OWNED_QA_SESSION':'1'}),patch.object(p,'hover_owned')as hover:
+                with self.assertRaises(p.ProbeError):p.activate_help(node,tree,SimpleNamespace(pid=7))
+            hover.assert_not_called()
+
+    def test_pointer_drift_or_help_control_movement_prevents_click_with_same_window_pid(self):
+        for pointer,box in [('X=90\nY=91\nWINDOW=12',(0,0,20,22)),('X=10\nY=11\nWINDOW=12',(100,100,20,22))]:
+            node,tree,_=self.node(action='unrecognized')
+            node.queryComponent=lambda:SimpleNamespace(getExtents=lambda coordinate:SimpleNamespace(x=box[0],y=box[1],width=box[2],height=box[3]))
+            with patch.dict(os.environ,{'V3_OWNED_QA_SESSION':'1'}),patch.object(p,'validate_process'), \
+                 patch.object(p,'hover_owned',return_value=dict(X=4,Y=5,WINDOW=6)), \
+                 patch.object(p,'xdo',side_effect=lambda *args:pointer if args[0]=='getmouselocation' else '7' if args[0]=='getwindowpid' else '')as xdo:
+                with self.assertRaises(p.ProbeError):p.activate_help(node,tree,SimpleNamespace(pid=7))
+            self.assertNotIn(unittest.mock.call('click','1'),xdo.call_args_list)
+            self.assertEqual(xdo.call_args_list[-1],unittest.mock.call('mousemove','--sync',4,5))
+
+    def test_process_change_before_pointer_click_restores_cursor_without_click(self):
+        node,tree,_=self.node(action='unrecognized')
+        with patch.dict(os.environ,{'V3_OWNED_QA_SESSION':'1'}),patch.object(p,'validate_process',side_effect=p.ProbeError('ERROR_PROCESS_IDENTITY')), \
+             patch.object(p,'hover_owned',return_value=dict(X=4,Y=5,WINDOW=6)),patch.object(p,'xdo')as xdo:
+            with self.assertRaises(p.ProbeError):p.activate_help(node,tree,SimpleNamespace(pid=7))
+        self.assertNotIn(unittest.mock.call('click','1'),xdo.call_args_list)
+        self.assertEqual(xdo.call_args_list[-1],unittest.mock.call('mousemove','--sync',4,5))
 
 
 class WebKitOwnershipTests(unittest.TestCase):
