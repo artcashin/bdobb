@@ -22,11 +22,17 @@ EXPECTED_TEXT = 'Download the corresponding source for v3.0.0 (GNU AGPL v3).'
 MAX_NODES = 256
 MAX_HELP_CANDIDATES = 8
 MAX_FOREIGN_SKIPS = MAX_NODES * 33
+MAX_FOREIGN_PROCESSES = 8
+MAX_ANCESTRY_DEPTH = 16
 GAPS = {'GAP_SYSTEM_PYATSPI_UNAVAILABLE', 'GAP_SESSION_UNAVAILABLE', 'GAP_EXISTING_A11Y_BUS_UNAVAILABLE',
         'GAP_EXISTING_ATSPI_REGISTRY_UNAVAILABLE', 'GAP_OWNED_APPLICATION_UNAVAILABLE', 'GAP_HELP_CONTROL_UNAVAILABLE',
         'GAP_HELP_ACTION_UNAVAILABLE', 'GAP_SOURCE_CONTROL_UNAVAILABLE', 'GAP_SOURCE_RELEASE_TEXT_UNAVAILABLE',
         'GAP_HOVER_OWNERSHIP_UNCONFIRMED', 'GAP_NATIVE_API_UNAVAILABLE', 'GAP_TRAVERSAL_BUDGET',
-        'GAP_PROBE_TIMEOUT', 'GAP_PROBE_FAILED', 'GAP_PROBE_OUTPUT_INVALID', 'GAP_OWNED_TOOLTIP_UNAVAILABLE'}
+        'GAP_PROBE_TIMEOUT', 'GAP_PROBE_FAILED', 'GAP_PROBE_OUTPUT_INVALID', 'GAP_OWNED_TOOLTIP_UNAVAILABLE',
+        'GAP_WEBKIT_PID_UNRESOLVED', 'GAP_WEBKIT_PROC_UNAVAILABLE', 'GAP_WEBKIT_UID_MISMATCH',
+        'GAP_WEBKIT_PID_NAMESPACE_MISMATCH', 'GAP_WEBKIT_EXECUTABLE_UNAPPROVED', 'GAP_WEBKIT_NATIVE_ARCH_MISMATCH',
+        'GAP_WEBKIT_NOT_OWNED_DESCENDANT', 'GAP_WEBKIT_ANCESTRY_BUDGET', 'GAP_WEBKIT_PROCESS_CHANGED',
+        'GAP_WEBKIT_PROOF_CONTEXT_UNAVAILABLE'}
 ERRORS = {'ERROR_HOST_GUARD', 'ERROR_PROCESS_IDENTITY', 'ERROR_EXECUTABLE_SHA', 'ERROR_NATIVE_ARCHITECTURE',
           'ERROR_INSTALLED_PATH_REQUIRED', 'ERROR_EVIDENCE_PATH', 'ERROR_ARGUMENTS'}
 FLAGS = ('owned_application', 'source_showing', 'description_exact', 'hovered_owned_window',
@@ -44,8 +50,9 @@ def base_observation(status):
 
 
 def valid_help_diagnostics(value):
-    if not isinstance(value, dict) or set(value) != {'exact_help_candidates', 'candidates_truncated', 'matched_help_role_code', 'foreign_nodes_skipped', 'nodes_visited'}:
+    if not isinstance(value, dict) or set(value) != {'exact_help_candidates', 'candidates_truncated', 'matched_help_role_code', 'foreign_nodes_skipped', 'nodes_visited', 'foreign_processes', 'foreign_processes_truncated'}:
         return False
+    if not valid_foreign_diagnostics(value['foreign_processes']) or type(value['foreign_processes_truncated']) is not bool: return False
     if type(value['candidates_truncated']) is not bool or type(value['nodes_visited']) is not int or not 0 <= value['nodes_visited'] <= MAX_NODES:
         return False
     if type(value['foreign_nodes_skipped']) is not int or not 0 <= value['foreign_nodes_skipped'] <= MAX_FOREIGN_SKIPS:
@@ -111,6 +118,138 @@ def validate_process(args):
     proc = Path('/proc') / str(args.pid)
     if args.pid <= 0 or proc.stat().st_uid != os.getuid() or (proc / 'exe').resolve(strict=True) != executable:
         raise ProbeError('ERROR_PROCESS_IDENTITY')
+    actual = read_executable_record(proc / 'exe', proc_magic=True)
+    expected = read_executable_record(executable)
+    if (actual['exe_dev'], actual['exe_ino']) != (expected['exe_dev'], expected['exe_ino']):
+        raise ProbeError('ERROR_PROCESS_IDENTITY')
+
+
+def valid_pid(pid):
+    return type(pid) is int and 0 < pid < 2 ** 31
+
+
+def foreign_diagnostic(pid):
+    return dict(pid=pid if type(pid) is int and 0 <= pid < 2 ** 31 else 0, role_code=None,
+                pid_valid=valid_pid(pid), status='GAP_WEBKIT_PID_UNRESOLVED', proc_uid=None, failed_ancestor_uid=None,
+                same_uid=None, namespace_matches=None, known_system_webkit=False, native_arch_matches=None,
+                main_ancestor_verified=False, ancestry_depth=0)
+
+
+def valid_foreign_diagnostics(rows):
+    if not isinstance(rows, list) or len(rows) > MAX_FOREIGN_PROCESSES: return False
+    expected = set(foreign_diagnostic(0))
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != expected: return False
+        if type(row['pid']) is not int or not 0 <= row['pid'] < 2 ** 31 or type(row['pid_valid']) is not bool: return False
+        if row['role_code'] is not None and (type(row['role_code']) is not int or not 0 <= row['role_code'] <= 4096): return False
+        if row['status'] not in GAPS | {'PROVEN_OWNED_WEBKIT_DESCENDANT'}: return False
+        if any(row[key] is not None and (type(row[key]) is not int or not 0 <= row[key] < 2 ** 32) for key in ['proc_uid', 'failed_ancestor_uid']): return False
+        if any(row[key] is not None and type(row[key]) is not bool for key in ['same_uid', 'namespace_matches', 'native_arch_matches']): return False
+        if any(type(row[key]) is not bool for key in ['known_system_webkit', 'main_ancestor_verified']): return False
+        if type(row['ancestry_depth']) is not int or not 0 <= row['ancestry_depth'] <= MAX_ANCESTRY_DEPTH: return False
+        if row['status'] == 'PROVEN_OWNED_WEBKIT_DESCENDANT' and (not row['pid_valid'] or row['proc_uid'] is None or row['failed_ancestor_uid'] is not None or row['namespace_matches'] is None or
+            not all(row[key] is True for key in ['same_uid', 'known_system_webkit', 'native_arch_matches', 'main_ancestor_verified'])): return False
+    return True
+
+
+def current_pid_namespace():
+    return os.readlink('/proc/self/ns/pid')
+
+
+def read_executable_record(path, *, proc_magic=False):
+    # /proc/PID/exe is a kernel magic link. Open that object directly; resolving
+    # its reported pathname can inspect a different mount-namespace object.
+    flags = os.O_RDONLY | (0 if proc_magic else getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(os.open(path, flags), 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode): raise ValueError('nonregular executable')
+        header = stream.read(64)
+    machine = None
+    if len(header) == 64 and header[:6] == b'\x7fELF\x02\x01': machine = struct.unpack_from('<H', header, 18)[0]
+    return dict(exe_uid=info.st_uid, exe_mode=stat.S_IMODE(info.st_mode), exe_dev=info.st_dev, exe_ino=info.st_ino, machine=machine)
+
+
+def read_process_record(pid):
+    if not valid_pid(pid): raise ValueError('invalid pid')
+    root = Path('/proc') / str(pid)
+    uid = root.stat().st_uid
+    value = dict(pid=pid, uid=uid, ppid=0, start_time=0, exe=None, namespace=None, exe_uid=None, exe_mode=0, exe_dev=None, exe_ino=None, machine=None)
+    if uid != os.getuid(): return value
+    # The comm field is discarded; only bounded numeric PPid/start-time fields
+    # are used. No argv, environment, process names, or UI text is retained.
+    raw = (root / 'stat').read_text(encoding='utf-8')
+    fields = raw[raw.rfind(')') + 2:].split()
+    value.update(ppid=int(fields[1]), start_time=int(fields[19]), exe=(root / 'exe').resolve(strict=True),
+                 namespace=os.readlink(root / 'ns/pid'))
+    value.update(read_executable_record(root / 'exe', proc_magic=True))
+    return value
+
+
+def process_token(record):
+    return tuple(record[key] for key in ['pid', 'uid', 'ppid', 'start_time', 'exe', 'namespace', 'exe_uid', 'exe_mode', 'exe_dev', 'exe_ino', 'machine'])
+
+
+def prove_webkit_owner(pid, args):
+    diagnostic = foreign_diagnostic(pid)
+    proof = dict(allowed=False, diagnostic=diagnostic, identities=[])
+    if not valid_pid(pid): return proof
+    validate_process(args)  # Main PID/path/native architecture/SHA before proof.
+    try:
+        leaf = read_process_record(pid)
+        diagnostic.update(proc_uid=leaf['uid'], same_uid=leaf['uid'] == os.getuid())
+        if not diagnostic['same_uid']:
+            diagnostic.update(status='GAP_WEBKIT_UID_MISMATCH', failed_ancestor_uid=leaf['uid'])
+            return proof
+        namespace = current_pid_namespace()
+        diagnostic['namespace_matches'] = leaf['namespace'] == namespace
+        triple = {'aarch64': 'aarch64-linux-gnu', 'x86_64': 'x86_64-linux-gnu'}[args.expected_arch]
+        expected_executable = Path('/usr/lib') / triple / 'webkit2gtk-4.1/WebKitWebProcess'
+        trusted = read_executable_record(expected_executable)
+        diagnostic['known_system_webkit'] = (leaf['exe'] == expected_executable and leaf['exe_uid'] == 0 and leaf['exe_mode'] & 0o022 == 0
+            and trusted['exe_uid'] == 0 and trusted['exe_mode'] & 0o022 == 0
+            and (leaf['exe_dev'], leaf['exe_ino']) == (trusted['exe_dev'], trusted['exe_ino']))
+        diagnostic['native_arch_matches'] = leaf['machine'] == {'aarch64': 183, 'x86_64': 62}[args.expected_arch]
+        if not diagnostic['known_system_webkit']:
+            diagnostic['status'] = 'GAP_WEBKIT_EXECUTABLE_UNAPPROVED'; return proof
+        if not diagnostic['native_arch_matches']:
+            diagnostic['status'] = 'GAP_WEBKIT_NATIVE_ARCH_MISMATCH'; return proof
+        current, seen = leaf, set()
+        for depth in range(MAX_ANCESTRY_DEPTH + 1):
+            diagnostic['ancestry_depth'] = depth
+            if current['pid'] in seen:
+                diagnostic['status'] = 'GAP_WEBKIT_NOT_OWNED_DESCENDANT'; return proof
+            seen.add(current['pid'])
+            if current['uid'] != os.getuid():
+                diagnostic.update(status='GAP_WEBKIT_UID_MISMATCH', same_uid=False, failed_ancestor_uid=current['uid']); return proof
+            # Sandbox namespaces can differ even for a proven host PID. This
+            # is diagnostic only; host /proc identity and exact ancestry decide.
+            if current['namespace'] != namespace: diagnostic['namespace_matches'] = False
+            proof['identities'].append(process_token(current))
+            if current['pid'] == args.pid:
+                if current['exe'] != Path(args.executable):
+                    raise ProbeError('ERROR_PROCESS_IDENTITY')
+                validate_process(args)  # SHA/path and all chain UIDs rechecked.
+                for identity in proof['identities']:
+                    if process_token(read_process_record(identity[0])) != identity:
+                        diagnostic['status'] = 'GAP_WEBKIT_PROCESS_CHANGED'; return proof
+                diagnostic.update(status='PROVEN_OWNED_WEBKIT_DESCENDANT', main_ancestor_verified=True)
+                proof['allowed'] = True
+                return proof
+            if not valid_pid(current['ppid']) or current['ppid'] == 1:
+                diagnostic['status'] = 'GAP_WEBKIT_NOT_OWNED_DESCENDANT'; return proof
+            if depth == MAX_ANCESTRY_DEPTH:
+                diagnostic['status'] = 'GAP_WEBKIT_ANCESTRY_BUDGET'; return proof
+            current = read_process_record(current['ppid'])
+    except ProbeError: raise
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        diagnostic['status'] = 'GAP_WEBKIT_PROC_UNAVAILABLE'
+    return proof
+
+
+def cached_webkit_identity_matches(proof):
+    try:
+        return proof['allowed'] and all(process_token(read_process_record(identity[0])) == identity for identity in proof['identities'])
+    except (OSError, ValueError, KeyError, IndexError, TypeError): return False
 
 
 def local_bus_address(address):
@@ -183,15 +322,17 @@ def existing_accessibility_bus():
 
 
 class Tree:
-    def __init__(self, api, pid):
+    def __init__(self, api, pid, args=None):
         self.api, self.pid = api, pid
+        self.args, self.foreign_processes, self.foreign_processes_truncated = args, {}, False
         self.deadline, self.visited = time.monotonic() + 8, 0
         self.foreign_skipped, self.help_candidates = 0, []
         self.help_candidates_truncated, self.matched_help_role_code = False, None
 
     def help_diagnostics(self):
         return dict(exact_help_candidates=list(self.help_candidates), candidates_truncated=self.help_candidates_truncated,
-                    matched_help_role_code=self.matched_help_role_code, foreign_nodes_skipped=self.foreign_skipped, nodes_visited=self.visited)
+                    matched_help_role_code=self.matched_help_role_code, foreign_nodes_skipped=self.foreign_skipped, nodes_visited=self.visited,
+                    foreign_processes=[dict(proof['diagnostic']) for proof in self.foreign_processes.values()], foreign_processes_truncated=self.foreign_processes_truncated)
 
     def record_help(self, role, visible):
         row = dict(role_code=role, owned=True, visible=visible)
@@ -205,10 +346,39 @@ class Tree:
     def owned(self, node):
         self.budget()
         if node is None: return False
-        if node.get_process_id() == self.pid: return True
+        pid = node.get_process_id()
+        if type(pid) is int and pid == self.pid: return True
+        key = pid if type(pid) is int else None
+        if key not in self.foreign_processes:
+            if len(self.foreign_processes) >= MAX_FOREIGN_PROCESSES:
+                self.foreign_processes_truncated = True
+                return False
+            if self.args is None:
+                proof = dict(allowed=False, diagnostic=foreign_diagnostic(pid), identities=[])
+                proof['diagnostic']['status'] = 'GAP_WEBKIT_PROOF_CONTEXT_UNAVAILABLE'
+            else: proof = prove_webkit_owner(pid, self.args)
+            try: proof['diagnostic']['role_code'] = role_code(node.getRole())
+            except Exception: pass  # Numeric role only; no foreign text is read.
+            self.foreign_processes[key] = proof
+        proof = self.foreign_processes[key]
+        if proof['allowed']:
+            if cached_webkit_identity_matches(proof): return True
+            proof['allowed'] = False
+            proof['diagnostic'].update(status='GAP_WEBKIT_PROCESS_CHANGED', main_ancestor_verified=False)
         if self.foreign_skipped >= MAX_FOREIGN_SKIPS: raise ProbeError('GAP_TRAVERSAL_BUDGET')
         self.foreign_skipped += 1
         return False
+
+    def recheck_owner(self, node, args):
+        pid = node.get_process_id()
+        if type(pid) is int and pid == self.pid:
+            validate_process(args); return
+        proof = prove_webkit_owner(pid, args)
+        key = pid if type(pid) is int else None
+        if key in self.foreign_processes:
+            proof['diagnostic']['role_code'] = self.foreign_processes[key]['diagnostic']['role_code']
+            self.foreign_processes[key] = proof
+        if not proof['allowed']: raise ProbeError(proof['diagnostic']['status'])
 
     def visible(self, node):
         if not self.owned(node): return False
@@ -273,6 +443,7 @@ def hover_owned(source, tree, args):
     if not matched: raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
     saved = numeric_fields(xdo('getmouselocation', '--shell'), {'X', 'Y', 'WINDOW'})
     validate_process(args)
+    tree.recheck_owner(source, args)
     xdo('mousemove', '--sync', x, y)
     try:
         actual = numeric_fields(xdo('getmouselocation', '--shell'), {'X', 'Y', 'WINDOW'})
@@ -316,6 +487,7 @@ def invoke_help(help_button, tree, args):
     for index in range(action.nActions):
         if action.getName(index).lower() in {'click', 'press', 'activate'}:
             validate_process(args)
+            tree.recheck_owner(help_button, args)
             if action.doAction(index): return code
     raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
 
@@ -328,10 +500,12 @@ def worker(args):
     from gi.repository import Atspi
     import pyatspi
     Atspi.set_timeout(300, 800)
-    tree = Tree(pyatspi, args.pid)
+    tree = Tree(pyatspi, args.pid, args)
     desktop = pyatspi.Registry.getDesktop(0)
     applications = tree.children(desktop)
-    app = next((node for node in applications if tree.owned(node)), None)
+    # The application root must be the exact launched main PID. The WebKit
+    # exception applies only inside that application's tree, never desktop apps.
+    app = next((node for node in applications if node is not None and type(node.get_process_id()) is int and node.get_process_id() == args.pid), None)
     if app is None: raise ProbeError('GAP_OWNED_APPLICATION_UNAVAILABLE')
     result = dict(status='AT_SPI_PROBE_COMPLETE', **{flag: False for flag in FLAGS}, nodes_visited=0, help_cleanup='NOT_OPENED', attempt='GAP_HELP_CONTROL_UNAVAILABLE')
     result['owned_application'] = True
@@ -342,6 +516,9 @@ def worker(args):
         result['attempt'] = str(error)
         help_button = None
     if help_button is None:
+        if result['attempt'] == 'GAP_HELP_CONTROL_UNAVAILABLE':
+            rejected = [proof['diagnostic']['status'] for proof in tree.foreign_processes.values() if not proof['allowed']]
+            if rejected: result['attempt'] = rejected[0]
         validate_process(args)
         result['nodes_visited'], result['help_diagnostics'] = tree.visited, tree.help_diagnostics()
         return result
@@ -368,6 +545,7 @@ def worker(args):
                 while time.monotonic() < until:
                     tooltip = tree.find(app, lambda node: tree.visible(node) and node.getRole() == pyatspi.ROLE_TOOL_TIP and node.name == EXPECTED_TEXT)
                     if tooltip is not None:
+                        tree.recheck_owner(tooltip, args)
                         result['tooltip_showing'] = tree.visible(tooltip)
                         result['tooltip_exact'] = tooltip.name == EXPECTED_TEXT
                         break
