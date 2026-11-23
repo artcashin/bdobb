@@ -161,6 +161,13 @@ def windows_roaming():
     return Path(buffer.value)
 
 
+def windows_ui_evidence(pid, executable, evidence, ui_observer):
+    if ui_observer is not None:
+        return {"status": "DEFERRED_TO_EXPLICIT_OWNED_UI_OBSERVER", "scope": "Default Windows UIA deferred to the supplied owned observer; native profile and process checks remain mandatory"}
+    run(["powershell", "-NoProfile", "-File", Path(__file__).with_name("v3_windows_uia.ps1"), "-AppPid", pid, "-Evidence", evidence, "-Executable", executable])
+    return json.loads((evidence / "windows-ui.json").read_text(encoding="utf-8-sig"))
+
+
 def native_runtime(executable, package, work, evidence, expected_arch, *, ui_observer=None):
     home = work / "home"
     home.mkdir()
@@ -233,8 +240,7 @@ def native_runtime(executable, package, work, evidence, expected_arch, *, ui_obs
                 if observation["status"].startswith(("ERROR_", "FAIL_")):
                     raise ValueError("Owned native About observer rejected application identity or displayed version")
             elif system == "Windows":
-                run(["powershell", "-NoProfile", "-File", Path(__file__).with_name("v3_windows_uia.ps1"), "-AppPid", process.pid, "-Evidence", evidence, "-Executable", executable])
-                receipt["ui"] = json.loads((evidence / "windows-ui.json").read_text(encoding="utf-8-sig"))
+                receipt["ui"] = windows_ui_evidence(process.pid, executable, evidence, ui_observer)
             else:
                 result = run(["xdotool", "search", "--onlyvisible", "--pid", process.pid], capture_output=True)
                 receipt["visible_windows"] = result.stdout.splitlines()

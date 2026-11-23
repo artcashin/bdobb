@@ -1,5 +1,6 @@
 import importlib.util, io, json, struct, tempfile, unittest
 from pathlib import Path
+from unittest.mock import patch
 P = Path(__file__).with_name('v3_qualification.py')
 spec = importlib.util.spec_from_file_location('qualification', P)
 q = importlib.util.module_from_spec(spec)
@@ -40,6 +41,25 @@ class ControlHarnessTest(unittest.TestCase):
             controls.scoped_suite(unittest.TestSuite([probe('unrelated')]), 'Windows')
 
 class QualificationTest(unittest.TestCase):
+
+    def test_default_windows_ui_still_invokes_original_probe_and_reads_its_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence=Path(directory);expected={'source_offer_release_ui':{'displayed_release_observed':False},'original_probe':'unchanged'}
+            def native_probe(args):
+                self.assertEqual(args[0:3],['powershell','-NoProfile','-File'])
+                self.assertEqual(Path(args[3]).name,'v3_windows_uia.ps1')
+                self.assertIn(51,args)
+                (evidence/'windows-ui.json').write_text(json.dumps(expected),encoding='utf-8')
+            with patch.object(q,'run',side_effect=native_probe) as run:
+                self.assertEqual(q.windows_ui_evidence(51,Path('bdobb.exe'),evidence,None),expected)
+            run.assert_called_once()
+
+    def test_explicit_windows_observer_defers_old_probe_without_opening_connections(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(q,'run',side_effect=AssertionError('Old UI probe must not run before explicit callback')) as run:
+            result=q.windows_ui_evidence(51,Path('bdobb.exe'),Path(directory),lambda *args:None)
+            self.assertEqual(result['status'],'DEFERRED_TO_EXPLICIT_OWNED_UI_OBSERVER')
+            self.assertFalse((Path(directory)/'windows-ui.json').exists())
+            run.assert_not_called()
 
     def test_msi_path_member_launches_only_as_identical_exe_copy(self):
         with tempfile.TemporaryDirectory() as directory:

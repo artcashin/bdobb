@@ -15,7 +15,7 @@ on:
         required: true
         type: choice
         default: build
-        options: [build, install, retained-linux, retained-ui, retained-windows]
+        options: [build, install, retained-linux, retained-ui, retained-windows, retained-windows-ui]
       retained_manifest_json:
         description: Held until root clears exact retained Linux bytes; external approved manifest
         required: false
@@ -87,12 +87,12 @@ jobs:
               {'target':'linux-x64','os':'ubuntu-22.04','rust-target':'x86_64-unknown-linux-gnu'},
               {'target':'linux-arm','os':'ubuntu-22.04-arm','rust-target':'aarch64-unknown-linux-gnu'},
           ]
-          assert os.environ['SELECTED_MODE'] in {'build', 'install', 'retained-linux', 'retained-ui', 'retained-windows'}
+          assert os.environ['SELECTED_MODE'] in {'build', 'install', 'retained-linux', 'retained-ui', 'retained-windows', 'retained-windows-ui'}
           if os.environ['SELECTED_MODE'] == 'retained-linux':
               rows = [row for row in rows if row['target'].startswith('linux-')]
           if os.environ['SELECTED_MODE'] == 'retained-ui':
               rows = [row for row in rows if row['target'].startswith('linux-')]
-          if os.environ['SELECTED_MODE'] == 'retained-windows':
+          if os.environ['SELECTED_MODE'] in {'retained-windows', 'retained-windows-ui'}:
               rows = [row for row in rows if row['target'] == 'windows']
           if os.environ['SELECTED_MODE'] == 'install':
               rows = [row for row in rows if row['target'] != 'linux-arm']
@@ -840,3 +840,99 @@ jobs:
             retained-evidence-windows/
           if-no-files-found: error
           retention-days: 7
+
+  retained_windows_ui:
+    needs: plan
+    if: inputs.mode == 'retained-windows-ui' && github.repository == 'artcashin/bdobb' && github.event_name == 'workflow_dispatch' && inputs.version == 'v3.0.0'
+    name: Observe exact qualified V3 Windows UI without rebuilding
+    runs-on: windows-2022
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out current reviewed UI-only controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: controller
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Test native ownership, popup, rendered-text and pinned-byte boundaries first
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s controller/.github/scripts -p test_v3_qualification.py -v
+          python -m unittest discover -s controller/.github/scripts/v3-windows-ui-only -p 'test_*.py' -v
+          powershell -NoProfile -File controller/.github/scripts/v3-windows-ui-only/test_windows_ui_ownership.ps1
+      - name: Verify exact successful native qualification and immutable artifact through GET only
+        id: original
+        env:
+          GH_UI_READ_TOKEN: ${{ github.token }}
+        run: |
+          python controller/.github/scripts/v3-windows-ui-only/windows_ui_only.py verify-api \
+            --controller controller --evidence ui-evidence-windows
+      - name: Download only exact already qualified Windows artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ steps.original.outputs.artifact_id }}
+          path: ui-prior-windows
+          merge-multiple: true
+          repository: artcashin/bdobb
+          run-id: ${{ steps.original.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Fetch fixed product and reviewed auditor; no app build or package privacy rescan
+        run: |
+          set -euo pipefail
+          mkdir app auditor
+          git -C app init
+          git -C app config core.autocrlf false
+          git -C app remote add release-source "$SOURCE_REPOSITORY"
+          git -C app fetch --no-tags release-source "$SOURCE_COMMIT"
+          git -C app checkout --detach FETCH_HEAD
+          git -C auditor init
+          git -C auditor config core.autocrlf false
+          git -C auditor remote add release-source "$SOURCE_REPOSITORY"
+          git -C auditor fetch --no-tags release-source 87f5f9bf3c0ed1659ba11eb0650b3ca15ddeb81e
+          git -C auditor checkout --detach FETCH_HEAD
+          test "$(git -C app rev-parse HEAD)" = "$SOURCE_COMMIT"
+          test "$(git -C auditor rev-parse HEAD)" = 87f5f9bf3c0ed1659ba11eb0650b3ca15ddeb81e
+      - name: Prepare only pinned extraction and evidence-audit tools; no Rust or decoder compilation
+        run: |
+          set -euo pipefail
+          python auditor/security/install.py --dir "$RUNNER_TEMP/v3-tools/bin"
+          python -m pip install --require-hashes -r auditor/security/requirements.txt
+          echo "$RUNNER_TEMP/v3-tools/bin" >> "$GITHUB_PATH"
+          python controller/.github/scripts/windows_scanner_tools.py \
+            --app app --auditor auditor --controller controller --outdir "$RUNNER_TEMP/v3-windows-scanner-tools" --auditor-commit 87f5f9bf3c0ed1659ba11eb0650b3ca15ddeb81e
+      - name: Scan reviewed controller source before owned process observation
+        run: |
+          python auditor/security/gate.py --repo app artifacts controller/.github/scripts controller/.github/workflows/release.yml
+      - name: Observe both exact qualified executable payloads on fresh native profiles
+        run: |
+          python controller/.github/scripts/v3-windows-ui-only/windows_ui_only.py observe \
+            --controller controller --app app --auditor auditor --artifacts ui-prior-windows --evidence ui-evidence-windows
+      - name: Scan bounded UI and cleanup evidence before retention
+        run: |
+          python auditor/security/gate.py --repo app artifacts ui-evidence-windows
+          git -C controller diff --exit-code
+          git -C app diff --exit-code
+      - name: Retain only scanned UI evidence; preserve installer bytes in original artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ui-observation-retained-v3-windows
+          path: ui-evidence-windows/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Require actual representative MSI displayed version; keep independent NSIS scope
+        run: |
+          python - <<'PYTHON'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('ui-evidence-windows/windows-ui-supplement.json').read_text())
+          assert report['required_msi_platform_displayed'] is True, 'Actual MSI platform displayed version remains unobserved; scanned gap evidence retained'
+          assert report['observations']['BDOBB_3.0.0_x64_en-US.msi']['displayed_release_observed'] is True
+          PYTHON

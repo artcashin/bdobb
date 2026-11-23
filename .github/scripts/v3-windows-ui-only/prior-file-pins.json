@@ -1,0 +1,29 @@
+{
+  "artifact_id": 14784284535,
+  "artifact_size": 26839418,
+  "artifact_zip_sha256": "3f0cc0e7429c5d1638c94adaabe92262ee4ab569e23732106fe40d5cb6562187",
+  "controller": "2af82a64eb938ed3e50f6dfa9c428e48afa8005e",
+  "files": {
+    "app/release-stage/SHA256SUMS": "41c654558bf16e1347c5420a914e604e31652a48b709ab038b18a88e6db97ba3",
+    "app/release-stage/qualification.json": "a024e1eaaa0ff3eceae51746ebafe1706fc53c44d091ce9db15bc89555771a1b",
+    "app/release-stage/scan.json": "d8088fdb37e06cd35175c58a913da1bba0284d1d429587c7a3f31e100474b96e",
+    "retained-evidence-windows/installed-msi/install-receipt.json": "35d29407ec668ddf5c13b2cc9e1adff9fc1f396507f510e01dc2570bdcc78b4c",
+    "retained-evidence-windows/retained-origin.json": "268b29b3d9f7363b97eae2c857aca8d49ae48a1b1bf296f2f3add96521cb1e3a",
+    "retained-evidence-windows/retained-qualification.json": "248d5d85077526aa3df3748ae184bb5cb59d9af8311cdabfada9741d0278f35c"
+  },
+  "job_id": 137445887332,
+  "manifest_sha256": "bacb269a019654940cba0b72e081dcf028159fee601efb5d241f4788b4fbb414",
+  "packages": {
+    "BDOBB_3.0.0_x64-setup.exe": {
+      "executable_sha256": "4b5b540b90f573790b044ce550cf40cfaa4755c00cd8c342e32ff7dd2896b687",
+      "sha256": "59605be1a5e60a0e841432629182245a98933586b2cc790c14a8e0927817646e",
+      "size": 12688634
+    },
+    "BDOBB_3.0.0_x64_en-US.msi": {
+      "executable_sha256": "667418327fa6086fdbc8f3117f62fd3aaec97837b2d65889750d7de560a44576",
+      "sha256": "2d2308837c46c7176ab664cbd8f697f600eb34e647dccbf1c5640ae3a648bf2f",
+      "size": 14376960
+    }
+  },
+  "run_id": 45099198575
+}
