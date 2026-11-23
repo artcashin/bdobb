@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import urllib.request
+import urllib.error
+import contextlib
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('retained_linux', HERE / 'retained_linux.py')
@@ -56,6 +58,17 @@ class Response(io.BytesIO):
 
 
 class Tests(unittest.TestCase):
+    def test_http_rejection_exposes_only_numeric_status_and_fixed_endpoint(self):
+        def opener(request, timeout):
+            raise urllib.error.HTTPError('https://PRIVATE.invalid/PRIVATE',404,'PRIVATE_REASON',{},None)
+        client=q.Client('PRIVATE_TOKEN',opener)
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out),patch.object(q,'run',side_effect=lambda argv:client.metadata(approved())):
+            self.assertEqual(q.main([]),2)
+        observed=json.loads(out.getvalue())
+        self.assertEqual(observed,{'status':'BLOCKED','code':'API_HTTP_REJECTED','http_status':404,'endpoint':'release-metadata'})
+        self.assertNotIn('PRIVATE',out.getvalue())
+
     def test_disabled_template_and_unknown_schema_block(self):
         with self.assertRaisesRegex(q.Blocked, 'MANIFEST_NOT_APPROVED'):
             q.validate_manifest(json.loads((HERE / 'candidates.disabled.json').read_text()), 'linux-x64')

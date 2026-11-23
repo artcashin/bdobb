@@ -186,7 +186,8 @@ class Client:
         self.token = token
         self.opener = opener or urllib.request.build_opener(NoRedirect()).open
 
-    def request(self, url, accept, authenticated):
+    def request(self, url, accept, authenticated, *, endpoint):
+        require(endpoint in {'release-metadata', 'asset-list', 'asset-api', 'asset-cdn'}, 'ENDPOINT_KIND_REJECTED')
         headers = {'Accept': accept, 'User-Agent': USER_AGENT}
         if authenticated:
             require(url.startswith(API + '/'), 'API_ORIGIN_REJECTED')
@@ -197,11 +198,16 @@ class Client:
         except urllib.error.HTTPError as exc:
             if exc.code == 302:
                 return exc
+            status = exc.code
             exc.close()
-            raise Blocked('API_HTTP_REJECTED') from None
+            error = Blocked('API_HTTP_REJECTED')
+            if type(status) is int and 100 <= status <= 599:
+                error.http_status = status
+                error.endpoint = endpoint
+            raise error from None
 
-    def json(self, suffix):
-        with self.request(API + suffix, 'application/vnd.github+json', True) as response:
+    def json(self, suffix, *, endpoint):
+        with self.request(API + suffix, 'application/vnd.github+json', True, endpoint=endpoint) as response:
             require(response.getcode() == 200 and not response.headers.get('Link'), 'API_RESPONSE_REJECTED')
             raw = response.read(1024 * 1024 + 1)
         require(len(raw) <= 1024 * 1024, 'API_RESPONSE_TOO_LARGE')
@@ -209,17 +215,18 @@ class Client:
 
     def metadata(self, spec):
         rid = str(spec['release']['id'])
-        return (self.json('/releases/' + rid), self.json('/releases/' + rid + '/assets?per_page=100'))
+        return (self.json('/releases/' + rid, endpoint='release-metadata'),
+                self.json('/releases/' + rid + '/assets?per_page=100', endpoint='asset-list'))
 
     def download(self, asset, destination):
-        response = self.request(API + '/releases/assets/' + str(asset['id']), 'application/octet-stream', True)
+        response = self.request(API + '/releases/assets/' + str(asset['id']), 'application/octet-stream', True, endpoint='asset-api')
         created = False
         try:
             if response.getcode() == 302:
                 location = response.headers.get('Location', '')
                 validate_redirect(location)
                 response.close()
-                response = self.request(location, 'application/octet-stream', False)
+                response = self.request(location, 'application/octet-stream', False, endpoint='asset-cdn')
             require(response.getcode() == 200, 'ASSET_HTTP_REJECTED')
             size = 0; sha = hashlib.sha256()
             with destination.open('xb') as stream:
@@ -344,7 +351,11 @@ def main(argv=None):
     try:
         result = run(argv)
     except Blocked as exc:
-        print(json.dumps({'status': 'BLOCKED', 'code': str(exc)}, separators=(',', ':')))
+        result = {'status': 'BLOCKED', 'code': str(exc)}
+        status, endpoint = getattr(exc, 'http_status', None), getattr(exc, 'endpoint', None)
+        if type(status) is int and 100 <= status <= 599 and endpoint in {'release-metadata','asset-list','asset-api','asset-cdn'}:
+            result.update(http_status=status, endpoint=endpoint)
+        print(json.dumps(result, separators=(',', ':')))
         return 2
     except Exception:
         print('{"status":"BLOCKED","code":"INTERNAL_ERROR"}')
