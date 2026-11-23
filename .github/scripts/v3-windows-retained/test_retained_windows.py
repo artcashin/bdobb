@@ -40,6 +40,16 @@ class Response(io.BytesIO):
     def getcode(self):return self.status
 
 
+def canonical_fixture_root(value):
+    # Production uses resolved RUNNER_TEMP roots. Check the raw fresh physical
+    # directory before expanding a native Windows 8.3 temporary-path alias.
+    raw = Path(value).absolute()
+    q.physical_chain(raw, directory=True)
+    canonical = raw.resolve(strict=True)
+    q.physical_chain(canonical, directory=True)
+    return canonical
+
+
 class Tests(unittest.TestCase):
     def test_disabled_and_pending_auditor_never_authorize(self):
         self.assertEqual(q.AUDITOR_COMMIT,'87f5f9bf3c0ed1659ba11eb0650b3ca15ddeb81e')
@@ -80,7 +90,7 @@ class Tests(unittest.TestCase):
             calls.append(request)
             return Response(b'',302,{'Location':'https://release-assets.githubusercontent.com/asset?private=signed'}) if len(calls)==1 else Response(b'abc')
         with tempfile.TemporaryDirectory() as tmp:
-            dest=Path(tmp)/'package';q.Client('PRIVATE_TOKEN',opener).download(approved()['assets'][0],dest)
+            dest=canonical_fixture_root(tmp)/'package';q.Client('PRIVATE_TOKEN',opener).download(approved()['assets'][0],dest)
             self.assertEqual(dest.read_bytes(),b'abc')
         self.assertIn('Authorization',calls[0].headers)
         self.assertTrue(all(call.get_method()=='GET' for call in calls))
@@ -91,19 +101,19 @@ class Tests(unittest.TestCase):
             with self.assertRaises(q.Blocked):q.validate_redirect(url)
 
     def test_download_tamper_size_and_existing_destination_fail_closed(self):
-        for raw in (b'abd',b'ab',b'abcd'):
+        for raw,code in [(b'abd','ASSET_DIGEST_MISMATCH'),(b'ab','ASSET_DIGEST_MISMATCH'),(b'abcd','ASSET_SIZE_MISMATCH')]:
             with tempfile.TemporaryDirectory() as tmp:
-                p=Path(tmp)/'package';client=q.Client('private',lambda request,timeout:Response(raw))
-                with self.assertRaises(q.Blocked):client.download(approved()['assets'][0],p)
+                p=canonical_fixture_root(tmp)/'package';client=q.Client('private',lambda request,timeout:Response(raw))
+                with self.assertRaisesRegex(q.Blocked,code):client.download(approved()['assets'][0],p)
                 self.assertFalse(p.exists())
         with tempfile.TemporaryDirectory() as tmp:
-            p=Path(tmp)/'package';p.write_bytes(b'original')
+            p=canonical_fixture_root(tmp)/'package';p.write_bytes(b'original')
             with self.assertRaises(FileExistsError):q.Client('private',lambda request,timeout:Response(b'abc')).download(approved()['assets'][0],p)
             self.assertEqual(p.read_bytes(),b'original')
 
     def test_manifest_hash_and_duplicate_keys_checked(self):
         with tempfile.TemporaryDirectory() as tmp:
-            p=Path(tmp)/'manifest';p.write_bytes(json.dumps(approved()).encode())
+            p=canonical_fixture_root(tmp)/'manifest';p.write_bytes(json.dumps(approved()).encode())
             with self.assertRaisesRegex(q.Blocked,'MANIFEST_DIGEST_MISMATCH'):q.load_manifest(p,'0'*64,'windows')
         with self.assertRaisesRegex(q.Blocked,'JSON_DUPLICATE_KEY'):q.parse_json(b'{"enabled":false,"enabled":true}')
 
@@ -122,6 +132,12 @@ class Tests(unittest.TestCase):
             values=dict(file_type=1,attributes=0,links=1,final_path=r'\\?\D:\a\_temp\file',expected_path=r'D:\a\_temp\file');values.update(change)
             with self.assertRaises(q.Blocked):q.validate_handle_info(**values)
 
+    def test_noncanonical_short_alias_is_still_rejected_by_production_handle_policy(self):
+        with self.assertRaisesRegex(q.Blocked,'WINDOWS_FINAL_PATH_MISMATCH'):
+            q.validate_handle_info(file_type=1,attributes=0,links=1,
+                final_path=r'\\?\C:\Users\RunnerAdmin\AppData\Local\Temp\fixture',
+                expected_path=r'C:\Users\RUNNER~1\AppData\Local\Temp\fixture')
+
     def test_native_host_guard_rejects_workstation_or_wrong_arch(self):
         with patch.dict(os.environ,{},clear=True),self.assertRaises(q.Blocked):q.host_guard('windows')
         env={'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted','RUNNER_OS':'Windows','GITHUB_REPOSITORY':q.REPOSITORY,'RUNNER_ARCH':'X64'}
@@ -130,7 +146,7 @@ class Tests(unittest.TestCase):
 
     def test_materialize_exact_bytes_exclusive_with_no_added_newline(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp).resolve();p=root/'v3-retained-input.json';raw=json.dumps(approved(),indent=2).encode()
+            root=canonical_fixture_root(tmp);p=root/'v3-retained-input.json';raw=json.dumps(approved(),indent=2).encode()
             args=['materialize','--target','windows','--manifest',str(p),'--manifest-sha256',hashlib.sha256(raw).hexdigest()]
             with patch.dict(os.environ,{'RUNNER_TEMP':str(root),'RETAINED_MANIFEST_JSON':raw.decode()}),patch.object(q,'host_guard'),patch.object(q,'controller_guard'):
                 q.run(args);self.assertEqual(p.read_bytes(),raw)
@@ -138,7 +154,7 @@ class Tests(unittest.TestCase):
 
     def test_two_packages_one_origin_receipt_and_failed_run_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp).resolve();m=approved();p=root/'v3-retained-input.json';raw=json.dumps(m).encode();p.write_bytes(raw)
+            root=canonical_fixture_root(tmp);m=approved();p=root/'v3-retained-input.json';raw=json.dumps(m).encode();p.write_bytes(raw)
             evidence=root/'retained-evidence';output=root/'v3-retained-windows'
             args=['download','--target','windows','--manifest',str(p),'--manifest-sha256',hashlib.sha256(raw).hexdigest(),'--evidence',str(evidence),'--output',str(output)]
             with patch.dict(os.environ,{'RUNNER_TEMP':str(root),'GITHUB_WORKSPACE':str(root),'GH_RETAINED_READ_TOKEN':'private'}),patch.object(q,'host_guard'),patch.object(q,'controller_guard'),patch.object(q.Client,'metadata',return_value=metadata(m)),patch.object(q.Client,'download',side_effect=lambda a,path:path.write_bytes(b'abc')):
@@ -151,7 +167,7 @@ class Tests(unittest.TestCase):
 
     def test_preflight_emits_only_auditor_output_without_network_or_extra_receipt(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp).resolve();p=root/'v3-retained-input.json';raw=json.dumps(approved()).encode();p.write_bytes(raw)
+            root=canonical_fixture_root(tmp);p=root/'v3-retained-input.json';raw=json.dumps(approved()).encode();p.write_bytes(raw)
             output=root/'github-output';output.write_bytes(b'');evidence=root/'retained-evidence'
             with patch.dict(os.environ,{'RUNNER_TEMP':str(root),'GITHUB_WORKSPACE':str(root),'GITHUB_OUTPUT':str(output)}),patch.object(q,'host_guard'),patch.object(q,'controller_guard'),patch.object(q.Client,'metadata',side_effect=AssertionError('No network')):
                 q.run(['preflight','--target','windows','--manifest',str(p),'--manifest-sha256',hashlib.sha256(raw).hexdigest(),'--evidence',str(evidence)])
@@ -160,7 +176,7 @@ class Tests(unittest.TestCase):
 
     def test_remote_metadata_changed_after_download_cleans_all_candidates(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp).resolve();m=approved();p=root/'v3-retained-input.json';raw=json.dumps(m).encode();p.write_bytes(raw)
+            root=canonical_fixture_root(tmp);m=approved();p=root/'v3-retained-input.json';raw=json.dumps(m).encode();p.write_bytes(raw)
             release,assets=metadata(m);changed={**release,'draft':False};output=root/'v3-retained-windows';evidence=root/'retained-evidence'
             with patch.dict(os.environ,{'RUNNER_TEMP':str(root),'GITHUB_WORKSPACE':str(root),'GH_RETAINED_READ_TOKEN':'private'}),patch.object(q,'host_guard'),patch.object(q,'controller_guard'),patch.object(q.Client,'metadata',side_effect=[(release,assets),(changed,assets)]),patch.object(q.Client,'download',side_effect=lambda asset,path:path.write_bytes(b'abc')):
                 with self.assertRaisesRegex(q.Blocked,'DRAFT_RELEASE_MISMATCH'):
