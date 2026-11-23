@@ -49,10 +49,29 @@ def base_observation(status):
                 native_about='NOT_OBSERVED', scope='Frontend source-offer release text; does not establish native About version')
 
 
+HOVER_STAGES = {'NOT_ATTEMPTED','COMPONENT_BOUNDS','MAIN_WINDOW_GEOMETRY','SAVE_POINTER','MOVE_POINTER','POINTER_MAIN_PID','FINAL_POINTER_MAIN_PID','FINAL_HELP_CENTER','CLICKED'}
+
+
+def empty_hover_diagnostics():
+    return dict(stage='NOT_ATTEMPTED', component_bounds=None, main_windows_count=0, main_window_geometry_matched=False,
+                matched_main_window_id=None, pointer_window_id=None, pointer_pid_available=None, pointer_main_pid_matches=None, pointer_matches_help_center=None, pointer_moved=False, cursor_restored=False)
+
+
+def valid_hover_diagnostics(value):
+    if not isinstance(value, dict) or set(value) != set(empty_hover_diagnostics()): return False
+    if value['stage'] not in HOVER_STAGES or type(value['main_windows_count']) is not int or not 0 <= value['main_windows_count'] <= 16: return False
+    box = value['component_bounds']
+    if box is not None and (not isinstance(box,list) or len(box) != 4 or any(type(n) is not int or not -(2**31) <= n < 2**31 for n in box)): return False
+    if any(type(value[k]) is not bool for k in ['main_window_geometry_matched','pointer_moved','cursor_restored']): return False
+    if any(value[k] is not None and (type(value[k]) is not int or not 0 <= value[k] < 2**63) for k in ['matched_main_window_id','pointer_window_id']): return False
+    return all(value[k] is None or type(value[k]) is bool for k in ['pointer_pid_available','pointer_main_pid_matches','pointer_matches_help_center'])
+
+
 def valid_help_actions(rows):
     if not isinstance(rows, list) or len(rows) > 2: return False
     for row in rows:
-        if not isinstance(row, dict) or set(row) != {'count', 'known_names', 'unknown_names', 'returned', 'method', 'pointer_restored'}: return False
+        if not isinstance(row, dict) or set(row) != {'count', 'known_names', 'unknown_names', 'returned', 'method', 'pointer_restored', 'hover'}: return False
+        if not valid_hover_diagnostics(row['hover']): return False
         if row['count'] is not None and (type(row['count']) is not int or not 0 <= row['count'] <= 4): return False
         if not isinstance(row['known_names'], list) or len(row['known_names']) > 3 or any(name not in {'click','press','activate'} for name in row['known_names']): return False
         if type(row['unknown_names']) is not bool or type(row['pointer_restored']) is not bool: return False
@@ -439,16 +458,23 @@ def numeric_fields(text, required):
     return values
 
 
-def owned_component_center(node, tree):
+def owned_component_center(node, tree, diagnostic=None):
     if not tree.visible(node): raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
     box = node.queryComponent().getExtents(tree.api.XY_SCREEN)
+    if diagnostic is not None:
+        values = [int(box.x),int(box.y),int(box.width),int(box.height)]
+        diagnostic['component_bounds'] = values if all(-(2**31) <= n < 2**31 for n in values) else None
     if not 0 < box.width <= 20000 or not 0 < box.height <= 20000: raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
     return box.x + box.width // 2, box.y + box.height // 2
 
 
-def hover_owned(source, tree, args):
-    x, y = owned_component_center(source, tree)
+def hover_owned(source, tree, args, *, diagnostic=None):
+    if diagnostic is None: diagnostic = empty_hover_diagnostics()
+    diagnostic['stage'] = 'COMPONENT_BOUNDS'
+    x, y = owned_component_center(source, tree, diagnostic)
+    diagnostic['stage'] = 'MAIN_WINDOW_GEOMETRY'
     windows = xdo('search', '--onlyvisible', '--pid', args.pid).splitlines()
+    diagnostic['main_windows_count'] = min(len(windows),16)
     matched = False
     for window in windows[:16]:
         if not re.fullmatch('[0-9]{1,20}', window): raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
@@ -456,19 +482,33 @@ def hover_owned(source, tree, args):
         geometry = numeric_fields(xdo('getwindowgeometry', '--shell', window), {'X', 'Y', 'WIDTH', 'HEIGHT'})
         if geometry['X'] <= x < geometry['X'] + geometry['WIDTH'] and geometry['Y'] <= y < geometry['Y'] + geometry['HEIGHT']:
             matched = True
+            diagnostic.update(main_window_geometry_matched=True, matched_main_window_id=int(window))
             break
     if not matched: raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+    diagnostic['stage'] = 'SAVE_POINTER'
     saved = numeric_fields(xdo('getmouselocation', '--shell'), {'X', 'Y', 'WINDOW'})
     validate_process(args)
     tree.recheck_owner(source, args)
+    diagnostic['stage'] = 'MOVE_POINTER'
     xdo('mousemove', '--sync', x, y)
+    diagnostic['pointer_moved'] = True
     try:
         actual = numeric_fields(xdo('getmouselocation', '--shell'), {'X', 'Y', 'WINDOW'})
-        if xdo('getwindowpid', actual['WINDOW']).strip() != str(args.pid): raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+        diagnostic['stage'] = 'POINTER_MAIN_PID'
+        check_pointer_main_pid(actual, args, diagnostic)
     except Exception:
         xdo('mousemove', '--sync', saved['X'], saved['Y'])
+        diagnostic['cursor_restored'] = True
         raise
     return saved
+
+
+def check_pointer_main_pid(actual, args, diagnostic):
+    diagnostic.update(pointer_window_id=actual['WINDOW'],pointer_pid_available=False,pointer_main_pid_matches=None)
+    under_pid = xdo('getwindowpid', actual['WINDOW']).strip()
+    diagnostic['pointer_pid_available'] = bool(re.fullmatch('[0-9]{1,10}',under_pid))
+    diagnostic['pointer_main_pid_matches'] = under_pid == str(args.pid)
+    if not diagnostic['pointer_main_pid_matches']: raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
 
 
 def role_code(value):
@@ -509,7 +549,7 @@ def invoke_help(help_button, tree, args):
     code = checked_help_role(help_button, tree)
     if not hasattr(tree, 'help_actions'): tree.help_actions = []
     if len(tree.help_actions) >= 2: raise ProbeError('GAP_TRAVERSAL_BUDGET')
-    row = dict(count=None, known_names=[], unknown_names=False, returned=None, method='NOT_OPENED', pointer_restored=False)
+    row = dict(count=None, known_names=[], unknown_names=False, returned=None, method='NOT_OPENED', pointer_restored=False, hover=empty_hover_diagnostics())
     tree.help_actions.append(row)
     try:
         action = help_button.queryAction()
@@ -544,17 +584,25 @@ def activate_help(help_button, tree, args):
     if os.environ.get('V3_OWNED_QA_SESSION') != '1': raise ProbeError('GAP_HELP_ACTION_UNAVAILABLE')
     # Only this exact Help control may be clicked, in the own ephemeral Xvfb.
     # hover_owned derives actual accessible bounds and verifies main-window PID.
-    saved = hover_owned(help_button, tree, args)
+    try: saved = hover_owned(help_button, tree, args, diagnostic=tree.help_actions[-1]['hover'])
+    except Exception:
+        tree.help_actions[-1]['pointer_restored'] = tree.help_actions[-1]['hover']['cursor_restored']
+        raise
     try:
         checked_help_role(help_button, tree)
         validate_process(args)
         tree.recheck_owner(help_button, args)
         actual = numeric_fields(xdo('getmouselocation','--shell'), {'X','Y','WINDOW'})
-        if xdo('getwindowpid',actual['WINDOW']).strip() != str(args.pid): raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+        hover = tree.help_actions[-1]['hover']
+        hover['stage'] = 'FINAL_POINTER_MAIN_PID'
+        check_pointer_main_pid(actual, args, hover)
         # A pointer/control move within this app must not redirect the click.
         checked_help_role(help_button, tree)
-        if (actual['X'],actual['Y']) != owned_component_center(help_button, tree): raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
+        hover['stage'] = 'FINAL_HELP_CENTER'
+        hover['pointer_matches_help_center'] = (actual['X'],actual['Y']) == owned_component_center(help_button, tree, hover)
+        if not hover['pointer_matches_help_center']: raise ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')
         xdo('click','1')
+        hover['stage'] = 'CLICKED'
         tree.help_actions[-1]['method'] = 'OWNED_POINTER_CLICK'
         return code
     finally:

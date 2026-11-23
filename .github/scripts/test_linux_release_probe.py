@@ -204,7 +204,7 @@ class HelpPointerTests(unittest.TestCase):
              patch.object(p, 'xdo', side_effect=['X=10\nY=11\nWINDOW=12', '7', '', '']) as xdo:
             self.assertEqual(p.activate_help(node, tree, args), 11)
         self.assertEqual(calls, [])
-        hover.assert_called_once_with(node, tree, args)
+        hover.assert_called_once_with(node, tree, args, diagnostic=unittest.mock.ANY)
         self.assertIn(unittest.mock.call('click','1'), xdo.call_args_list)
         self.assertEqual(xdo.call_args_list[-1], unittest.mock.call('mousemove','--sync',4,5))
         self.assertEqual(tree.help_actions[0]['method'],'OWNED_POINTER_CLICK')
@@ -233,9 +233,54 @@ class HelpPointerTests(unittest.TestCase):
         self.assertIn(unittest.mock.call('mousemove','--sync',110,205),xdo.call_args_list)
         self.assertEqual(xdo.call_args_list[-1],unittest.mock.call('getwindowpid',55))
 
+    def test_hover_stage_identifies_missing_main_window_without_click_or_raw_output(self):
+        node,tree,_=self.node(action='unrecognized')
+        diagnostic=p.empty_hover_diagnostics()
+        with patch.object(p,'xdo',return_value=''):
+            with self.assertRaises(p.ProbeError):p.hover_owned(node,tree,SimpleNamespace(pid=7),diagnostic=diagnostic)
+        self.assertEqual(diagnostic['stage'],'MAIN_WINDOW_GEOMETRY')
+        self.assertEqual(diagnostic['component_bounds'],[0,0,20,22])
+        self.assertEqual(diagnostic['main_windows_count'],0)
+        self.assertIs(diagnostic['main_window_geometry_matched'],False)
+        self.assertTrue(p.valid_hover_diagnostics(diagnostic))
+        diagnostic['PRIVATE_TEXT']='PRIVATE'
+        self.assertFalse(p.valid_hover_diagnostics(diagnostic))
+
+    def test_hover_hit_pid_failure_records_numeric_stage_and_actual_pointer_restore(self):
+        node,tree,_=self.node(action='unrecognized')
+        for reply in ['99',p.ProbeError('GAP_HOVER_OWNERSHIP_UNCONFIRMED')]:
+            diagnostic=p.empty_hover_diagnostics()
+            responses=['55','7','X=0\nY=0\nWIDTH=500\nHEIGHT=500','X=4\nY=5\nWINDOW=9','','X=10\nY=11\nWINDOW=55',reply,'']
+            with patch.object(p,'validate_process'),patch.object(p,'xdo',side_effect=responses)as xdo:
+                with self.assertRaises(p.ProbeError):p.hover_owned(node,tree,SimpleNamespace(pid=7),diagnostic=diagnostic)
+            self.assertEqual(diagnostic['stage'],'POINTER_MAIN_PID')
+            self.assertTrue(diagnostic['pointer_moved'])
+            self.assertTrue(diagnostic['cursor_restored'])
+            self.assertEqual(diagnostic['matched_main_window_id'],55)
+            self.assertEqual(diagnostic['pointer_window_id'],55)
+            self.assertEqual(diagnostic['pointer_pid_available'],isinstance(reply,str))
+            self.assertTrue(p.valid_hover_diagnostics(diagnostic))
+            self.assertEqual(xdo.call_args_list[-1],unittest.mock.call('mousemove','--sync',4,5))
+
+    def test_final_pointer_pid_recheck_replaces_earlier_success_diagnostics(self):
+        node,tree,_=self.node(action='unrecognized')
+        def hovered(*args,diagnostic):
+            diagnostic.update(stage='POINTER_MAIN_PID',pointer_window_id=55,pointer_pid_available=True,pointer_main_pid_matches=True)
+            return dict(X=4,Y=5,WINDOW=6)
+        with patch.dict(os.environ,{'V3_OWNED_QA_SESSION':'1'}),patch.object(p,'validate_process'), \
+             patch.object(p,'hover_owned',side_effect=hovered),patch.object(p,'xdo',side_effect=['X=10\nY=11\nWINDOW=99','123',''])as xdo:
+            with self.assertRaises(p.ProbeError):p.activate_help(node,tree,SimpleNamespace(pid=7))
+        diagnostic=tree.help_actions[0]['hover']
+        self.assertEqual(diagnostic['stage'],'FINAL_POINTER_MAIN_PID')
+        self.assertEqual(diagnostic['pointer_window_id'],99)
+        self.assertTrue(diagnostic['pointer_pid_available'])
+        self.assertFalse(diagnostic['pointer_main_pid_matches'])
+        self.assertNotIn(unittest.mock.call('click','1'),xdo.call_args_list)
+        self.assertTrue(tree.help_actions[0]['pointer_restored'])
+
     def test_action_diagnostics_cannot_leak_names_or_promote_display(self):
         value=ProbeTests().evidence();value.update(tooltip_exact=False,description_exact=False)
-        row=dict(count=1,known_names=['click'],unknown_names=True,returned=False,method='OWNED_POINTER_CLICK',pointer_restored=True)
+        row=dict(count=1,known_names=['click'],unknown_names=True,returned=False,method='OWNED_POINTER_CLICK',pointer_restored=True,hover=p.empty_hover_diagnostics())
         value['help_diagnostics']['help_actions']=[row]
         self.assertFalse(p.classify_observation(value)['displayed_release_observed'])
         row['known_names']=['PRIVATE_ACTION']
