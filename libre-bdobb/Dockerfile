@@ -48,5 +48,5 @@ LABEL org.opencontainers.image.title="libre-bdobb" \
 # 7900: OpenBB data backend (widgets.json, apps.json, /api/v1).  7950: Libre Terminal's computed views (/x).
 EXPOSE 7900 7950
 HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=5 \
-    CMD ["python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:7900/widgets.json', timeout=8); u.urlopen('http://127.0.0.1:7950/widgets.json', timeout=8)"]
+    CMD ["python", "-c", "import urllib.request as u; [u.urlopen(f'http://127.0.0.1:{p}/widgets.json', timeout=8).read() for p in (7900, 7950)]"]
 ENTRYPOINT ["/opt/guard/entrypoint.sh"]

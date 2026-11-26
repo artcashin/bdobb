@@ -106,14 +106,17 @@ def handler_for(config: Config, target_port: int):
                 return self._reply(502, f"Libre Terminal did not answer: {type(error).__name__}.")
             finally:
                 upstream.close()
-            self.send_response(response.status)
-            for name, value in response.getheaders():
-                if name.lower() not in STRIP_RESPONSE:
-                    self.send_header(name, value)
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            if self.command != "HEAD":
-                self.wfile.write(data)
+            try:
+                self.send_response(response.status)
+                for name, value in response.getheaders():
+                    if name.lower() not in STRIP_RESPONSE:
+                        self.send_header(name, value)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(data)
+            except OSError:          # the caller hung up before the answer was written
+                self.close_connection = True
 
         do_GET = do_HEAD = do_POST = do_PUT = do_DELETE = _forward
 
