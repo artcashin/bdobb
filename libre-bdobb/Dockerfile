@@ -13,10 +13,13 @@ ARG UV_VERSION=0.11.32
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
     UV_NO_CACHE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 
+# uv runs the upstream installer; procps gives its launcher `ps`.
 # Behind a TLS-inspecting proxy, pass its CA with: --secret id=extra_ca,src=/path/to/ca.crt
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -s /run/secrets/extra_ca ]; then export SSL_CERT_FILE=/run/secrets/extra_ca PIP_CERT=/run/secrets/extra_ca; fi; \
     python -m pip install "uv==${UV_VERSION}" \
+    && apt-get update && apt-get install -y --no-install-recommends procps \
+    && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 libre
 
 ADD --chown=10001:10001 https://github.com/samlazs/libre-terminal.git#${LIBRE_COMMIT} /opt/libre-terminal
