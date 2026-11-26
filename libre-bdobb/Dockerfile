@@ -15,7 +15,8 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 # uv runs the upstream installer; procps gives its launcher `ps`.
 # Behind a TLS-inspecting proxy, pass its CA with: --secret id=extra_ca,src=/path/to/ca.crt
-RUN --mount=type=secret,id=extra_ca,required=false \
+# mode=0444: apt drops to its own user to download and must still read the CA.
+RUN --mount=type=secret,id=extra_ca,required=false,mode=0444 \
     if [ -s /run/secrets/extra_ca ]; then \
       export SSL_CERT_FILE=/run/secrets/extra_ca PIP_CERT=/run/secrets/extra_ca; \
       APT_CA="-o Acquire::https::CAInfo=/run/secrets/extra_ca"; \
