@@ -1,0 +1,17 @@
+libre-bdobb
+
+This recipe packages Libre Terminal for use as a BDOBB backend.
+
+Libre Terminal
+  https://github.com/samlazs/libre-terminal
+  Copyright (C) 2026 The project contributors
+  Licensed under the GNU Affero General Public License, version 3 or later (AGPL-3.0-or-later).
+
+No Libre Terminal source is included in this repository. The Docker build fetches it from the
+repository above at a pinned commit and installs it with its own installer. An image built from
+this recipe therefore contains Libre Terminal and its dependencies (including the OpenBB Platform
+packages it installs) under their own licences; if you distribute such an image, or offer it to
+others over a network, those licences apply to you. See Libre Terminal's LICENSE and NOTICE.
+
+Libre Terminal is an independent project. It is not affiliated with OpenBB, and this recipe is not
+an official part of Libre Terminal.

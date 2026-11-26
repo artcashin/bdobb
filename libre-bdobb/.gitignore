@@ -1,0 +1,4 @@
+.env
+ts.env
+api_keys.env
+__pycache__/

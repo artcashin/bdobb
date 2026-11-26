@@ -1,0 +1,59 @@
+name: libre-bdobb
+
+services:
+  libre:
+    build:
+      context: .
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+    image: libre-bdobb:1.0.0
+    restart: unless-stopped
+    environment:
+      # Extra host names BDOBB will use to reach this service (your tailnet name), comma-separated.
+      LIBRE_GUARD_HOSTS: localhost,127.0.0.1,libre${LIBRE_GUARD_EXTRA_HOSTS:+,${LIBRE_GUARD_EXTRA_HOSTS}}
+      # Optional shared secret; BDOBB sends it as the X-Libre-Token header.
+      LIBRE_GUARD_TOKEN: ${LIBRE_GUARD_TOKEN:-}
+    # This computer only. For other devices use the tailnet profile, not 0.0.0.0.
+    ports:
+      - "127.0.0.1:${LIBRE_DATA_PORT:-7900}:7900"
+      - "127.0.0.1:${LIBRE_VIEWS_PORT:-7950}:7950"
+    volumes:
+      - libre-local:/opt/libre-terminal/local
+      - libre-openbb:/home/libre/.openbb_platform
+      - type: bind
+        source: ${LIBRE_API_KEYS_FILE:-./api_keys.example.env}
+        target: /run/libre/api_keys.env
+        read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 6g
+    networks: [libre-internal]
+
+  # Optional: private HTTPS on your tailnet.  docker compose --profile tailnet up -d
+  tailscale:
+    profiles: [tailnet]
+    image: tailscale/tailscale:v1.98.9
+    restart: unless-stopped
+    hostname: ${TS_HOSTNAME:-libre}
+    env_file: [./ts.env]
+    environment:
+      TS_HOSTNAME: ${TS_HOSTNAME:-libre}
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "false"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+    devices: [/dev/net/tun:/dev/net/tun]
+    cap_add: [NET_ADMIN, NET_RAW]
+    volumes:
+      - ts-state:/var/lib/tailscale
+      - ./ts-config:/config:ro
+    depends_on: [libre]
+    networks: [libre-internal]
+
+networks:
+  libre-internal:
+
+volumes:
+  libre-local:
+  libre-openbb:
+  ts-state:
