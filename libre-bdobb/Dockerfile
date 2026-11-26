@@ -16,10 +16,15 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
 # uv runs the upstream installer; procps gives its launcher `ps`.
 # Behind a TLS-inspecting proxy, pass its CA with: --secret id=extra_ca,src=/path/to/ca.crt
 RUN --mount=type=secret,id=extra_ca,required=false \
-    if [ -s /run/secrets/extra_ca ]; then export SSL_CERT_FILE=/run/secrets/extra_ca PIP_CERT=/run/secrets/extra_ca; fi; \
-    python -m pip install "uv==${UV_VERSION}" \
-    && apt-get update && apt-get install -y --no-install-recommends procps \
+    if [ -s /run/secrets/extra_ca ]; then \
+      export SSL_CERT_FILE=/run/secrets/extra_ca PIP_CERT=/run/secrets/extra_ca; \
+      APT_CA="-o Acquire::https::CAInfo=/run/secrets/extra_ca"; \
+    fi; \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get ${APT_CA:-} update \
+    && apt-get ${APT_CA:-} install -y --no-install-recommends procps \
     && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install "uv==${UV_VERSION}" \
     && useradd --create-home --uid 10001 libre
 
 ADD --chown=10001:10001 https://github.com/samlazs/libre-terminal.git#${LIBRE_COMMIT} /opt/libre-terminal
