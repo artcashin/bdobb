@@ -11,6 +11,8 @@ services:
     environment:
       # Extra host names BDOBB will use to reach this service (your tailnet name), comma-separated.
       LIBRE_GUARD_HOSTS: localhost,127.0.0.1,libre${LIBRE_GUARD_EXTRA_HOSTS:+,${LIBRE_GUARD_EXTRA_HOSTS}}
+      # Origins the guard admits. Add http://localhost:1420 to use a BDOBB dev build (pnpm tauri dev).
+      LIBRE_GUARD_ORIGINS: ${LIBRE_GUARD_ORIGINS:-tauri://localhost,http://tauri.localhost}
       # Optional shared secret; BDOBB sends it as the X-Libre-Token header.
       LIBRE_GUARD_TOKEN: ${LIBRE_GUARD_TOKEN:-}
     # This computer only. For other devices use the tailnet profile, not 0.0.0.0.
