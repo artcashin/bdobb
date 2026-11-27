@@ -1,0 +1,373 @@
+diff --git a/src/help/topics/connections.md b/src/help/topics/connections.md
+index bc2564c..29d19e3 100644
+--- a/src/help/topics/connections.md
++++ b/src/help/topics/connections.md
+@@ -97,6 +97,35 @@ a starting point. For the openbq-docker stack, replace that URL with your
+ Tailscale Serve address. Existing connection files, including an empty list,
+ are preserved.
+ 
++## Libre Terminal as a backend
++
++[Libre Terminal](https://github.com/samlazs/libre-terminal) is a local research
++terminal built on the OpenBB Platform. It answers the same `widgets.json`
++contract, so it can stand in for an openbq-docker stack on the same computer.
++
++Libre Terminal answers only its own page unless told otherwise. From release
++1.1, list this app's origins in `TERMINAL_EXTRA_ORIGINS` before starting it:
++
++- macOS and Linux: `export TERMINAL_EXTRA_ORIGINS="tauri://localhost http://tauri.localhost"`
++- Windows: `setx TERMINAL_EXTRA_ORIGINS "tauri://localhost http://tauri.localhost"`,
++  then open a new window.
++
++Then add two connections:
++
++- `http://127.0.0.1:6900` — the OpenBB widgets, financial statements included.
++- `http://127.0.0.1:6950` — Libre Terminal's own computed views. This one
++  serves no `apps.json`, so its card carries a note that apps could not be
++  read. That is expected.
++
++Use `127.0.0.1` or `localhost` exactly: Libre Terminal refuses any other host
++name, so it is reachable only from the computer it runs on. Without the
++setting, both connections show **Offline** with *Refused: this backend only
++answers the local terminal.*
++
++Statement view groups the lines of both its statement sources, Yahoo Finance
++and SEC. Widgets that open in a frame may show a refusal instead of their
++page: the frame's request carries no origin for Libre Terminal to match.
++
+ ---
+ 
+ Copyright © 2026 SecretoftheUniverse.com LLC. Original documentation is separately restricted under the [Documentation Terms](https://github.com/Adventures-OpenBQ/bdobb/blob/v10.0.0/DOCUMENTATION_TERMS.md). Software, code examples, third-party licenses, and previously granted rights are excluded. Full terms are also included in Quick Help’s Getting started and the Reference Manual’s home page.
+diff --git a/src/help/topics/credits.md b/src/help/topics/credits.md
+index 36d5572..8697ad0 100644
+--- a/src/help/topics/credits.md
++++ b/src/help/topics/credits.md
+@@ -29,6 +29,14 @@ licence. Source: <https://thenounproject.com/icon/pivot-115905/>. It is cropped
+ to its artwork and drawn in the interface's own colour; nothing else about it
+ is changed. The Pivot button's tooltip credits it too.
+ 
++## Libre Terminal
++
++Which statement lines the Yahoo Finance and SEC sources report, and under what
++names, follows the statement line maps of **Libre Terminal**,
++<https://github.com/samlazs/libre-terminal>, licensed under the GNU Affero
++General Public License, version 3 or later. BDOBB regroups those lines into its
++own Statement view sections.
++
+ ## "Layout" by M Yudi Maulana
+ 
+ The icon beside each workspace in the left rail is **"Layout" by M Yudi
+diff --git a/src/lib/statementTaxonomy.test.ts b/src/lib/statementTaxonomy.test.ts
+index 9ebb8b0..1b630ec 100644
+--- a/src/lib/statementTaxonomy.test.ts
++++ b/src/lib/statementTaxonomy.test.ts
+@@ -10,6 +10,25 @@ const EODHD_INCOME = "research_and_development_expense effect_of_accounting_char
+ const EODHD_BALANCE = "total_assets intangible_assets earning_assets other_current_assets total_liabilities total_shareholders_equity deferred_long_term_liab other_current_liab common_stock capital_stock retained_earnings other_liab goodwill other_assets cash cash_and_cash_equivalents total_current_liabilities current_deferred_revenue net_debt short_term_debt short_long_term_debt total_debt other_stockholder_equity property_plant_equipment total_current_assets long_term_investments net_tangible_assets short_term_investments net_receivables long_term_debt inventory accounts_payable total_permanent_equity noncontrolling_interest_in_consolidated_entity temporary_equity_redeemable_noncontrolling_interests accumulated_other_comprehensive_income additional_paid_in_capital common_stock_total_equity preferred_stock_total_equity retained_earnings_total_equity treasury_stock accumulated_amortization non_currrent_assets_other deferred_long_term_asset_charges non_current_assets_total capital_lease_obligations long_term_debt_total non_current_liabilities_other non_current_liabilities_total negative_goodwill warrants preferred_stock_redeemable capital_surpluse liabilities_and_stockholders_equity cash_and_short_term_investments property_plant_and_equipment_gross property_plant_equipment_net accumulated_depreciation net_working_capital net_invested_capital common_shares_outstanding".split(" ");
+ const EODHD_CASH = "investments change_to_liabilities net_cash_from_investing_activities net_borrowings net_cash_from_financing_activities change_to_operating_activities net_income net_change_in_cash cash_at_beginning_of_period cash_at_end_of_period net_cash_from_operating_activities issuance_of_capital_stock depreciation_and_amortization other_cashflows_from_investing_activities dividends_paid change_to_inventory change_to_account_receivables sale_purchase_of_stock other_cashflows_from_financing_activities change_to_netincome capital_expenditure change_receivables cash_flows_other_operating exchange_rate_changes cash_and_cash_equivalents_changes change_in_working_capital stock_based_compensation other_non_cash_items free_cash_flow".split(" ");
+ 
++// The line items Libre Terminal 1.1.0 served on 2026-11-27 for AAPL, JPM and
++// XOM (annual), through OpenBB's yfinance and SEC providers: an industrial, a
++// bank and an oil major, so the bank- and extraction-only lines are in here.
++const LIBRE: Record<string, string[]> = {
++  "yfinance-income": "basic_earnings_per_share cost_of_revenue diluted_earnings_per_share diluted_ni_availto_com_stockholders earnings_from_equity_interest ebit ebitda gain_on_sale_of_security general_and_administrative_expense gross_profit interest_expense interest_expense_non_operating interest_income interest_income_non_operating minority_interests net_income net_income_attributable_to_common_shareholders net_income_continuous_operations net_income_from_continuing_and_discontinued_operation net_income_from_continuing_operation_net_minority_interest net_income_including_noncontrolling_interests net_interest_income net_non_operating_interest_income_expense normalized_ebitda normalized_income occupancy_and_equipment operating_expense operating_income operating_revenue other_gand_a other_income_expense other_non_interest_expense other_non_operating_income_expenses other_operating_expenses other_special_charges other_taxes otherunder_preferred_stock_dividend preferred_stock_dividends professional_expense_and_contract_services_expense reconciled_cost_of_revenue reconciled_depreciation research_and_development_expense restructuring_and_mergern_acquisition salaries_and_wages selling_and_marketing_expense selling_general_and_admin_expense special_income_charges tax_effect_of_unusual_items tax_provision tax_rate_for_calcs total_expenses total_operating_income_as_reported total_pre_tax_income total_revenue total_unusual_items total_unusual_items_excluding_goodwill weighted_average_basic_shares_outstanding weighted_average_diluted_shares_outstanding".split(" "),
++  "yfinance-balance": "accounts_payable accounts_receivable accumulated_depreciation additional_paid_in_capital allowance_for_doubtful_accounts_receivable available_for_sale_securities capital_lease_obligations capital_stock cash_and_cash_equivalents cash_cash_equivalents_and_federal_funds_sold cash_cash_equivalents_and_short_term_investments cash_equivalents cash_financial commercial_paper common_stock common_stock_equity current_accrued_expenses current_capital_lease_obligation current_debt current_debt_and_capital_lease_obligation current_deferred_liabilities current_deferred_revenue current_liabilities dueto_related_parties_current dueto_related_parties_non_current employee_benefits finished_goods gains_losses_not_affecting_retained_earnings goodwill goodwill_and_other_intangible_assets gross_accounts_receivable held_to_maturity_securities income_tax_payable inventories invested_capital investmentin_financial_assets investments_and_advances land_and_improvements leases line_of_credit long_term_capital_lease_obligation long_term_debt long_term_debt_and_capital_lease_obligation long_term_equity_investment machinery_furniture_equipment minority_interest net_debt net_loan net_receivables net_tangible_assets non_current_accounts_receivable non_current_deferred_assets non_current_deferred_liabilities non_current_deferred_taxes_assets non_current_deferred_taxes_liabilities non_current_pension_and_other_postretirement_benefit_plans non_current_prepaid_assets ordinary_shares_number other_current_assets other_current_borrowings other_current_liabilities other_equity_adjustments other_intangible_assets other_inventories other_investments other_non_current_assets other_non_current_liabilities other_payable other_properties other_receivables payables payables_and_accrued_expenses plant_property_equipment_gross plant_property_equipment_net preferred_shares_number preferred_stock preferred_stock_equity properties raw_materials restricted_cash retained_earnings share_issued short_term_investments tangible_book_value total_assets total_capitalization total_common_equity total_current_assets total_debt total_equity_non_controlling_interests total_liabilities_net_minority_interest total_non_current_assets total_non_current_liabilities_net_minority_interest total_tax_payable tradeand_other_payables_non_current trading_securities treasury_shares_number treasury_stock working_capital".split(" "),
++  "yfinance-cash": "beginning_cash_position capital_expenditure cash_dividends_paid cash_flow_from_continuing_financing_activities cash_flow_from_continuing_investing_activities cash_flow_from_continuing_operating_activities change_in_account_payable change_in_inventory change_in_other_current_assets change_in_other_current_liabilities change_in_other_working_capital change_in_payable change_in_payables_and_accrued_expense change_in_receivables change_in_working_capital changes_in_account_receivables common_stock_dividend_paid deferred_income_tax deferred_tax depreciation_amortization_depletion depreciation_and_amortization dividend_paid_cfo dividend_received_cfo effect_of_exchange_rate_changes end_cash_position financing_cash_flow free_cash_flow gain_loss_on_investment_securities gain_loss_on_sale_of_business income_tax_paid_supplemental_data interest_paid_supplemental_data investing_cash_flow investments_in_property_plant_and_equipment issuance_of_capital_stock issuance_of_debt long_term_debt_issuance long_term_debt_payments net_business_purchase_and_sale net_change_in_cash_and_equivalents net_common_stock_issuance net_income_from_continuing_operations net_investment_purchase_and_sale net_issuance_payments_of_debt net_long_term_debt_issuance net_other_financing_charges net_other_investing_changes net_ppe_purchase_and_sale net_preferred_stock_issuance net_short_term_debt_issuance operating_cash_flow operating_gains_losses other_non_cash_items pension_and_employee_benefit_expense preferred_stock_issuance preferred_stock_payments provisionand_write_offof_assets purchase_of_business purchase_of_investment repayment_of_debt repurchase_of_capital_stock repurchase_of_common_equity sale_of_business sale_of_investment short_term_debt_issuance short_term_debt_payments stock_based_compensation".split(" "),
++  "sec-income": "amortization_expense basic_eps cash_dividends_per_share comprehensive_income comprehensive_income_nci comprehensive_income_parent costs_and_expenses deposits_interest_expense deposits_interest_income depreciation_and_amortization depreciation_expense diluted_eps equity_method_investments exploration_expense fed_funds_and_repo_interest_expense fed_funds_and_repo_interest_income impairment_expense income_before_equity_method income_tax_current income_tax_deferred income_tax_expense investment_banking_income investment_securities_interest_income loans_and_lease_interest_income long_term_debt_interest_expense net_income net_income_continuing net_income_to_common net_income_to_noncontrolling_interest net_interest_income net_interest_income_after_provision net_occupancy_equipment_expense operating_cost_of_revenue operating_revenue other_adjustments_to_consolidated_net_income other_adjustments_to_net_income_to_common other_comprehensive_income_parent other_income other_interest_expense other_interest_income other_noninterest_income other_operating_expenses preferred_dividends provision_for_credit_losses rd_expense restructuring_charge revenues_excl_interest_dividends salaries_and_employee_benefits_expense sga_expense short_term_borrowing_interest_expense total_cost_of_revenue total_gross_profit total_interest_expense total_interest_income total_noninterest_expense total_noninterest_income total_operating_expenses total_operating_income total_other_income total_pretax_income total_revenue weighted_ave_basic_shares_os weighted_ave_diluted_shares_os".split(" "),
++  "sec-balance": "accounts_payable accounts_receivable accumulated_depreciation accumulated_other_comprehensive_income additional_paid_in_capital asset_retirement_and_litigation_obligation capital_lease_obligations cash_and_equivalents common_equity current_deferred_revenue current_portion_of_long_term_debt fed_funds_purchased fed_funds_sold finance_lease_liability_current finance_lease_right_of_use_asset goodwill gross_ppe intangible_assets interest_bearing_deposits interest_bearing_deposits_at_other_banks loans_and_leases loans_held_for_sale long_term_debt long_term_investments mortgage_servicing_rights net_inventory net_loans_and_leases net_ppe net_premises_and_equipment noncontrolling_interests noncurrent_deferred_tax_assets noncurrent_deferred_tax_liabilities noncurrent_employee_benefit_liabilities noninterest_bearing_deposits nontrade_receivables note_receivable operating_lease_liability_current operating_lease_liability_noncurrent operating_lease_right_of_use_asset other_assets other_current_assets other_current_liabilities other_long_term_liabilities other_noncurrent_assets other_noncurrent_liabilities other_taxes_payable restricted_cash retained_earnings short_term_debt short_term_investments total_assets total_common_equity total_current_assets total_current_liabilities total_equity total_equity_and_noncontrolling_interests total_liabilities total_liabilities_and_equity total_noncurrent_assets total_noncurrent_liabilities total_preferred_equity treasury_stock".split(" "),
++  "sec-cash": "acquisitions amortization_expense asset_impairment_charges cash_at_beginning_of_period cash_at_end_of_period cash_income_taxes_paid cash_interest_paid change_in_accounts_payable change_in_accounts_receivable change_in_inventories change_in_nontrade_receivables change_in_other_operating_assets_and_liabilities deferred_income_tax depreciation_and_amortization depreciation_expense effect_of_exchange_rate_changes gain_loss_on_sale_of_assets income_loss_from_equity_method_investments increase_decrease_in_operating_capital issuance_of_debt issuance_of_preferred_equity maturity_of_investments net_cash_from_continuing_financing_activities net_cash_from_continuing_investing_activities net_cash_from_continuing_operating_activities net_cash_from_financing_activities net_cash_from_investing_activities net_cash_from_operating_activities net_change_in_cash net_change_in_deposits net_income net_income_continuing net_increase_in_fed_funds_sold noncash_adjustments_to_net_income other_financing_activities_net other_investing_activities_net other_operating_activities payment_of_dividends provision_for_loan_losses purchase_of_held_to_maturity_investments purchase_of_investments purchase_of_plant_property_and_equipment repayment_of_debt repurchase_of_common_equity repurchase_of_preferred_equity sale_of_investments short_term_debt_net stock_based_compensation tax_withholding_share_based_compensation".split(" "),
++};
++// Per-share and share-count lines, and one ratio: deliberately left in Other.
++const LIBRE_UNPLACED = [
++  "basic_earnings_per_share", "diluted_earnings_per_share", "tax_rate_for_calcs",
++  "weighted_average_basic_shares_outstanding", "weighted_average_diluted_shares_outstanding",
++  "basic_eps", "cash_dividends_per_share", "diluted_eps", "weighted_ave_basic_shares_os",
++  "weighted_ave_diluted_shares_os",
++];
++
+ function placed(statement: Statement): Set<string> {
+   return new Set(Object.values(TAXONOMY[statement]).flat());
+ }
+@@ -26,6 +45,17 @@ describe("TAXONOMY", () => {
+     expect(EODHD_CASH.filter((f) => !placed("cash").has(f))).toEqual([]);
+   });
+ 
++  it.each(Object.keys(LIBRE))("places the dollar lines Libre Terminal serves: %s", (key) => {
++    const statement = key.split("-")[1] as Statement;
++    const unplaced = LIBRE[key].filter((f) => !placed(statement).has(f));
++    expect(unplaced.filter((f) => !LIBRE_UNPLACED.includes(f))).toEqual([]);
++    if (statement !== "income") expect(unplaced).toEqual([]);
++  });
++
++  it("leaves per-share and share-count income lines unplaced under every spelling", () => {
++    expect(LIBRE_UNPLACED.filter((f) => placed("income").has(f))).toEqual([]);
++  });
++
+   it("orders the income sections Income, Expenses, Profit", () => {
+     expect(Object.keys(TAXONOMY.income)).toEqual(["Income", "Expenses", "Profit"]);
+     expect(Object.keys(TAXONOMY.balance)).toEqual(["Assets", "Liabilities", "Equity"]);
+diff --git a/src/lib/statementTaxonomy.ts b/src/lib/statementTaxonomy.ts
+index 49d8958..564abcd 100644
+--- a/src/lib/statementTaxonomy.ts
++++ b/src/lib/statementTaxonomy.ts
+@@ -4,17 +4,23 @@
+ /**
+  * Which section of a financial statement each line item belongs to, keyed by
+  * the field names OpenBB's FMP and EODHD providers emit (EODHD's mapped names
+- * ARE FMP's names -- that was the parity rule -- so one list covers both).
++ * ARE FMP's names -- that was the parity rule -- so one list covers both),
++ * then by the names OpenBB's yfinance and SEC providers emit. Those two are
++ * what a Libre Terminal backend serves; which lines exist under each name
++ * follows Libre Terminal's statement line maps
++ * (https://github.com/samlazs/libre-terminal, terminal/static/statements.js,
++ * AGPL-3.0-or-later), regrouped into this file's sections.
+  * OpenBB's standard statement models carry only the three period fields;
+  * every line item is a provider field, which is why this lives in the app.
+  *
+  * Object insertion order is display order, for sections and for the fields
+  * inside them. A field not listed lands in OTHER_SECTION, so a provider that
+- * adds a line is shown, not hidden. FMP's income-statement per-share and
+- * share-count lines (EPS, weighted-average shares) are deliberately unlisted:
+- * they are not dollar lines and read wrong under Profit. The balance sheet's
+- * `common_shares_outstanding` is listed, under Equity, because that is where
+- * the statement reports it.
++ * adds a line is shown, not hidden. Income-statement per-share and
++ * share-count lines (EPS, weighted-average shares) and yfinance's
++ * `tax_rate_for_calcs` are deliberately unlisted under every provider's
++ * spelling: they are not dollar lines and read wrong under Profit. The
++ * balance sheet's share counts are listed, under Equity, because that is
++ * where the statement reports them.
+  */
+ export type Statement = "income" | "balance" | "cash";
+ 
+@@ -33,6 +39,21 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+       "non_operating_income_net_other", "non_operating_income_excluding_interest",
+       "total_other_income_expense_net", "total_other_income_expenses", "other_items",
+       "extraordinary_items", "non_recurring",
++      // OpenBB's yfinance provider spells these its own way.
++      "total_revenue", "interest_income_non_operating", "net_non_operating_interest_income_expense",
++      "gain_on_sale_of_security", "gain_on_sale_of_business", "gain_on_sale_of_ppe",
++      "earnings_from_equity_interest", "earnings_from_equity_interest_net_of_tax",
++      "special_income_charges", "other_non_operating_income_expenses", "other_income_expense",
++      "total_unusual_items", "total_unusual_items_excluding_goodwill",
++      // OpenBB's SEC provider spells these its own way.
++      "other_revenue", "loans_and_lease_interest_income", "investment_securities_interest_income",
++      "deposits_interest_income", "fed_funds_and_repo_interest_income", "trading_account_interest_income",
++      "other_interest_income", "total_interest_income", "revenues_excl_interest_dividends",
++      "trust_fee_income", "service_charges_on_deposits_income", "other_service_charge_income",
++      "net_realized_capital_gains", "premiums_earned", "investment_banking_income",
++      "other_noninterest_income", "total_noninterest_income", "non_operating_income", "other_income",
++      "other_gains", "total_other_income", "equity_method_investments", "gain_on_sale_properties",
++      "gain_loss_disposition_subsidiary",
+     ],
+     Expenses: [
+       "cost_of_revenue", "cost_and_expenses", "research_and_development_expense",
+@@ -43,6 +64,34 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+       "interest_expense", "total_interest_expense", "income_tax_expense", "tax_provision",
+       "effect_of_accounting_charges", "minority_interest", "preferred_stock_and_other_adjustments",
+       "other_adjustments_to_net_income", "net_income_deductions",
++      // OpenBB's yfinance provider spells these its own way.
++      "net_policyholder_benefits_and_claims", "policyholder_benefits_gross",
++      "policyholder_benefits_ceded", "loss_adjustment_expense", "salaries_and_wages",
++      "professional_expense_and_contract_services_expense", "occupancy_and_equipment",
++      "general_and_administrative_expense", "other_gand_a",
++      "depreciation_and_amortization_in_income_statement", "depreciation_income_statement",
++      "amortization", "provision_for_doubtful_accounts", "other_non_interest_expense",
++      "operating_expense", "interest_expense_non_operating", "restructuring_and_mergern_acquisition",
++      "impairment_of_capital_assets", "write_off", "other_special_charges", "minority_interests",
++      "preferred_stock_dividends", "otherunder_preferred_stock_dividend", "total_expenses",
++      "reconciled_cost_of_revenue", "tax_effect_of_unusual_items",
++      // OpenBB's SEC provider spells these its own way.
++      "operating_cost_of_revenue", "other_cost_of_revenue", "total_cost_of_revenue",
++      "excise_and_sales_taxes", "sga_expense", "rd_expense", "exploration_expense",
++      "depreciation_expense", "amortization_expense", "depletion_expense", "impairment_expense",
++      "restructuring_charge", "costs_and_expenses", "deposits_interest_expense",
++      "short_term_borrowing_interest_expense", "long_term_debt_interest_expense",
++      "fed_funds_and_repo_interest_expense", "capitalized_lease_obligation_interest_expense",
++      "other_interest_expense", "provision_for_credit_losses", "benefits_costs_expenses",
++      "current_and_future_benefits", "salaries_and_employee_benefits_expense",
++      "net_occupancy_equipment_expense", "marketing_expense", "property_liability_insurance_claims",
++      "policy_acquisition_costs", "amortization_of_deferred_policy_acquisition_costs",
++      "total_noninterest_expense", "income_tax_current", "income_tax_deferred", "preferred_dividends",
++      "net_income_nci_redeemable", "net_income_nci_nonredeemable",
++      "net_income_to_noncontrolling_interest", "other_adjustments_to_consolidated_net_income",
++      "other_adjustments_to_net_income_to_common",
++      // Seen on live yfinance rows (JPM, XOM) and in no line map.
++      "other_taxes",
+     ],
+     Profit: [
+       "gross_profit", "operating_income", "total_operating_income", "ebit", "ebitda",
+@@ -50,6 +99,18 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+       "net_income_from_continuing_operations", "net_income_from_discontinued_operations",
+       "discontinued_operations", "consolidated_net_income", "net_income", "net_income_to_common",
+       "bottom_line_net_income",
++      // OpenBB's yfinance provider spells these its own way.
++      "net_income_continuous_operations", "net_income_discontinuous_operations",
++      "net_income_extraordinary", "net_income_including_noncontrolling_interests",
++      "net_income_attributable_to_common_shareholders", "normalized_ebitda", "normalized_income",
++      "total_operating_income_as_reported", "diluted_ni_availto_com_stockholders",
++      "net_income_from_continuing_and_discontinued_operation",
++      "net_income_from_continuing_operation_net_minority_interest", "net_income_common_stockholders",
++      // OpenBB's SEC provider spells these its own way.
++      "total_gross_profit", "net_interest_income_after_provision", "total_pretax_income",
++      "income_before_equity_method", "net_income_continuing", "net_income_discontinued",
++      "extraordinary_income", "other_comprehensive_income_parent", "comprehensive_income_parent",
++      "other_comprehensive_income_nci", "comprehensive_income_nci", "comprehensive_income",
+     ],
+   },
+   balance: {
+@@ -62,6 +123,34 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+       "goodwill_and_intangible_assets", "accumulated_amortization", "deferred_long_term_asset_charges",
+       "tax_assets", "other_non_current_assets", "non_currrent_assets_other", "non_current_assets",
+       "non_current_assets_total", "other_assets", "earning_assets", "net_tangible_assets", "total_assets",
++      // OpenBB's yfinance provider spells these its own way.
++      "cash_financial", "cash_equivalents", "cash_cash_equivalents_and_federal_funds_sold",
++      "other_short_term_investments", "cash_cash_equivalents_and_short_term_investments",
++      "accounts_receivable", "allowance_for_doubtful_accounts_receivable", "net_loan", "raw_materials",
++      "work_in_process", "finished_goods", "other_inventories", "inventories", "prepaid_assets",
++      "restricted_cash", "assets_held_for_sale_current", "hedging_assets_current", "properties",
++      "land_and_improvements", "buildings_and_improvements", "machinery_furniture_equipment",
++      "construction_in_progress", "other_properties", "leases", "plant_property_equipment_gross",
++      "other_intangible_assets", "goodwill_and_other_intangible_assets", "trading_securities",
++      "available_for_sale_securities", "held_to_maturity_securities", "investmentin_financial_assets",
++      "long_term_equity_investment", "investments_in_other_ventures_under_equity_method",
++      "other_investments", "investments_and_advances", "non_current_accounts_receivable",
++      "non_current_note_receivables", "non_current_deferred_taxes_assets", "non_current_deferred_assets",
++      "defined_pension_benefit", "non_current_prepaid_assets", "total_non_current_assets",
++      // OpenBB's SEC provider spells these its own way.
++      "cash_and_equivalents", "fed_funds_sold", "interest_bearing_deposits_at_other_banks",
++      "time_deposits_placed", "trading_account_securities", "loans_and_leases",
++      "allowance_for_loan_and_lease_losses", "net_loans_and_leases", "loans_held_for_sale",
++      "accrued_investment_income", "customer_and_other_receivables", "note_receivable",
++      "nontrade_receivables", "net_inventory", "current_deferred_tax_assets",
++      "other_current_nonoperating_assets", "gross_ppe", "net_ppe", "net_premises_and_equipment",
++      "operating_lease_right_of_use_asset", "finance_lease_right_of_use_asset",
++      "mortgage_servicing_rights", "deferred_acquisition_cost", "separate_account_business_assets",
++      "noncurrent_note_receivables", "noncurrent_deferred_tax_assets", "employee_benefit_assets",
++      "other_noncurrent_assets", "other_noncurrent_nonoperating_assets",
++      "other_noncurrent_assets_excl_ppe", "total_noncurrent_assets",
++      // Seen on live yfinance rows (JPM, XOM) and in no line map.
++      "gross_accounts_receivable",
+     ],
+     Liabilities: [
+       "accounts_payable", "accrued_expenses", "short_term_debt", "short_long_term_debt", "tax_payables",
+@@ -72,6 +161,37 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+       "other_non_current_liabilities", "non_current_liabilities_other", "total_non_current_liabilities",
+       "non_current_liabilities_total", "other_liabilities", "other_liab", "total_liabilities", "total_debt",
+       "net_debt",
++      // OpenBB's yfinance provider spells these its own way.
++      "income_tax_payable", "total_tax_payable", "dividends_payable", "other_payable", "payables",
++      "current_accrued_expenses", "interest_payable", "payables_and_accrued_expenses", "commercial_paper",
++      "other_current_borrowings", "current_notes_payable", "current_debt",
++      "current_capital_lease_obligation", "current_debt_and_capital_lease_obligation",
++      "current_deferred_liabilities", "pension_and_other_post_retirement_benefit_plans_current",
++      "current_liabilities", "long_term_capital_lease_obligation",
++      "long_term_debt_and_capital_lease_obligation", "non_current_deferred_revenue",
++      "non_current_deferred_taxes_liabilities", "non_current_deferred_liabilities",
++      "tradeand_other_payables_non_current", "employee_benefits",
++      "non_current_pension_and_other_postretirement_benefit_plans",
++      "preferred_securities_outside_stock_equity", "total_non_current_liabilities_net_minority_interest",
++      "total_liabilities_net_minority_interest",
++      // OpenBB's SEC provider spells these its own way.
++      "noninterest_bearing_deposits", "interest_bearing_deposits", "fed_funds_purchased",
++      "current_portion_of_long_term_debt", "bankers_acceptances", "accrued_interest_payable",
++      "other_short_term_payables", "customer_deposits", "current_deferred_tax_liabilities",
++      "current_employee_benefit_liabilities", "other_taxes_payable",
++      "other_current_nonoperating_liabilities", "operating_lease_liability_current",
++      "finance_lease_liability_current", "operating_lease_liability_noncurrent",
++      "claims_and_claim_expenses", "future_policy_benefits", "unearned_premiums_credit",
++      "policyholder_funds", "participating_policyholder_equity", "separate_account_business_liabilities",
++      "other_long_term_liabilities", "asset_retirement_and_litigation_obligation",
++      "noncurrent_deferred_revenue", "noncurrent_deferred_tax_liabilities",
++      "noncurrent_employee_benefit_liabilities", "other_noncurrent_liabilities",
++      "other_noncurrent_nonoperating_liabilities", "total_noncurrent_liabilities",
++      "commitments_and_contingencies", "temporary_equity", "temporary_equity_parent",
++      "redeemable_noncontrolling_interest", "redeemable_nci_common", "redeemable_nci_preferred",
++      "redeemable_nci_other",
++      // Seen on live yfinance rows (JPM, XOM) and in no line map.
++      "dueto_related_parties_current", "dueto_related_parties_non_current", "line_of_credit",
+     ],
+     Equity: [
+       "preferred_stock", "preferred_stock_total_equity", "preferred_stock_redeemable", "common_stock",
+@@ -84,6 +204,15 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+       "warrants", "negative_goodwill", "liabilities_and_stockholders_equity",
+       "total_liabilities_and_shareholders_equity", "total_liabilities_and_total_equity",
+       "common_shares_outstanding", "net_working_capital", "net_invested_capital",
++      // OpenBB's yfinance provider spells these its own way.
++      "other_equity_adjustments", "gains_losses_not_affecting_retained_earnings",
++      "preferred_stock_equity", "common_stock_equity", "total_capitalization", "invested_capital",
++      "working_capital", "tangible_book_value", "share_issued", "ordinary_shares_number",
++      "preferred_shares_number", "treasury_shares_number",
++      // OpenBB's SEC provider spells these its own way.
++      "total_preferred_equity", "common_equity", "other_equity", "total_equity",
++      "noncontrolling_interests", "total_equity_and_noncontrolling_interests",
++      "total_liabilities_and_equity",
+     ],
+   },
+   cash: {
+@@ -100,6 +229,22 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+       "changes_in_account_receivables", "change_in_receivables", "change_in_payable",
+       "change_in_payables_and_accrued_expense", "change_in_other_current_assets",
+       "change_in_other_current_liabilities", "cash_flow_from_continuing_operating_activities",
++      // OpenBB's yfinance provider spells these its own way.
++      "provision_and_write_off_of_assets", "asset_impairment_charge",
++      "gain_loss_on_investment_securities", "gain_loss_on_sale_of_ppe", "change_in_prepaid_assets",
++      "change_in_accrued_expense",
++      // OpenBB's SEC provider spells these its own way.
++      "net_income_discontinued", "net_income_continuing", "provision_for_loan_losses",
++      "depreciation_expense", "amortization_expense", "gain_loss_on_investments",
++      "gain_loss_on_sale_of_assets", "income_loss_from_equity_method_investments",
++      "asset_impairment_charges", "noncash_adjustments_to_net_income", "other_operating_activities",
++      "change_in_insurance_reserves", "change_in_accounts_receivable", "change_in_nontrade_receivables",
++      "change_in_inventories", "change_in_accounts_payable",
++      "change_in_other_operating_assets_and_liabilities", "increase_decrease_in_operating_capital",
++      "net_cash_from_continuing_operating_activities", "net_cash_from_discontinued_operating_activities",
++      // Seen on live yfinance rows (JPM, XOM) and in no line map.
++      "gain_loss_on_sale_of_business", "operating_gains_losses", "pension_and_employee_benefit_expense",
++      "provisionand_write_offof_assets", "dividend_paid_cfo", "dividend_received_cfo",
+     ],
+     Investing: [
+       "capital_expenditure", "purchase_of_property_plant_and_equipment", "acquisitions", "investments",
+@@ -110,6 +255,14 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+       "net_business_purchase_and_sale", "purchase_of_investment", "sale_of_investment",
+       "net_investment_purchase_and_sale", "net_other_investing_changes",
+       "cash_flow_from_continuing_investing_activities", "investing_cash_flow",
++      // OpenBB's yfinance provider spells these its own way.
++      "purchase_of_ppe", "sale_of_ppe", "sale_of_business",
++      // OpenBB's SEC provider spells these its own way.
++      "purchase_of_plant_property_and_equipment", "purchase_of_investments",
++      "purchase_of_held_to_maturity_investments", "sale_of_plant_property_and_equipment",
++      "sale_of_productive_assets", "divestitures", "sale_of_investments", "maturity_of_investments",
++      "net_increase_in_fed_funds_sold", "loans_held_for_sale_net", "other_investing_activities_net",
++      "net_cash_from_continuing_investing_activities", "net_cash_from_discontinued_investing_activities",
+     ],
+     Financing: [
+       "net_borrowings", "repayment_of_debt", "short_term_net_debt_issuance", "long_term_net_debt_issuance",
+@@ -124,6 +277,16 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+       "common_stock_dividend_paid", "cash_dividends_paid", "net_other_financing_charges",
+       "cash_flow_from_continuing_financing_activities", "financing_cash_flow", "issuance_of_debt",
+       "repurchase_of_capital_stock",
++      // OpenBB's yfinance provider spells these its own way.
++      "common_stock_issuance", "common_stock_payments", "preferred_stock_dividend_paid",
++      // OpenBB's SEC provider spells these its own way.
++      "repurchase_of_preferred_equity", "payment_of_dividends", "issuance_of_preferred_equity",
++      "net_change_in_deposits", "short_term_debt_net", "tax_withholding_share_based_compensation",
++      "other_financing_activities_net", "net_cash_from_continuing_financing_activities",
++      "net_cash_from_discontinued_financing_activities",
++      // Seen on live yfinance rows (JPM, XOM) and in no line map.
++      "preferred_stock_issuance", "preferred_stock_payments", "net_preferred_stock_issuance",
++      "short_term_debt_issuance", "short_term_debt_payments",
+     ],
+     "Cash position": [
+       "exchange_rate_changes", "effect_of_exchange_rate_changes_on_cash", "net_change_in_cash",
+@@ -132,6 +295,11 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+       // yfinance's own spellings for the cash-position section.
+       "beginning_cash_position", "end_cash_position", "income_tax_paid_supplemental_data",
+       "interest_paid_supplemental_data",
++      // OpenBB's yfinance provider spells these its own way.
++      "effect_of_exchange_rate_changes", "changes_in_cash",
++      // OpenBB's SEC provider spells these its own way.
++      "net_cash_from_discontinued_operations", "other_net_changes_in_cash", "cash_interest_paid",
++      "cash_interest_received", "cash_income_taxes_paid",
+     ],
+   },
+ };
