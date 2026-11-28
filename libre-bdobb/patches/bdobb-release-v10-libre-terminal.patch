@@ -58,10 +58,10 @@ index 36d5572..8697ad0 100644
  
  The icon beside each workspace in the left rail is **"Layout" by M Yudi
 diff --git a/src/lib/statementTaxonomy.test.ts b/src/lib/statementTaxonomy.test.ts
-index 9ebb8b0..1b630ec 100644
+index 9ebb8b0..9c157e5 100644
 --- a/src/lib/statementTaxonomy.test.ts
 +++ b/src/lib/statementTaxonomy.test.ts
-@@ -10,6 +10,25 @@ const EODHD_INCOME = "research_and_development_expense effect_of_accounting_char
+@@ -10,6 +10,34 @@ const EODHD_INCOME = "research_and_development_expense effect_of_accounting_char
  const EODHD_BALANCE = "total_assets intangible_assets earning_assets other_current_assets total_liabilities total_shareholders_equity deferred_long_term_liab other_current_liab common_stock capital_stock retained_earnings other_liab goodwill other_assets cash cash_and_cash_equivalents total_current_liabilities current_deferred_revenue net_debt short_term_debt short_long_term_debt total_debt other_stockholder_equity property_plant_equipment total_current_assets long_term_investments net_tangible_assets short_term_investments net_receivables long_term_debt inventory accounts_payable total_permanent_equity noncontrolling_interest_in_consolidated_entity temporary_equity_redeemable_noncontrolling_interests accumulated_other_comprehensive_income additional_paid_in_capital common_stock_total_equity preferred_stock_total_equity retained_earnings_total_equity treasury_stock accumulated_amortization non_currrent_assets_other deferred_long_term_asset_charges non_current_assets_total capital_lease_obligations long_term_debt_total non_current_liabilities_other non_current_liabilities_total negative_goodwill warrants preferred_stock_redeemable capital_surpluse liabilities_and_stockholders_equity cash_and_short_term_investments property_plant_and_equipment_gross property_plant_equipment_net accumulated_depreciation net_working_capital net_invested_capital common_shares_outstanding".split(" ");
  const EODHD_CASH = "investments change_to_liabilities net_cash_from_investing_activities net_borrowings net_cash_from_financing_activities change_to_operating_activities net_income net_change_in_cash cash_at_beginning_of_period cash_at_end_of_period net_cash_from_operating_activities issuance_of_capital_stock depreciation_and_amortization other_cashflows_from_investing_activities dividends_paid change_to_inventory change_to_account_receivables sale_purchase_of_stock other_cashflows_from_financing_activities change_to_netincome capital_expenditure change_receivables cash_flows_other_operating exchange_rate_changes cash_and_cash_equivalents_changes change_in_working_capital stock_based_compensation other_non_cash_items free_cash_flow".split(" ");
  
@@ -84,10 +84,19 @@ index 9ebb8b0..1b630ec 100644
 +  "weighted_ave_diluted_shares_os",
 +];
 +
++// The line items openbq-yfinance 3.0.0 served on 2026-11-28 for AAPL, JPM and
++// XOM (annual), long-form `line_item` values: Yahoo's labels snake-cased.
++const OPENBQ_YFINANCE: Record<string, string[]> = {
++  income: "basic_average_shares basic_eps cost_of_revenue diluted_average_shares diluted_eps diluted_ni_availto_com_stockholders earnings_from_equity_interest ebit ebitda gain_on_sale_of_security general_and_administrative_expense gross_profit interest_expense interest_expense_non_operating interest_income interest_income_non_operating minority_interests net_income net_income_common_stockholders net_income_continuous_operations net_income_from_continuing_and_discontinued_operation net_income_from_continuing_operation_net_minority_interest net_income_including_noncontrolling_interests net_interest_income net_non_operating_interest_income_expense normalized_ebitda normalized_income occupancy_and_equipment operating_expense operating_income operating_revenue other_gand_a other_income_expense other_non_interest_expense other_non_operating_income_expenses other_operating_expenses other_special_charges other_taxes otherunder_preferred_stock_dividend preferred_stock_dividends pretax_income professional_expense_and_contract_services_expense reconciled_cost_of_revenue reconciled_depreciation research_and_development restructuring_and_mergern_acquisition salaries_and_wages selling_and_marketing_expense selling_general_and_administration special_income_charges tax_effect_of_unusual_items tax_provision tax_rate_for_calcs total_expenses total_operating_income_as_reported total_revenue total_unusual_items total_unusual_items_excluding_goodwill".split(" "),
++  balance: "accounts_payable accounts_receivable accumulated_depreciation additional_paid_in_capital allowance_for_doubtful_accounts_receivable available_for_sale_securities capital_lease_obligations capital_stock cash_and_cash_equivalents cash_cash_equivalents_and_federal_funds_sold cash_cash_equivalents_and_short_term_investments cash_equivalents cash_financial commercial_paper common_stock common_stock_equity current_accrued_expenses current_assets current_capital_lease_obligation current_debt current_debt_and_capital_lease_obligation current_deferred_liabilities current_deferred_revenue current_liabilities dueto_related_parties_current dueto_related_parties_non_current employee_benefits finished_goods gains_losses_not_affecting_retained_earnings goodwill goodwill_and_other_intangible_assets gross_accounts_receivable gross_ppe held_to_maturity_securities income_tax_payable inventory invested_capital investmentin_financial_assets investments_and_advances land_and_improvements leases line_of_credit long_term_capital_lease_obligation long_term_debt long_term_debt_and_capital_lease_obligation long_term_equity_investment machinery_furniture_equipment minority_interest net_debt net_loan net_ppe net_tangible_assets non_current_accounts_receivable non_current_deferred_assets non_current_deferred_liabilities non_current_deferred_taxes_assets non_current_deferred_taxes_liabilities non_current_pension_and_other_postretirement_benefit_plans non_current_prepaid_assets ordinary_shares_number other_current_assets other_current_borrowings other_current_liabilities other_equity_adjustments other_intangible_assets other_inventories other_investments other_non_current_assets other_non_current_liabilities other_payable other_properties other_receivables other_short_term_investments payables payables_and_accrued_expenses preferred_shares_number preferred_stock preferred_stock_equity properties raw_materials receivables restricted_cash retained_earnings share_issued stockholders_equity tangible_book_value total_assets total_capitalization total_debt total_equity_gross_minority_interest total_liabilities_net_minority_interest total_non_current_assets total_non_current_liabilities_net_minority_interest total_tax_payable tradeand_other_payables_non_current trading_securities treasury_shares_number treasury_stock working_capital".split(" "),
++  cash: "beginning_cash_position capital_expenditure cash_dividends_paid cash_flow_from_continuing_financing_activities cash_flow_from_continuing_investing_activities cash_flow_from_continuing_operating_activities change_in_account_payable change_in_inventory change_in_other_current_assets change_in_other_current_liabilities change_in_other_working_capital change_in_payable change_in_payables_and_accrued_expense change_in_receivables change_in_working_capital changes_in_account_receivables changes_in_cash common_stock_dividend_paid common_stock_payments deferred_income_tax deferred_tax depreciation_amortization_depletion depreciation_and_amortization dividend_paid_cfo dividend_received_cfo effect_of_exchange_rate_changes end_cash_position financing_cash_flow free_cash_flow gain_loss_on_investment_securities gain_loss_on_sale_of_business income_tax_paid_supplemental_data interest_paid_supplemental_data investing_cash_flow issuance_of_capital_stock issuance_of_debt long_term_debt_issuance long_term_debt_payments net_business_purchase_and_sale net_common_stock_issuance net_income_from_continuing_operations net_investment_purchase_and_sale net_issuance_payments_of_debt net_long_term_debt_issuance net_other_financing_charges net_other_investing_changes net_ppe_purchase_and_sale net_preferred_stock_issuance net_short_term_debt_issuance operating_cash_flow operating_gains_losses other_non_cash_items pension_and_employee_benefit_expense preferred_stock_issuance preferred_stock_payments provisionand_write_offof_assets purchase_of_business purchase_of_investment purchase_of_ppe repayment_of_debt repurchase_of_capital_stock sale_of_business sale_of_investment short_term_debt_issuance short_term_debt_payments stock_based_compensation".split(" "),
++};
++const OPENBQ_YFINANCE_UNPLACED = ["basic_average_shares", "basic_eps", "diluted_average_shares", "diluted_eps", "tax_rate_for_calcs"];
++
  function placed(statement: Statement): Set<string> {
    return new Set(Object.values(TAXONOMY[statement]).flat());
  }
-@@ -26,6 +45,17 @@ describe("TAXONOMY", () => {
+@@ -26,6 +54,22 @@ describe("TAXONOMY", () => {
      expect(EODHD_CASH.filter((f) => !placed("cash").has(f))).toEqual([]);
    });
  
@@ -98,6 +107,11 @@ index 9ebb8b0..1b630ec 100644
 +    if (statement !== "income") expect(unplaced).toEqual([]);
 +  });
 +
++  it.each(["income", "balance", "cash"] as const)("places the dollar lines openbq-yfinance serves: %s", (statement) => {
++    const unplaced = OPENBQ_YFINANCE[statement].filter((f) => !placed(statement).has(f));
++    expect(unplaced).toEqual(statement === "income" ? OPENBQ_YFINANCE_UNPLACED : []);
++  });
++
 +  it("leaves per-share and share-count income lines unplaced under every spelling", () => {
 +    expect(LIBRE_UNPLACED.filter((f) => placed("income").has(f))).toEqual([]);
 +  });
@@ -106,7 +120,7 @@ index 9ebb8b0..1b630ec 100644
      expect(Object.keys(TAXONOMY.income)).toEqual(["Income", "Expenses", "Profit"]);
      expect(Object.keys(TAXONOMY.balance)).toEqual(["Assets", "Liabilities", "Equity"]);
 diff --git a/src/lib/statementTaxonomy.ts b/src/lib/statementTaxonomy.ts
-index 49d8958..564abcd 100644
+index 49d8958..25ae3d2 100644
 --- a/src/lib/statementTaxonomy.ts
 +++ b/src/lib/statementTaxonomy.ts
 @@ -4,17 +4,23 @@
@@ -161,7 +175,7 @@ index 49d8958..564abcd 100644
      ],
      Expenses: [
        "cost_of_revenue", "cost_and_expenses", "research_and_development_expense",
-@@ -43,6 +64,34 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+@@ -43,6 +64,36 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
        "interest_expense", "total_interest_expense", "income_tax_expense", "tax_provision",
        "effect_of_accounting_charges", "minority_interest", "preferred_stock_and_other_adjustments",
        "other_adjustments_to_net_income", "net_income_deductions",
@@ -193,10 +207,12 @@ index 49d8958..564abcd 100644
 +      "other_adjustments_to_net_income_to_common",
 +      // Seen on live yfinance rows (JPM, XOM) and in no line map.
 +      "other_taxes",
++      // openbq-yfinance keeps Yahoo's own label for these (snake-cased, not renamed).
++      "research_and_development", "selling_general_and_administration",
      ],
      Profit: [
        "gross_profit", "operating_income", "total_operating_income", "ebit", "ebitda",
-@@ -50,6 +99,18 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+@@ -50,6 +101,20 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
        "net_income_from_continuing_operations", "net_income_from_discontinued_operations",
        "discontinued_operations", "consolidated_net_income", "net_income", "net_income_to_common",
        "bottom_line_net_income",
@@ -212,10 +228,12 @@ index 49d8958..564abcd 100644
 +      "income_before_equity_method", "net_income_continuing", "net_income_discontinued",
 +      "extraordinary_income", "other_comprehensive_income_parent", "comprehensive_income_parent",
 +      "other_comprehensive_income_nci", "comprehensive_income_nci", "comprehensive_income",
++      // openbq-yfinance keeps Yahoo's own label for these (snake-cased, not renamed).
++      "pretax_income",
      ],
    },
    balance: {
-@@ -62,6 +123,34 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+@@ -62,6 +127,36 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
        "goodwill_and_intangible_assets", "accumulated_amortization", "deferred_long_term_asset_charges",
        "tax_assets", "other_non_current_assets", "non_currrent_assets_other", "non_current_assets",
        "non_current_assets_total", "other_assets", "earning_assets", "net_tangible_assets", "total_assets",
@@ -247,10 +265,12 @@ index 49d8958..564abcd 100644
 +      "other_noncurrent_assets_excl_ppe", "total_noncurrent_assets",
 +      // Seen on live yfinance rows (JPM, XOM) and in no line map.
 +      "gross_accounts_receivable",
++      // openbq-yfinance keeps Yahoo's own label for these (snake-cased, not renamed).
++      "current_assets", "receivables",
      ],
      Liabilities: [
        "accounts_payable", "accrued_expenses", "short_term_debt", "short_long_term_debt", "tax_payables",
-@@ -72,6 +161,37 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+@@ -72,6 +167,37 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
        "other_non_current_liabilities", "non_current_liabilities_other", "total_non_current_liabilities",
        "non_current_liabilities_total", "other_liabilities", "other_liab", "total_liabilities", "total_debt",
        "net_debt",
@@ -288,7 +308,7 @@ index 49d8958..564abcd 100644
      ],
      Equity: [
        "preferred_stock", "preferred_stock_total_equity", "preferred_stock_redeemable", "common_stock",
-@@ -84,6 +204,15 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+@@ -84,6 +210,17 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
        "warrants", "negative_goodwill", "liabilities_and_stockholders_equity",
        "total_liabilities_and_shareholders_equity", "total_liabilities_and_total_equity",
        "common_shares_outstanding", "net_working_capital", "net_invested_capital",
@@ -301,10 +321,12 @@ index 49d8958..564abcd 100644
 +      "total_preferred_equity", "common_equity", "other_equity", "total_equity",
 +      "noncontrolling_interests", "total_equity_and_noncontrolling_interests",
 +      "total_liabilities_and_equity",
++      // openbq-yfinance keeps Yahoo's own label for these (snake-cased, not renamed).
++      "stockholders_equity", "total_equity_gross_minority_interest",
      ],
    },
    cash: {
-@@ -100,6 +229,22 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+@@ -100,6 +237,22 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
        "changes_in_account_receivables", "change_in_receivables", "change_in_payable",
        "change_in_payables_and_accrued_expense", "change_in_other_current_assets",
        "change_in_other_current_liabilities", "cash_flow_from_continuing_operating_activities",
@@ -327,7 +349,7 @@ index 49d8958..564abcd 100644
      ],
      Investing: [
        "capital_expenditure", "purchase_of_property_plant_and_equipment", "acquisitions", "investments",
-@@ -110,6 +255,14 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+@@ -110,6 +263,14 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
        "net_business_purchase_and_sale", "purchase_of_investment", "sale_of_investment",
        "net_investment_purchase_and_sale", "net_other_investing_changes",
        "cash_flow_from_continuing_investing_activities", "investing_cash_flow",
@@ -342,7 +364,7 @@ index 49d8958..564abcd 100644
      ],
      Financing: [
        "net_borrowings", "repayment_of_debt", "short_term_net_debt_issuance", "long_term_net_debt_issuance",
-@@ -124,6 +277,16 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+@@ -124,6 +285,16 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
        "common_stock_dividend_paid", "cash_dividends_paid", "net_other_financing_charges",
        "cash_flow_from_continuing_financing_activities", "financing_cash_flow", "issuance_of_debt",
        "repurchase_of_capital_stock",
@@ -359,7 +381,7 @@ index 49d8958..564abcd 100644
      ],
      "Cash position": [
        "exchange_rate_changes", "effect_of_exchange_rate_changes_on_cash", "net_change_in_cash",
-@@ -132,6 +295,11 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
+@@ -132,6 +303,11 @@ export const TAXONOMY: Record<Statement, Record<string, readonly string[]>> = {
        // yfinance's own spellings for the cash-position section.
        "beginning_cash_position", "end_cash_position", "income_tax_paid_supplemental_data",
        "interest_paid_supplemental_data",
