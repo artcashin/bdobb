@@ -103,11 +103,3 @@ cd guard && python -m unittest
 All market-data functionality here is [Libre Terminal](https://github.com/samlazs/libre-terminal),
 used with its author's blessing. See [NOTICE](NOTICE). This recipe copies none of its code: the
 image fetches it from its own repository at build time and runs its own installer and launcher.
-
-## BDOBB patch
-
-`patches/bdobb-release-v10-libre-terminal.patch` is a change for BDOBB's `release/v10` branch
-(made against commit `3cc0d9c`). It teaches Statement view the Yahoo Finance and SEC line names
-Libre Terminal serves, and adds help text for connecting to Libre Terminal 1.1 with
-`TERMINAL_EXTRA_ORIGINS`. Apply it from a BDOBB checkout with `git apply`. It does not regenerate
-`SOURCE-MANIFEST.json` or `source-offer.json`.
